@@ -302,6 +302,7 @@ async function loadHomeTiles() {
     const data = await apiFetch(`${base}/api/thoughts?limit=20`);
     if (data) {
       const thoughts = data.thoughts || data.journal || data || [];
+      _cachedThoughts = thoughts;
       updateThoughtsTile(thoughts);
       updateBrainLog(thoughts);
     }
@@ -312,6 +313,7 @@ async function loadHomeTiles() {
     const dreamData = await apiFetch(`${base}/api/dreams?limit=20`);
     if (dreamData) {
       const dreams = dreamData.dreams || dreamData || [];
+      _cachedDreams = dreams;
       updateDreamLog(dreams);
     }
   } catch { /* offline */ }
@@ -641,6 +643,72 @@ async function loadVibeTile(agent, { imageId, captionId, galleryHrefId = null })
     imageEl.innerHTML = '<span class="h23-vibe-placeholder">Vibe offline</span>';
     captionEl.textContent = 'Could not load the current vibe image.';
   }
+}
+
+// ── Log Overlay ──
+
+// Cache the last fetched data for overlay rendering
+let _cachedThoughts = [];
+let _cachedDreams = [];
+
+function openLogOverlay(type) {
+  const overlay = document.getElementById('log-overlay');
+  const title = document.getElementById('log-overlay-title');
+  const body = document.getElementById('log-overlay-body');
+  if (!overlay || !body) return;
+
+  if (type === 'brain') {
+    title.textContent = '🧠 BRAIN LOG';
+    const thoughts = _cachedThoughts;
+    if (thoughts.length === 0) {
+      body.innerHTML = '<p class="h23-muted">No thoughts yet.</p>';
+    } else {
+      const reversed = [...thoughts].reverse();
+      body.innerHTML = reversed.map(t => {
+        const text = t.thought || t.content || t.text || '';
+        const role = t.role || '';
+        const time = t.timestamp
+          ? new Date(t.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        const cycle = t.cycle ? `cycle ${t.cycle}` : '';
+        return `<div class="h23-log-entry-full">
+          <div class="h23-log-entry-full-meta">
+            <span>${time}</span>
+            <span class="h23-log-entry-full-role">${role}</span>
+            <span>${cycle}</span>
+          </div>
+          <div class="h23-log-entry-full-text">${text}</div>
+        </div>`;
+      }).join('');
+    }
+  } else if (type === 'dream') {
+    title.textContent = '💭 DREAM LOG';
+    const dreams = _cachedDreams.filter(d => d.content && d.content.length > 20);
+    if (dreams.length === 0) {
+      body.innerHTML = '<p class="h23-muted">No dreams yet — the agent dreams during sleep cycles.</p>';
+    } else {
+      const sorted = [...dreams].sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+      body.innerHTML = sorted.map(d => {
+        const time = d.timestamp
+          ? new Date(d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        const cycle = d.cycle ? `cycle ${d.cycle}` : '';
+        const meta = [time, cycle].filter(Boolean).join(' · ');
+        const text = (d.content || d.thought || '').replace(/\n/g, '<br>');
+        return `<div class="h23-dream-entry-full">
+          <div class="h23-dream-entry-full-meta">${meta}</div>
+          <div class="h23-dream-entry-full-text">${text}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  overlay.classList.add('active');
+}
+
+function closeLogOverlay() {
+  const overlay = document.getElementById('log-overlay');
+  if (overlay) overlay.classList.remove('active');
 }
 
 async function apiFetch(url) {

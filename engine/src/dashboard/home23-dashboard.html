@@ -135,25 +135,37 @@
         </div>
       </div>
 
-      <!-- Brain Log -->
-      <div class="h23-tile h23-tile-brainlog">
-        <div class="h23-brainlog-header">
-          <span class="h23-brainlog-title">🧠 BRAIN LOG</span>
-          <span class="h23-brainlog-stamp" id="brainlog-stamp"></span>
+      <!-- Brain + Dream Logs (side by side) -->
+      <div class="h23-logs-row">
+        <div class="h23-tile h23-tile-brainlog" onclick="openLogOverlay('brain')">
+          <div class="h23-brainlog-header">
+            <span class="h23-brainlog-title">🧠 BRAIN LOG</span>
+            <span class="h23-brainlog-stamp" id="brainlog-stamp"></span>
+          </div>
+          <div class="h23-brain-log" id="home-brainlog">
+            <p class="h23-muted">Loading...</p>
+          </div>
         </div>
-        <div class="h23-brain-log" id="home-brainlog">
-          <p class="h23-muted">Loading...</p>
+
+        <div class="h23-tile h23-tile-brainlog" onclick="openLogOverlay('dream')">
+          <div class="h23-brainlog-header">
+            <span class="h23-brainlog-title">💭 DREAM LOG</span>
+            <span class="h23-brainlog-stamp" id="dreamlog-stamp"></span>
+          </div>
+          <div class="h23-dream-log" id="home-dreamlog">
+            <p class="h23-muted">Loading...</p>
+          </div>
         </div>
       </div>
 
-      <!-- Dream Log -->
-      <div class="h23-tile h23-tile-brainlog">
-        <div class="h23-brainlog-header">
-          <span class="h23-brainlog-title">💭 DREAM LOG</span>
-          <span class="h23-brainlog-stamp" id="dreamlog-stamp"></span>
-        </div>
-        <div class="h23-dream-log" id="home-dreamlog">
-          <p class="h23-muted">Loading...</p>
+      <!-- Log overlay (full details) -->
+      <div class="h23-log-overlay" id="log-overlay" onclick="if(event.target===this)closeLogOverlay()">
+        <div class="h23-log-overlay-panel">
+          <div class="h23-log-overlay-header">
+            <span class="h23-brainlog-title" id="log-overlay-title"></span>
+            <button class="h23-log-overlay-close" onclick="closeLogOverlay()">&#10005;</button>
+          </div>
+          <div class="h23-log-overlay-body" id="log-overlay-body"></div>
         </div>
       </div>
 
