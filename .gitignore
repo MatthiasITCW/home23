@@ -7,12 +7,11 @@ dist/
 # Secrets
 config/secrets.yaml
 
-# Runtime — per-agent
-instances/*/brain/
-instances/*/logs/
-instances/*/conversations/
-instances/*/cron-runs/
-instances/*/.*.pid
+# Runtime — per-agent (entire instances dir is runtime/personal data)
+instances/
+
+# Auto-generated agent manifest
+config/agents.json
 
 # Runtime — system
 runtime/
@@ -28,6 +27,9 @@ ecosystem.config.cjs
 # SSL/TLS
 *.pem
 **/*.pem
+
+# Engine data (generated images, etc.)
+engine/data/images/
 
 # Engine artifacts
 engine/runtime/
