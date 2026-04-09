@@ -200,13 +200,13 @@ Before copying anything, each component is audited for:
 
 ## Development Workflow (Post-Release)
 
-The public repo becomes jtr's primary development environment. The old dev repo is retired.
+The public repo becomes the maintainer's primary development environment. The old dev repo is retired.
 
 **How it works:**
-- `$TARGET` is THE Home23 repo — jtr's running agent AND the public repo in one directory
+- `$TARGET` is THE Home23 repo — the maintainer's running agent AND the public repo in one directory
 - Personal data (instances/<agent>/, config/secrets.yaml, brain data, conversations) lives in gitignored directories — never pushed to GitHub
 - Development: make changes → commit → push. That's it. No syncing between repos.
-- Community: fork → PR → jtr reviews and merges
+- Community: fork → PR → the maintainer reviews and merges
 - evobrew/cosmo23 standalone repos are upstream sources, not daily workspaces. Pull changes in with update commands when they happen.
 
 **Migration:** After the clean repo is built and verified, the existing agent's instance data (brain, config, conversations, identity) is copied in, PM2 processes are restarted from the new location, and the old repo is archived.

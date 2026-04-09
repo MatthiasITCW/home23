@@ -350,7 +350,7 @@ This file **currently exists** in every COSMO run:
   },
   "cosmo": {
     "version": "2.5.0",
-    "instanceId": "cosmo-jtr-local",
+    "instanceId": "cosmo-user-local",
     "totalCycles": 847,
     "totalAgentRuns": 234
   },
@@ -856,7 +856,7 @@ const brain = await cosmo.exportBrain({
 
 await brain.save('./outputs/quantum-2024.brain');
 // or
-await brain.push('brain-cloud://jtr/quantum-2024');
+await brain.push('brain-cloud://user/quantum-2024');
 ```
 
 ### Brain → COSMO (Import)
@@ -866,7 +866,7 @@ await brain.push('brain-cloud://jtr/quantum-2024');
 const cosmo = new COSMO({
   brain: './brains/quantum-2024.brain',
   // or
-  brain: 'brain-cloud://jtr/quantum-2024'
+  brain: 'brain-cloud://user/quantum-2024'
 });
 
 await cosmo.run({
@@ -908,7 +908,7 @@ Brain Cloud can notify external systems:
   "brain": {
     "id": "brain-abc123",
     "name": "quantum-2024",
-    "owner": "jtr"
+    "owner": "user"
   },
   "timestamp": "2024-12-24T15:45:00Z"
 }
@@ -939,7 +939,7 @@ Events: `brain.pushed`, `brain.forked`, `brain.merged`, `brain.deleted`
 │                                                                 │
 │  Day 5: Share Findings                                          │
 │  └─→ brain push proteins-v2.brain --public                      │
-│  └─→ [Brain available at brains.cosmo.ai/jtr/proteins-v2]       │
+│  └─→ [Brain available at brains.cosmo.ai/user/proteins-v2]       │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
