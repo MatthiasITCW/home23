@@ -1,0 +1,164 @@
+# Home23 Release Manifest
+
+Everything that ships in the public repository.
+
+## Root Files
+
+| File | Purpose |
+|---|---|
+| package.json | Node project config |
+| package-lock.json | Dependency lock |
+| tsconfig.json | TypeScript config |
+| ecosystem.config.cjs | PM2 config (auto-generated placeholder) |
+| .gitignore | Repository ignore rules |
+| README.md | Project documentation |
+| LICENSE | MIT license |
+| CLAUDE.md | Codebase instructions for AI assistants |
+
+## engine/ — Cognitive Engine (JS)
+
+The COSMO-derived cognitive loop engine. Handles thinking, dreaming, brain growth, memory, and persistence.
+
+### Source directories
+- `src/` — Core engine source (cognition, dashboard, agents, ingestion, etc.)
+- `tests/` — Test suite
+- `scripts/` — Utility scripts
+- `lib/` — Shared libraries
+- `prompts/` — System prompts and templates
+- `mcp/` — MCP server integration
+- `tools/` — Engine tools
+- `docs/` — Engine documentation
+- `data/` — Static data files
+- `config/` — Engine config templates
+- `prisma/` — Database schema and migrations
+
+### Root files
+- package.json, package-lock.json
+- .gitignore, .mocharc.json
+- Dockerfile, docker-compose.yml
+- .env.example
+- external-integrations-starter.yaml
+
+## src/ — TypeScript Agent Harness
+
+40 TypeScript files (~432K). The agent runtime layer: AgentLoop, tools, channels, routes, scheduler.
+
+### Structure
+- `agent/` — Core agent loop, tools (26+), LLM integration
+- `channels/` — Telegram channel adapter
+- `routes/` — HTTP bridge endpoints (evobrew, chat, dashboard)
+- `brain/` — Brain query and memory interface
+- `config/` — Config loader (merges home.yaml + agent config + secrets)
+- `home.ts` — Main entry point
+
+## cli/ — CLI Installer
+
+16 files (~96K). The `home23` command-line tool for init, agent creation, start/stop/status/logs.
+
+### Structure
+- `home23.js` — CLI entry point
+- `lib/` — Command implementations (init, agent-create, start, stop, status, logs, etc.)
+- `templates/` — Identity file templates for new agents
+
+## feeder/ — Ingestion Pipeline
+
+File watcher, chunker, embedder — feeds documents into the brain.
+
+### Files
+- server.js — Main feeder server
+- package.json, package-lock.json
+
+## config/ — Home-Level Config
+
+| File | Purpose |
+|---|---|
+| home.yaml | Provider URLs, model aliases, chat defaults, embeddings |
+| secrets.yaml.example | Template for API keys (copy to secrets.yaml) |
+
+## configs/ — Engine Config Templates
+
+| File | Purpose |
+|---|---|
+| base-engine.yaml | Cognitive loop config shared by all agents |
+
+## evobrew/ — AI IDE
+
+Bundled AI IDE for brain exploration, code editing, and agent interaction.
+
+### Source directories
+- `server/` — Express server, AI handler, brain integration
+- `lib/` — Shared libraries
+- `public/` — Frontend assets (HTML, CSS, JS)
+- `scripts/` — Utility scripts
+- `bin/` — CLI binaries
+- `prisma/` — Database schema and migrations
+- `docs/` — Documentation
+- `storage/` — Storage layer
+- `.github/` — CI/CD workflows
+
+### Root files
+- package.json, package-lock.json
+- .gitignore, .env.example
+- README.md, INSTALL.md, QUICKSTART.md, CLAUDE.md, AGENTS.md, LICENSE
+- index.js
+
+## cosmo23/ — Research Engine (COSMO 2.3)
+
+Full research engine with 9-tab UI, multi-phase research runs, and brain integration.
+
+### Source directories
+- `engine/src/` — Core engine (cognition, dashboard, agents, ingestion)
+- `engine/scripts/` — Engine utility scripts
+- `engine/tests/` — Engine test suite
+- `engine/mcp/` — MCP integration
+- `engine/docs/` — Engine documentation
+- `engine/brain-studio/` — Brain visualization tool
+- `engine/brain-studio-new/` — Updated brain visualization
+- `engine/lib/` — Engine libraries
+- `engine/prompts/` — Engine prompts
+- `engine/tools/` — Engine tools
+- `engine/data/` — Engine data files
+- `engine/config/` — Engine config
+- `lib/` — Shared libraries
+- `server/` — HTTP server
+- `launcher/` — Process launcher
+- `public/` — Frontend UI
+- `ide/` — IDE integration
+- `pgs-engine/` — PGS engine component
+
+### Root files
+- package.json, package-lock.json
+- .env.example, .gitignore
+- README.md, CLAUDE.md, AGENTS.md
+- prisma/schema.prisma
+
+### Engine root files
+- engine/package.json, engine/package-lock.json
+- engine/.gitignore, engine/.mocharc.json
+- engine/Dockerfile, engine/docker-compose.yml
+- engine/.env.example
+
+## docs/ — Documentation
+
+- `design/` — Design specs for each build step
+- `vision/` — Product vision documents
+- `audits/` — Pre-release audit reports
+- `SECURITY-AUDIT.md` — Security audit findings
+
+## scripts/ — Dev Scripts
+
+- start-agent.sh — Agent start helper
+- stop-agent.sh — Agent stop helper
+
+## What Does NOT Ship
+
+- `node_modules/` — Install via npm
+- `dist/` — Build via npm run build
+- `config/secrets.yaml` — Create from secrets.yaml.example
+- `instances/*/brain/` — Generated at runtime
+- `instances/*/logs/` — Generated at runtime
+- `instances/*/conversations/` — Generated at runtime
+- `runtime/` — Engine runtime state
+- `runs/` — Research run output
+- Any `.env` files — Create from .env.example templates
+- Any `.DS_Store`, `.cursor/`, `.vscode/` files
