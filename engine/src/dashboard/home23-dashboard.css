@@ -614,6 +614,38 @@ body::before {
   word-break: break-all;
 }
 
+.h23-dream-log {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: rgba(200,200,240,0.85);
+  background: rgba(0,0,0,0.3);
+  margin: 0;
+  padding: 12px 16px;
+  overflow-y: auto;
+  max-height: 260px;
+}
+
+.h23-dream-entry {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.h23-dream-entry:last-child {
+  border-bottom: none;
+}
+
+.h23-dream-meta {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.h23-dream-text {
+  color: rgba(200,200,240,0.85);
+  font-style: italic;
+}
+
 .h23-log-entry {
   padding: 6px 0;
   border-bottom: 1px solid rgba(255,255,255,0.05);

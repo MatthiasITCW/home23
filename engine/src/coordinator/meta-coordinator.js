@@ -993,7 +993,7 @@ IMPORTANT: Be explicit with goal IDs for programmatic action.`;
       .map(n => ({
         text: n.concept.substring(0, 80),
         activation: (n.activation || 0).toFixed(2),
-        weight: n.weight.toFixed(2)
+        weight: (n.weight || 0).toFixed(2)
       }));
 
     // Use template generator if enabled

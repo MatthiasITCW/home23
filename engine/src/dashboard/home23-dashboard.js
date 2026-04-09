@@ -307,6 +307,15 @@ async function loadHomeTiles() {
     }
   } catch { /* offline */ }
 
+  // Dreams
+  try {
+    const dreamData = await apiFetch(`${base}/api/dreams?limit=20`);
+    if (dreamData) {
+      const dreams = dreamData.dreams || dreamData || [];
+      updateDreamLog(dreams);
+    }
+  } catch { /* offline */ }
+
   await loadVibeTile(primaryAgent, {
     imageId: 'home-vibe-image',
     captionId: 'home-vibe-caption',
@@ -374,6 +383,40 @@ function updateBrainLog(thoughts) {
       <span class="h23-log-time">${time}</span>
       <span class="h23-log-role">${role}</span>
       <span class="h23-log-text">${text.slice(0, 200)}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Dream Log ──
+
+function updateDreamLog(dreams) {
+  const container = document.getElementById('home-dreamlog');
+  if (!container) return;
+
+  const stamp = document.getElementById('dreamlog-stamp');
+  if (stamp) stamp.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // Filter to narrative dreams (with content), newest first
+  const narratives = dreams
+    .filter(d => d.content && d.content.length > 20)
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+
+  if (narratives.length === 0) {
+    container.innerHTML = '<p class="h23-muted">No dreams yet — the agent dreams during sleep cycles.</p>';
+    return;
+  }
+
+  container.innerHTML = narratives.slice(0, 10).map(d => {
+    const time = d.timestamp
+      ? new Date(d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      : (d.cycle ? `Cycle ${d.cycle}` : '');
+    const cycle = d.cycle ? `cycle ${d.cycle}` : '';
+    const meta = [time, cycle].filter(Boolean).join(' · ');
+    const text = (d.content || d.thought || '').replace(/\*\*/g, '').replace(/\n/g, ' ').slice(0, 200);
+
+    return `<div class="h23-dream-entry">
+      <div class="h23-dream-meta">${meta}</div>
+      <div class="h23-dream-text">${text}</div>
     </div>`;
   }).join('');
 }

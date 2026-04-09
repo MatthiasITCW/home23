@@ -113,7 +113,7 @@ class Orchestrator {
       startCycle: null,
       consolidationRun: false,
       noticePassRun: false,
-      minimumCycles: 12  // Minimum sleep cycles for proper rest (12 cycles × 5% = 60% energy recovery)
+      minimumCycles: 3  // Minimum sleep cycles before wake check (energy >= 0.8 is the real gate)
     };
     
     // GPT-5.2 specific
