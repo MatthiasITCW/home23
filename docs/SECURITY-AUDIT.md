@@ -73,7 +73,7 @@
 
 ### 5. Agent Workspace Files Committed with Personal Content
 **Files committed:**
-- `instances/test-agent/workspace/SOUL.md` — personalized agent identity ("COZ, jtr's 2am sidekick")
+- `instances/test-agent/workspace/SOUL.md` — personalized agent identity ("the agent, owner's AI sidekick")
 - `instances/test-agent/workspace/MISSION.md` — personalized mission
 - `instances/test-agent/workspace/MEMORY.md` — session logs with system details
 - `instances/test-agent/workspace/HEARTBEAT.md` — status file

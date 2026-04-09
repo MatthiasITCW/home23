@@ -35,8 +35,8 @@ Also copied: `tsconfig.json` from cosmo-home_2.3. TS dependencies added to root 
 
 | Hardcoded value | Location | Replacement |
 |---|---|---|
-| `jtr (Telegram ID: 8317115546)` | context.ts, system-prompt.ts | Agent config: `agent.owner.name`, `agent.owner.telegramId` |
-| `cosmo23-jtr`, `cosmo23-jtr-dash` | system-prompt.ts | `home23-${agentName}` from config |
+| `owner-name (Telegram ID: xxxxxxxxx)` | context.ts, system-prompt.ts | Agent config: `agent.owner.name`, `agent.owner.telegramId` |
+| `cosmo23-<name>`, `cosmo23-<name>-dash` | system-prompt.ts | `home23-${agentName}` from config |
 | `Platform: macOS (Mac mini)` | system-prompt.ts | Runtime detection: `os.platform()` + `os.hostname()` |
 | `Timezone: America/New_York` | system-prompt.ts, cron.ts | Agent config: `agent.timezone`, default to system TZ |
 | `COSMO_INSTANCE ?? 'coz'` | home.ts | Agent name from config.yaml |
@@ -95,8 +95,8 @@ models:
 
 agent:
   owner:
-    name: "jtr"
-    telegramId: "8317115546"
+    name: "owner"
+    telegramId: "123456789"
   timezone: "America/New_York"
   maxSubAgents: 3
 

@@ -83,7 +83,7 @@ Home23/
 
 1. **`instances/` replaces `runs/` + `workspace/` + `state/`** — all per-agent state lives under one directory.
 
-2. **Unified provider config** — replaces hardcoded `MODEL_ALIASES` in home.ts, `configs/jtr.yaml` engine model assignments, and `config/default.yaml` LLM section. One place to configure providers, one place for API keys.
+2. **Unified provider config** — replaces hardcoded `MODEL_ALIASES` in home.ts, `configs/agent.yaml` engine model assignments, and `config/default.yaml` LLM section. One place to configure providers, one place for API keys.
 
 3. **Agent as first-class entity** — each agent is a self-contained directory with its own brain, identity, and config. Creating a new agent means creating a new directory, not editing config files.
 
@@ -167,7 +167,7 @@ engine:
 | Today in cosmo-home_2.3 | In Home23 |
 |---|---|
 | `MODEL_ALIASES` hardcoded in home.ts | `harness.aliases` in per-agent config |
-| `configs/jtr.yaml` model assignments | `engine.*` in per-agent config |
+| `configs/agent.yaml` model assignments | `engine.*` in per-agent config |
 | `config/default.yaml` LLM providers | `providers` in home.yaml |
 | `config/secrets.yaml` API keys | `config/secrets.yaml` (same, referenced by home.yaml) |
 | Feeder hardcoded to localhost Ollama | `embeddings.providers` fallback chain |
@@ -222,7 +222,7 @@ node cli/install.js
 ```
 
 The install script asks:
-1. Home name (e.g., "jtr-home", "pi-station")
+1. Home name (e.g., "my-home", "pi-station")
 2. Providers to configure (walks through API keys)
 3. Embedding provider preference (local Ollama, cloud, OpenAI)
 4. Create first agent? (prompts agent creation)

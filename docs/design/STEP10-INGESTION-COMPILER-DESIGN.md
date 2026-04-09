@@ -84,7 +84,7 @@ Documents compiled: 47
 
 ## Entities
 - Jerry Garcia — musician, concert data 1990s (32 documents)
-- COZ — agent identity, sharp/direct, jtr's sidekick
+- COZ — agent identity, sharp/direct, the owner's sidekick
 - Home23 — AI operating system, 4 integrated systems
 
 ## Technical Knowledge
