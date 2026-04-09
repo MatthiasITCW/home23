@@ -334,7 +334,7 @@ docs/vision/RECENT_DECISIONS.md
 
 | File | Finding | Severity |
 |------|---------|----------|
-| `STEP2-AGENT-HARNESS-DESIGN.md` | Lines 13, 38-39, 98: `/Users/jtr/` path, `jtr (Telegram ID: 8317115546)`, `name: "jtr"` example | MEDIUM |
+| `STEP2-AGENT-HARNESS-DESIGN.md` | Lines 13, 38-39, 98: `/Users/jtr/` path, `jtr (Telegram ID: REDACTED)`, `name: "jtr"` example | MEDIUM |
 | `HOME23-DESIGN.md` | Lines 86, 170, 225: `configs/jtr.yaml`, `jtr-home` example | LOW — design doc examples |
 | `PUBLIC-RELEASE-DESIGN.md` | Lines 34, 157, 203-216: Multiple `/Users/jtr/` paths, `jtr` references, `instances/jerry/` | EXPECTED — this doc IS about the release process |
 | `STEP9-COSMO23-INTEGRATION-DESIGN.md` | Line 30: `/Users/jtr/_JTR23_/cosmo_2.3` default source path | LOW |
@@ -345,7 +345,7 @@ docs/vision/RECENT_DECISIONS.md
 | File | Finding | Severity |
 |------|---------|----------|
 | `STEP1-REPO-ENGINE-FEEDER.md` | Multiple `/Users/jtr/` paths, `configs/jtr.yaml` reference | MEDIUM — build instructions |
-| `STEP2-AGENT-HARNESS.md` | Extensive: `/Users/jtr/` paths, Telegram ID `8317115546`, `jtr` owner references throughout | HIGH — contains real Telegram ID |
+| `STEP2-AGENT-HARNESS.md` | Extensive: `/Users/jtr/` paths, Telegram ID `REDACTED`, `jtr` owner references throughout | HIGH — contains real Telegram ID |
 
 **Superpowers plans (docs/superpowers/plans/):**
 
@@ -409,7 +409,7 @@ Both scripts are clean — they use `$AGENT_NAME` variable, `$HOME23_ROOT` relat
 11. **feeder/server.js** — Default member name 'jtr' and default state path 'runs/jtr/'.
 12. **engine/src/agents/document-analysis-agent.js:1160** — 'jtr' in hardcoded directory list.
 13. **engine/mcp/claude_desktop_config_example.json** — Hardcoded `/Users/jtr/` path.
-14. **docs/plans/STEP2-AGENT-HARNESS.md** — Contains real Telegram ID (8317115546).
+14. **docs/plans/STEP2-AGENT-HARNESS.md** — Contains real Telegram ID (REDACTED).
 
 ### LOW
 

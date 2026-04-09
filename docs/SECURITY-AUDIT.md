@@ -67,7 +67,7 @@
 
 ### 4. Telegram User ID Exposed
 **Files:** `instances/test-agent/config.yaml`, `instances/cosmo/config.yaml`
-**Detail:** Both contained `telegramId: "8317115546"`. While not a secret (Telegram user IDs are not credentials), it is PII that identifies the developer.
+**Detail:** Both contained `telegramId: "REDACTED"`. While not a secret (Telegram user IDs are not credentials), it is PII that identifies the developer.
 
 **Fix applied:** Replaced with empty string + comment placeholder in both files.
 
