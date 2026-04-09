@@ -254,6 +254,11 @@ function setupTabHandlers() {
       }
       if (panel) panel.classList.add('active');
 
+      // Brain Map tab: initialize on first visit
+      if (currentTab === 'brain-map') {
+        if (typeof initBrainMap === 'function') initBrainMap();
+      }
+
       // Intelligence tab: load content and start refresh
       if (currentTab === 'intelligence') {
         loadIntelligence();

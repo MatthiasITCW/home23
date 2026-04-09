@@ -47,6 +47,7 @@
   <nav class="h23-tabs">
     <button class="h23-tab active" data-tab="home">Home</button>
     <button class="h23-tab" data-tab="intelligence">Intelligence</button>
+    <button class="h23-tab" data-tab="brain-map">🧬 Brain Map</button>
     <div id="agent-tabs"></div>
     <button class="h23-tab h23-tab-settings" id="settings-btn">&#9881; Settings</button>
     <button class="h23-tab h23-tab-cosmo23" id="cosmo23-btn">🔬 COSMO</button>
@@ -177,6 +178,19 @@
       <iframe id="cosmo23-frame" style="width:100%; height:100%; border:none;"></iframe>
     </div>
 
+    <!-- Brain Map panel -->
+    <div class="h23-panel" id="panel-brain-map">
+      <div class="h23-brain-map-header">
+        <div class="h23-brain-map-stats" id="brain-map-stats">Loading brain map...</div>
+        <div class="h23-brain-map-toolbar" id="brain-map-toolbar">
+          <input type="text" class="h23-brain-map-search" id="brain-map-search" placeholder="Search nodes...">
+          <button class="h23-brain-map-btn" id="brain-map-reset" title="Reset view">Reset</button>
+        </div>
+      </div>
+      <div class="h23-brain-map-container" id="brain-map-container"></div>
+      <div class="h23-brain-map-detail" id="brain-map-detail"></div>
+    </div>
+
     <!-- Intelligence panel -->
     <div class="h23-panel" id="panel-intelligence">
       <div class="h23-intel-header">
@@ -242,7 +256,9 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
+  <script src="https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js"></script>
   <script src="/home23-chat.js"></script>
+  <script src="home23-brain-map.js"></script>
   <script src="home23-dashboard.js"></script>
 </body>
 </html>

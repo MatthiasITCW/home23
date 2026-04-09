@@ -1020,6 +1020,243 @@ body::before {
   font-size: 0.75rem;
 }
 
+/* ── Brain Map tab ── */
+
+.h23-brain-map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0 12px;
+}
+
+.h23-brain-map-stats {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.h23-brain-map-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.h23-brain-map-search {
+  background: var(--glass-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  outline: none;
+  width: 200px;
+}
+
+.h23-brain-map-search::placeholder {
+  color: var(--text-dim);
+}
+
+.h23-brain-map-search:focus {
+  border-color: var(--accent-blue);
+}
+
+.h23-brain-map-btn {
+  background: var(--glass-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.h23-brain-map-btn:hover {
+  background: var(--glass-primary);
+  color: var(--text-primary);
+}
+
+.h23-brain-map-container {
+  width: 100%;
+  height: calc(100vh - 200px);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+}
+
+.h23-brain-map-detail {
+  position: fixed;
+  right: 24px;
+  top: 180px;
+  width: 320px;
+  max-height: 60vh;
+  background: var(--glass-primary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glass);
+  padding: 16px;
+  overflow-y: auto;
+  display: none;
+  z-index: 10;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.h23-brain-map-detail.active {
+  display: block;
+}
+
+.h23-brain-map-detail h4 {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.h23-brain-map-detail .node-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.h23-brain-map-detail .node-meta {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+.h23-brain-map-detail .map-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.h23-brain-map-detail .map-detail-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.h23-brain-map-detail .map-detail-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.h23-brain-map-detail .map-detail-close:hover {
+  color: var(--text-primary);
+}
+
+.h23-brain-map-detail .map-detail-concept {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.h23-brain-map-detail .map-detail-meta {
+  border-top: 1px solid var(--glass-border);
+  padding-top: 8px;
+}
+
+.h23-brain-map-detail .map-meta-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: 0.75rem;
+}
+
+.h23-brain-map-detail .map-meta-label {
+  color: var(--text-dim);
+}
+
+.h23-brain-map-detail .map-meta-value {
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.h23-brain-map-detail .map-detail-connections {
+  border-top: 1px solid var(--glass-border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.h23-brain-map-detail .map-connections-title {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.h23-brain-map-detail .map-connection-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 3px 0;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.h23-brain-map-detail .map-connection-item:hover {
+  color: var(--text-primary);
+}
+
+.h23-brain-map-detail .map-connection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.h23-brain-map-detail .map-connection-type {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.h23-brain-map-detail .map-connection-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h23-brain-map-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  gap: 12px;
+}
+
+.h23-brain-map-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {

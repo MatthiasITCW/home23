@@ -1004,6 +1004,45 @@ class DashboardServer {
       res.sendFile(resolved);
     });
 
+    // Brain graph data for 3D visualization
+    this.app.get('/home23/api/brain/graph', async (req, res) => {
+      try {
+        const state = await this.loadState();
+        const memory = state.memory || {};
+        const nodes = (memory.nodes || []).map(n => ({
+          id: String(n.id),
+          concept: n.concept || '',
+          tag: n.tag || 'general',
+          weight: n.weight || 0,
+          activation: n.activation || 0,
+          cluster: n.cluster,
+          created: n.created,
+          accessed: n.accessed,
+          accessCount: n.accessCount || 0
+        }));
+        const edges = (memory.edges || []).map(e => ({
+          source: String(e.source),
+          target: String(e.target),
+          weight: e.weight || 0,
+          type: e.type || 'associative'
+        }));
+        res.json({
+          success: true,
+          nodes,
+          edges,
+          clusters: memory.clusters || [],
+          meta: {
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+            clusterCount: (memory.clusters || []).length || memory.nextClusterId || 0,
+            cycleCount: state.cycleCount || 0
+          }
+        });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
     // NEW: Serve curated insights reports (from coordinator directory)
     this.app.use('/reports', express.static(path.join(this.logsDir, 'coordinator')));
 
