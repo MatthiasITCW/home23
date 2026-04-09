@@ -20,7 +20,9 @@ let intelRefreshInterval = null;
 // ── Init ──
 
 async function init() {
-  startClock();
+  updateClocks();
+  setInterval(updateClocks, 10000);
+  initParticles();
   await loadAgents();
   renderAgentTabs();
   setupTabHandlers();
@@ -38,17 +40,49 @@ async function init() {
 
 // ── Clock ──
 
-function startClock() {
-  function update() {
-    const el = document.getElementById('clock');
-    if (el) {
-      el.textContent = new Date().toLocaleTimeString('en-US', {
-        hour: '2-digit', minute: '2-digit', hour12: true
-      });
-    }
+function updateClocks() {
+  const agentTz = window.__agentTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const now = new Date();
+  const fmt = (tz) => now.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true });
+  const fmt24 = (tz) => now.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+
+  const tz1Time = document.getElementById('tz1-time');
+  if (tz1Time) tz1Time.textContent = fmt(agentTz);
+  const tz1Label = document.getElementById('tz1-label');
+  if (tz1Label) tz1Label.textContent = agentTz.split('/').pop().replace(/_/g, ' ');
+
+  const secondaryTz = window.__secondaryTimezone;
+  const tz2Container = document.getElementById('tz2-container');
+  if (secondaryTz && tz2Container) {
+    tz2Container.style.display = 'flex';
+    const tz2Time = document.getElementById('tz2-time');
+    if (tz2Time) tz2Time.textContent = fmt24(secondaryTz);
+    const tz2Label = document.getElementById('tz2-label');
+    if (tz2Label) tz2Label.textContent = secondaryTz.split('/').pop().replace(/_/g, ' ');
   }
-  update();
-  setInterval(update, 1000);
+}
+
+// ── Particles ──
+
+function initParticles() {
+  if (typeof particlesJS === 'undefined') return;
+  particlesJS('particles-js', {
+    particles: {
+      number: { value: 40, density: { enable: true, value_area: 1000 } },
+      color: { value: ['#ffffff', '#007AFF', '#00C7BE', '#30D158'] },
+      shape: { type: 'circle' },
+      opacity: { value: 0.3, random: true, anim: { enable: true, speed: 1, opacity_min: 0.1, sync: false } },
+      size: { value: 3, random: true, anim: { enable: true, speed: 2, size_min: 1, sync: false } },
+      line_linked: { enable: true, distance: 200, color: '#ffffff', opacity: 0.15, width: 1 },
+      move: { enable: true, speed: 0.8, direction: 'none', random: true, straight: false, out_mode: 'out', bounce: false }
+    },
+    interactivity: {
+      detect_on: 'canvas',
+      events: { onhover: { enable: true, mode: 'bubble' }, onclick: { enable: false }, resize: true },
+      modes: { bubble: { distance: 200, size: 6, duration: 2, opacity: 0.6, speed: 3 } }
+    },
+    retina_detect: true
+  });
 }
 
 // ── Load Agents ──
@@ -73,8 +107,7 @@ async function loadAgents() {
   const currentPort = parseInt(window.location.port) || 5002;
   primaryAgent = agents.find(a => a.dashboardPort === currentPort) || agents[0];
 
-  // Set header name
-  document.getElementById('home-name').textContent = primaryAgent.displayName || primaryAgent.name;
+  // Set agent name in thoughts tile
   document.getElementById('primary-agent-name').textContent = primaryAgent.displayName || primaryAgent.name;
 
   // Load config and construct host-relative URLs
@@ -248,12 +281,14 @@ async function loadHomeTiles() {
     if (state) {
       updateSystemTile(state);
       updatePills(state);
-      document.getElementById('system-status').textContent = '● COSMO active';
-      document.getElementById('system-status').className = 'h23-status';
+      const dot = document.getElementById('cosmo-dot');
+      if (dot) { dot.className = 'status-dot alive'; }
+      setText('cosmo-status-text', 'COSMO');
     }
   } catch {
-    document.getElementById('system-status').textContent = '● offline';
-    document.getElementById('system-status').className = 'h23-status offline';
+    const dot = document.getElementById('cosmo-dot');
+    if (dot) { dot.className = 'status-dot dead'; }
+    setText('cosmo-status-text', 'COSMO offline');
   }
 
   // Feeder status
@@ -296,7 +331,9 @@ function updateSystemTile(state) {
 
 function updatePills(state) {
   const journal = state.journal || [];
-  setText('pill-cycle', `🧠 cycle ${state.cycleCount || '—'}`);
+  const modelName = state.model || state.modelName || '';
+  const cycleCount = state.cycleCount || '—';
+  setText('pill-cycle', modelName ? `🧠 cycle ${cycleCount} · ${modelName}` : `🧠 cycle ${cycleCount}`);
   setText('pill-mode', `${state.oscillatorMode || 'focus'}`);
   setText('pill-updated', `sensors ${timeSince(new Date())}`);
 }
@@ -315,6 +352,10 @@ function updateThoughtsTile(thoughts) {
 function updateBrainLog(thoughts) {
   const container = document.getElementById('home-brainlog');
   if (!container) return;
+
+  // Update brain log timestamp
+  const stamp = document.getElementById('brainlog-stamp');
+  if (stamp) stamp.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   if (thoughts.length === 0) {
     container.innerHTML = '<p class="h23-muted">Loading...</p>';

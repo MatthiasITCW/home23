@@ -4,21 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Home23</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="home23-dashboard.css">
   <link rel="stylesheet" href="/home23-chat.css">
 </head>
 <body>
+  <div id="particles-js"></div>
   <!-- Header -->
-  <header class="h23-header">
+  <div class="h23-header">
     <div class="h23-header-left">
-      <span class="h23-logo">🧠 <span id="home-name">Home23</span></span>
-      <span class="h23-subtitle" id="home-subtitle">AUTONOMOUS INTELLIGENCE</span>
+      <div class="h23-logo">● Home23</div>
+      <div class="h23-subtitle" id="header-subtitle">AUTONOMOUS INTELLIGENCE · <a href="/home23/vibe-gallery" style="color:inherit;text-decoration:none;">🎨GALLERY</a></div>
     </div>
     <div class="h23-header-right">
-      <span class="h23-time" id="clock"></span>
-      <span class="h23-status" id="system-status">● COSMO active</span>
+      <div class="time-cluster">
+        <div class="time-loc">
+          <span class="time-flag" id="tz1-flag">🇺🇸</span>
+          <span class="time-display" id="tz1-time">--:--</span>
+          <span class="time-tz" id="tz1-label">--</span>
+        </div>
+        <div class="time-loc" id="tz2-container" style="display:none;">
+          <span class="time-flag" id="tz2-flag"></span>
+          <span class="time-display" id="tz2-time">--:--</span>
+          <span class="time-tz" id="tz2-label">--</span>
+        </div>
+      </div>
+      <div class="cosmo-status">
+        <span class="status-dot" id="cosmo-dot"></span>
+        <span id="cosmo-status-text">COSMO</span>
+      </div>
     </div>
-  </header>
+  </div>
 
   <!-- Status pills -->
   <div class="h23-pills" id="status-pills">
@@ -51,14 +67,14 @@
       <div class="h23-grid-top">
         <!-- Cosmo / Thoughts tile (left) -->
         <div class="h23-tile h23-tile-thoughts">
-          <div class="h23-tile-header"><span class="icon">🧠</span> <span id="primary-agent-name">Agent</span></div>
+          <div class="h23-tile-header">🌊 <span id="primary-agent-name">Cosmo</span></div>
           <div class="h23-thought-text" id="home-thought">Loading...</div>
           <div class="h23-thought-meta" id="home-thought-meta"></div>
         </div>
 
         <!-- Vibe tile (center) -->
         <div class="h23-tile h23-tile-vibe">
-          <div class="h23-tile-header" id="vibe-trigger"><span class="icon">🎨</span> Vibe</div>
+          <div class="h23-tile-header"><span id="vibe-trigger">🎨 Vibe</span></div>
           <div class="h23-vibe-image" id="home-vibe-image">
             <span class="h23-vibe-placeholder">Generating...</span>
           </div>
@@ -87,8 +103,8 @@
           </div>
           <!-- Conversation list panel (slides over messages) -->
           <div class="h23-chat-conv-panel" id="chat-conv-panel">
-            <div style="padding:10px 14px;border-bottom:1px solid var(--h23-border);display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:12px;font-weight:600;color:var(--h23-text-secondary);text-transform:uppercase;letter-spacing:0.5px;">History</span>
+            <div style="padding:10px 14px;border-bottom:1px solid var(--glass-border);display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">History</span>
               <button class="h23-chat-expand-btn" onclick="toggleConversationList()" title="Close" style="width:24px;height:24px;font-size:12px;">&#10005;</button>
             </div>
             <div class="h23-chat-conv-list" id="chat-conv-list"></div>
@@ -121,7 +137,10 @@
 
       <!-- Brain Log -->
       <div class="h23-tile h23-tile-brainlog">
-        <div class="h23-tile-header"><span class="icon">🧠</span> BRAIN LOG</div>
+        <div class="h23-brainlog-header">
+          <span class="h23-brainlog-title">🧠 BRAIN LOG</span>
+          <span class="h23-brainlog-stamp" id="brainlog-stamp"></span>
+        </div>
         <div class="h23-brain-log" id="home-brainlog">
           <p class="h23-muted">Loading...</p>
         </div>
@@ -199,6 +218,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
   <script src="/home23-chat.js"></script>
   <script src="home23-dashboard.js"></script>
 </body>
