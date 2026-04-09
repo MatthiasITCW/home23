@@ -109,7 +109,8 @@
 
     const g = window.ForceGraph3D()(container)
       .backgroundColor('rgba(0,0,0,0)')
-      .showNavInfo(false)
+      .showNavInfo(true)
+      .enableNavigationControls(true)
       .nodeLabel(n => {
         const label = escapeHtml(truncate(n.concept, 120));
         const tag = n.tag || 'general';
@@ -123,18 +124,18 @@
       .nodeColor(nodeColor)
       .nodeVal(nodeSize)
       .nodeOpacity(0.92)
-      .nodeResolution(12)
+      .nodeResolution(8)
       .linkColor(edgeColor)
       .linkWidth(edgeWidth)
       .linkOpacity(0.6)
-      .linkDirectionalParticles(e => e.weight > 0.5 ? 2 : 0)
+      .linkDirectionalParticles(e => e.weight > 0.8 ? 1 : 0)
       .linkDirectionalParticleWidth(1)
       .linkDirectionalParticleSpeed(0.004)
       .linkDirectionalParticleColor(edgeColor)
       .d3AlphaDecay(0.02)
       .d3VelocityDecay(0.3)
-      .warmupTicks(80)
-      .cooldownTicks(200)
+      .warmupTicks(50)
+      .cooldownTicks(120)
       .onNodeClick(handleNodeClick)
       .onBackgroundClick(handleBackgroundClick);
 
@@ -333,10 +334,11 @@
           statsEl.textContent = data.meta.nodeCount + ' nodes \u00b7 ' + data.meta.edgeCount + ' edges \u00b7 ' + data.meta.clusterCount + ' clusters';
         }
 
-        // Zoom to fit after layout settles
+        // Start zoomed out, then fit to view
+        graph.cameraPosition({ x: 0, y: 0, z: 800 });
         setTimeout(() => {
-          if (graph) graph.zoomToFit(400, 60);
-        }, 2000);
+          if (graph) graph.zoomToFit(800, 80);
+        }, 1500);
       }
     } catch (err) {
       console.error('[BrainMap] Load failed:', err);

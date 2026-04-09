@@ -204,15 +204,14 @@ body::before {
 }
 
 .h23-tab-evobrew {
-  margin-left: auto;
-  background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: rgba(0, 199, 190, 0.12);
+  color: #4ecdc4;
+  border: 1px solid rgba(0, 199, 190, 0.25);
 }
 
 .h23-tab-evobrew:hover {
-  background: rgba(139, 92, 246, 0.25);
-  color: #c4b5fd;
+  background: rgba(0, 199, 190, 0.22);
+  color: #6ee7de;
 }
 
 #agent-tabs {
@@ -230,13 +229,18 @@ body::before {
 }
 
 .h23-tab-cosmo23 {
-  background: rgba(59, 130, 246, 0.15);
-  color: #93c5fd;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(69, 183, 209, 0.12);
+  color: #45b7d1;
+  border: 1px solid rgba(69, 183, 209, 0.25);
 }
 .h23-tab-cosmo23:hover {
-  background: rgba(59, 130, 246, 0.25);
-  color: #bfdbfe;
+  background: rgba(69, 183, 209, 0.22);
+  color: #7dd3e8;
+}
+
+/* Settings pushes right, cosmo23 + evobrew follow */
+.h23-tab-settings {
+  margin-left: auto;
 }
 /* COSMO iframe */
 #cosmo23-frame {
@@ -1257,10 +1261,125 @@ body::before {
   font-size: 0.9rem;
 }
 
+/* ── About Page ── */
+
+.h23-about {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 0 40px;
+}
+
+.h23-about h2 {
+  font-size: 2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 4px;
+}
+
+.h23-about-tagline {
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+  font-style: italic;
+}
+
+.h23-about-section {
+  margin-bottom: 28px;
+}
+
+.h23-about-section h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+}
+
+.h23-about-section p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.h23-about-section code {
+  background: rgba(255,255,255,0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  color: var(--accent-blue);
+}
+
+.h23-about-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.h23-about-card {
+  background: var(--glass-primary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.h23-about-card-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.h23-about-card p {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.h23-about-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.h23-about-guide-item {
+  padding: 8px 12px;
+  background: var(--glass-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.h23-about-guide-item strong {
+  color: var(--text-primary);
+}
+
+.h23-about-footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {
   .h23-grid-top {
+    grid-template-columns: 1fr;
+  }
+  .h23-about-grid {
     grid-template-columns: 1fr;
   }
   .h23-time { font-size: 24px; }
