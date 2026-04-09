@@ -4,7 +4,7 @@
 
 **Goal:** Replace the flat dark theme with the ReginaCosmo glass-morphism design language across all Home23 dashboard pages.
 
-**Architecture:** CSS variable overhaul + targeted HTML changes for header/emoji. The ReginaCosmo source at `/Users/jtr/_JTR23_/cosmo-home/dashboard/public/styles.css` and `index.html` is the reference. All work happens in `/Users/jtr/_JTR23_/release/home23/`.
+**Architecture:** CSS variable overhaul + targeted HTML changes for header/emoji. The ReginaCosmo source at `the ReginaCosmo source styles.css` and `index.html` is the reference. All work happens in `$TARGET/`.
 
 **Tech Stack:** CSS (custom properties, backdrop-filter, gradients), vanilla HTML/JS, Google Fonts (Inter)
 
@@ -110,7 +110,7 @@ Open `http://localhost:5002/home23` (or load the file locally). The background s
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-dashboard.css
 git commit -m "style: ReginaCosmo CSS variables and space gradient background"
 ```
@@ -181,7 +181,7 @@ Reload the dashboard. Subtle animated dots should float across the background â€
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-dashboard.html engine/src/dashboard/home23-dashboard.js
 git commit -m "style: particles.js star field matching ReginaCosmo"
 ```
@@ -340,7 +340,7 @@ Reload dashboard. Tiles should be translucent with the space background visible 
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-dashboard.css
 git commit -m "style: glass-morphism tiles with backdrop blur and shadow"
 ```
@@ -583,7 +583,7 @@ Reload dashboard. Check:
 - [ ] **Step 10: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-dashboard.html engine/src/dashboard/home23-dashboard.css engine/src/dashboard/home23-dashboard.js
 git commit -m "style: ReginaCosmo header, clocks, pills, tabs, emoji tile headers"
 ```
@@ -623,7 +623,7 @@ Open `http://localhost:5002/home23/settings`. Settings cards should be glass wit
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-settings.css engine/src/dashboard/home23-settings.html
 git commit -m "style: glass treatment for settings page"
 ```
@@ -670,7 +670,7 @@ Both should have glass containers with space background.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-chat.css engine/src/dashboard/home23-chat.html
 git commit -m "style: glass treatment for chat tile and standalone page"
 ```
@@ -711,7 +711,7 @@ Check:
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-vibe/gallery.html engine/src/dashboard/home23-welcome.html
 git commit -m "style: glass treatment for gallery and welcome pages"
 ```
@@ -773,7 +773,7 @@ Click the Intelligence tab. Cards should be glass with space background visible.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add engine/src/dashboard/home23-dashboard.css
 git commit -m "style: glass treatment for intelligence tab"
 ```
@@ -790,7 +790,7 @@ Remove any remaining old variable references, clean up, do a full visual pass.
 - [ ] **Step 1: Search for remaining old variables**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 grep -n "h23-bg\|h23-text\|h23-accent\|h23-green\|h23-orange\|h23-red\|h23-pill-bg\|h23-tab-active\|h23-border\|h23-bg-card\|h23-bg-header" engine/src/dashboard/home23-dashboard.css
 ```
 
@@ -833,7 +833,7 @@ Screenshot each for comparison with the ReginaCosmo reference.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/jtr/_JTR23_/release/home23
+cd $TARGET
 git add -A
 git commit -m "style: final polish â€” cleanup old variables, scrollbar, responsive"
 ```
