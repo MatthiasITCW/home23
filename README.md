@@ -6,8 +6,8 @@ Home23 is not another chatbot framework. It is a complete AI operating system th
 
 Four integrated systems, one install:
 
-- **Agent** — always-on AI with a cognitive loop, 26+ tools, Telegram channel, and an LLM-powered conversation interface
-- **COSMO 2.3** — multi-phase research engine with guided runs, brain integration, and a 9-tab UI
+- **Agent** — always-on AI with a cognitive loop, 30+ tools (including a full research toolkit for driving COSMO), Telegram channel, and an LLM-powered conversation interface
+- **COSMO 2.3** — multi-phase research engine with guided runs, brain integration, and a 9-tab UI. Fully agent-drivable: your agent can launch runs, monitor them, query completed brains, and compile findings into its own memory
 - **Evobrew** — AI-powered IDE with brain connectivity, multi-provider LLM support, and code editing
 - **Dashboard** — OS home screen with real-time thoughts, chat, intelligence synthesis, settings, and full access to COSMO and Evobrew
 
@@ -138,6 +138,47 @@ The cognitive engine runs continuous think-consolidate-dream cycles. During waki
 Documents fed through the feeder are LLM-synthesized before brain entry: raw text becomes structured knowledge with extracted concepts, relationships, and insights. A brain knowledge index is maintained automatically as a human-readable map of everything the agent knows.
 
 The dashboard is the OS home screen. It shows real-time thoughts, provides a native chat interface with full thinking/tool visibility, runs intelligence synthesis on a schedule, and gives access to COSMO research and Evobrew IDE — all from a single URL.
+
+## Agent Research Toolkit
+
+Your agent has 11 atomic tools for driving COSMO 2.3 research runs directly from a chat message or autonomous action. Each tool maps to one COSMO HTTP endpoint:
+
+| Tool | Purpose |
+|---|---|
+| `research_list_brains` | Enumerate available research brains with node/cycle counts |
+| `research_query_brain` | Query ONE brain (modes: quick / full / expert / dive) |
+| `research_search_all_brains` | Query the top-N most recent brains in parallel |
+| `research_launch` | Start a new research run with full parameters (topic, **context**, cycles, models) |
+| `research_continue` | Resume a completed brain with new focus |
+| `research_stop` | Gracefully stop the active run |
+| `research_watch_run` | Cursor-paginated log tail during a run |
+| `research_get_brain_summary` | Aggregated executive/goals/trajectory overview |
+| `research_get_brain_graph` | Knowledge graph structure (nodes, edges, clusters) |
+| `research_compile_brain` | Save whole-brain synthesis to your workspace (auto-ingested into agent memory) |
+| `research_compile_section` | Save one specific goal or insight as a focused memory node |
+
+The workflow policy lives in a skill file (`workspace/COSMO_RESEARCH.md`) that is loaded into every agent turn — it tells the agent when to use which mode, why `context` is critical for guided runs, and the rules (never double-launch, always check existing brains first, prefer section compiles for focused knowledge).
+
+When a research run is active, the agent's system prompt automatically receives a live `[COSMO ACTIVE RUN]` block with the run name, topic, and status — so it can't accidentally launch a second one or lose track of what's in flight.
+
+**Typical interaction:**
+
+```
+You:     "Research the invention of the Post-it Note. Keep it light — general audience,
+          5 cycles, Wikipedia sources fine."
+
+Agent:   [launches with context → waits → compiles → reports]
+         "Launched run 'invention-of-the-post-it-note' (5 cycles, gpt-5.2).
+          … [10 minutes later] …
+          Compiled the synthesis to workspace/research/. Key finding:
+          Post-it Note is a two-stage invention — Spencer Silver's 1968
+          repositionable adhesive plus Art Fry's 1974 hymnal bookmark
+          application, commercialized in the late 1970s."
+```
+
+The compiled research lands in `instances/<agent>/workspace/research/` and the engine feeder automatically ingests it as a permanent memory node with citations back to the COSMO brain. Your agent now knows that fact forever.
+
+See `docs/design/STEP16-AGENT-COSMO-TOOLKIT-DESIGN.md` for the full design, schemas, and smoke test procedure.
 
 ## License
 
