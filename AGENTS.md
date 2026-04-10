@@ -26,37 +26,48 @@ curl -s http://localhost:5002/api/state | python3 -c "import sys,json; d=json.lo
 
 ## Priority Work
 
-### 1. COSMO 2.3 Integration (NEXT SESSION)
+### 1. Agent ↔ COSMO 2.3 Full Toolkit (NEXT SESSION)
 
-Make COSMO 2.3 work properly as part of the Home23 AI OS — both for the user (dashboard tab, direct UI access) and for agents (research tool, brain compilation).
+COSMO 2.3 integration is live and verified end-to-end (2026-04-10 smoke test: 5 cycles, 26 nodes, 84 edges, real findings, clean shutdown, compile-to-brain working). But jerry's `research` tool only exposes 4 coarse actions covering a sliver of COSMO's ~15 HTTP endpoints — and `launch` doesn't even forward `context`, forcing COSMO's guided planner to invent its framing from model priors.
 
-**What exists:**
-- cosmo23 bundled at `cosmo23/`, PM2 process `home23-cosmo23` on port 43210
-- Dashboard COSMO tab embeds cosmo23 UI via iframe
-- Agent has a `research` tool with search/launch/status/compile actions
-- Design docs at `docs/design/STEP9-COSMO23-INTEGRATION-DESIGN.md` and `STEP9B-DASHBOARD-COSMO-EMBED-DESIGN.md`
+**Goal:** Expand jerry into a real COSMO collaborator. Each action should map cleanly to one COSMO endpoint with a focused schema.
 
-**What to verify/fix:**
-1. Is cosmo23 accessible at http://localhost:43210? Does the UI load?
-2. Does the agent's research tool launch COSMO runs?
-3. Can completed research runs compile into the agent brain?
-4. Do research brains appear in evobrew's brain picker?
-5. Does the COSMO tab iframe in the dashboard work?
-6. API keys — does cosmo23 read from Home23's secrets.yaml?
-7. Models — does cosmo23 use models from home.yaml?
+**Target action set:**
 
-**Key files:**
-- `cosmo23/` — bundled COSMO 2.3 installation
-- `cosmo23/.cosmo23-config/config.json` — COSMO config (auto-generated?)
-- `src/agent/tools/research.ts` — agent's research tool
-- `engine/src/dashboard/home23-dashboard.js` — COSMO tab iframe logic
+| Action | Endpoint | Purpose |
+|---|---|---|
+| `search_brains` | `GET /api/brains` + `POST /api/brain/:name/query` | list + query top N |
+| `launch` | `POST /api/launch` | full params: topic, **context**, depth, cycles, maxConcurrent, models |
+| `continue` | `POST /api/continue/:brainId` | resume a completed brain with overrides |
+| `watch` | `GET /api/watch/logs?after=<cursor>` | cursor-based log streaming during a run |
+| `stop` | `POST /api/stop` | clean kill |
+| `get_brain_summary` | `GET /api/brain/:name/intelligence/{executive,goals,trajectory}` | high-level overview |
+| `get_brain_graph` | `GET /api/brain/:name/graph` | nodes/edges |
+| `query_brain` | `POST /api/brain/:name/query` (modes: quick/full/expert/dive) | PGS/synthesis query |
+| `compile_brain` | query + workspace write | whole-brain compile (current behavior) |
+| `compile_section` | targeted `intelligence/*` + workspace write | compile one goal/insight/agent output |
 
-### 2. Done: Engine Sleep/Wake (FIXED)
+**Steps:**
+1. Write `docs/design/STEP16-AGENT-COSMO-TOOLKIT-DESIGN.md` — schemas, endpoint map, when-to-use guidance, situational awareness injection
+2. Implement in `src/agent/tools/research.ts` (or split into `src/agent/tools/research/*.ts` if it gets big)
+3. Smoke test each action individually, then a composite: jerry (via dashboard chat) launches with proper context, watches it, queries mid-flight, compiles sections
+
+**Key references:**
+- `docs/design/COSMO23-VENDORED-PATCHES.md` — CRITICAL: patches to vendored `cosmo23/` source, must survive `cli/home23.js cosmo23 update`
+- `cosmo23/server/CLAUDE.md` — authoritative route map for cosmo23 server API
+- `cosmo23/server/lib/brains-router.js` — brain listing + continuation endpoints
+- `src/agent/tools/research.ts` — current 4-action tool
+
+### 2. Done: COSMO 2.3 Integration (2026-04-10 FIXED + VERIFIED)
+
+Config unification patches, env-first key resolution, engine heap bump from 768MB→4GB, dashboard Tailscale timeouts, ENGINE indicator. Smoke test: 5-cycle gpt-5.2 run completed clean with 26 brain nodes and 84 edges. Compile path verified end-to-end. See `docs/design/COSMO23-VENDORED-PATCHES.md` for vendored patches that MUST be re-verified on any cosmo23 update.
+
+### 3. Done: Engine Sleep/Wake (FIXED)
 
 Sleep/wake rebalanced for Home23. Config-driven, ~90s naps, fast maintenance always runs.
 See `docs/design/SLEEP-WAKE-DESIGN.md`.
 
-### 3. Done: Live Activity Indicator (FIXED)
+### 4. Done: Live Activity Indicator (FIXED)
 
 Engine pulse bar on dashboard via WebSocket (port 5001). Shows state, phase, energy, cycle, ago timer.
 
