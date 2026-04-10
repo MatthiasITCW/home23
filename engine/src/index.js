@@ -568,6 +568,8 @@ async function main() {
     await realtimeServer.start();
     global.realtimeServer = realtimeServer;
     orchestrator.realtimeServer = realtimeServer;
+    // Wire orchestrator so /admin/feeder/* routes can reach the live feeder
+    realtimeServer.setOrchestrator(orchestrator);
   } catch (error) {
     logger.warn('⚠️  Realtime WebSocket server failed to start (non-fatal)', {
       port: realtimePort,

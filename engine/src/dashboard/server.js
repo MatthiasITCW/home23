@@ -824,6 +824,87 @@ class DashboardServer {
       }
     });
 
+    // ── Feeder tab: upload / flush / watch-path management ──
+    // Upload: writes files directly to <runPath>/ingestion/documents/<label>/.
+    //   The engine's chokidar watcher on that directory picks them up
+    //   automatically within ~500ms. No inter-process coordination needed.
+    // Flush / watch-path: proxied to the engine's admin HTTP endpoints on
+    //   the realtime server port (REALTIME_PORT, default 5001) because only
+    //   the engine process holds the live feeder instance.
+    try {
+      const multer = require('multer');
+      const fsSync = require('fs');
+      const runtimeDir = process.env.COSMO_RUNTIME_DIR || path.join(__dirname, '..', 'runtime');
+      const ingestBase = path.join(runtimeDir, 'ingestion', 'documents');
+
+      const sanitizeLabel = (raw) => String(raw || 'dropzone')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '_')
+        .slice(0, 40) || 'dropzone';
+
+      const uploadStorage = multer.diskStorage({
+        destination: (req, file, cb) => {
+          const label = sanitizeLabel(req.body?.label);
+          const dest = path.join(ingestBase, label);
+          fsSync.mkdirSync(dest, { recursive: true });
+          cb(null, dest);
+        },
+        filename: (req, file, cb) => {
+          // Preserve original filename; prefix timestamp only if collision
+          const label = sanitizeLabel(req.body?.label);
+          const dest = path.join(ingestBase, label);
+          const base = file.originalname || `upload-${Date.now()}`;
+          const target = path.join(dest, base);
+          if (fsSync.existsSync(target)) {
+            const ts = new Date().toISOString().replace(/[:.]/g, '-');
+            cb(null, `${ts}-${base}`);
+          } else {
+            cb(null, base);
+          }
+        },
+      });
+      const feederUpload = multer({
+        storage: uploadStorage,
+        limits: { fileSize: 100 * 1024 * 1024 }, // 100MB per file
+      });
+
+      this.app.post('/home23/feeder/upload', feederUpload.array('files', 20), (req, res) => {
+        const files = (req.files || []).map((f) => ({
+          name: f.originalname,
+          stored: f.filename,
+          size: f.size,
+          dest: f.destination,
+        }));
+        res.json({ ok: true, count: files.length, files, label: sanitizeLabel(req.body?.label) });
+      });
+
+      // Proxy helper: forward a JSON request to the engine's admin endpoint
+      const realtimePort = parseInt(process.env.REALTIME_PORT || '5001', 10);
+      const adminUrl = (p) => `http://localhost:${realtimePort}${p}`;
+      const proxyJson = async (req, res, method, path) => {
+        try {
+          const r = await fetch(adminUrl(path), {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: method === 'POST' ? JSON.stringify(req.body || {}) : undefined,
+            signal: AbortSignal.timeout(10_000),
+          });
+          const body = await r.json().catch(() => ({ ok: false, error: 'invalid response' }));
+          res.status(r.status).json(body);
+        } catch (err) {
+          res.status(502).json({ ok: false, error: `Engine admin unreachable: ${err.message}` });
+        }
+      };
+
+      this.app.get('/home23/feeder/live-status', (req, res) => proxyJson(req, res, 'GET', '/admin/feeder/status'));
+      this.app.post('/home23/feeder/flush', (req, res) => proxyJson(req, res, 'POST', '/admin/feeder/flush'));
+      this.app.post('/home23/feeder/add-watch-path', (req, res) => proxyJson(req, res, 'POST', '/admin/feeder/addWatchPath'));
+      this.app.post('/home23/feeder/remove-watch-path', (req, res) => proxyJson(req, res, 'POST', '/admin/feeder/removeWatchPath'));
+      this.app.post('/home23/feeder/update-compiler', (req, res) => proxyJson(req, res, 'POST', '/admin/feeder/updateCompiler'));
+    } catch (err) {
+      console.warn('[Feeder routes] Failed to mount:', err.message);
+    }
+
     // Home23 Settings API
     try {
       const { createSettingsRouter } = require('./home23-settings-api.js');

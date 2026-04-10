@@ -26,6 +26,7 @@
     <button class="h23s-tab active" data-stab="providers">Providers</button>
     <button class="h23s-tab" data-stab="agents">Agents</button>
     <button class="h23s-tab" data-stab="models">Models</button>
+    <button class="h23s-tab" data-stab="feeder">Feeder</button>
     <button class="h23s-tab" data-stab="system">System</button>
   </nav>
 
@@ -184,6 +185,158 @@
         <button class="h23s-btn-primary" id="btn-save-models">Save</button>
         <span class="h23s-save-status" id="models-status"></span>
       </div>
+    </div>
+
+    <!-- Feeder Panel -->
+    <div class="h23s-panel" id="panel-feeder">
+      <h2 class="h23s-panel-title">Document Feeder</h2>
+      <p class="h23s-panel-desc">
+        Configure what documents get ingested into your agent's brain and how they're processed.
+        Settings apply host-wide to all Home23 agents (stored in <code>configs/base-engine.yaml</code>).
+        Some changes hot-apply; others require an engine restart.
+      </p>
+
+      <!-- Live status footer (also pinned at top for visibility) -->
+      <div class="h23s-section" id="feeder-live-status-section">
+        <h3 class="h23s-section-title">Live Status</h3>
+        <div class="h23s-field-row" id="feeder-live-status">
+          <div class="h23s-field"><label>Started</label><div id="fd-live-started">—</div></div>
+          <div class="h23s-field"><label>Watchers</label><div id="fd-live-watchers">—</div></div>
+          <div class="h23s-field"><label>Files</label><div id="fd-live-files">—</div></div>
+          <div class="h23s-field"><label>Compiled</label><div id="fd-live-compiled">—</div></div>
+          <div class="h23s-field"><label>Pending</label><div id="fd-live-pending">—</div></div>
+          <div class="h23s-field"><label>Converter</label><div id="fd-live-converter">—</div></div>
+        </div>
+        <div class="h23s-action-row" style="margin-top:8px;">
+          <button class="h23s-btn-secondary" id="btn-feeder-refresh">Refresh</button>
+          <button class="h23s-btn-secondary" id="btn-feeder-flush">Force Flush Now</button>
+          <span class="h23s-save-status" id="feeder-action-status"></span>
+        </div>
+      </div>
+
+      <!-- Paths & Patterns -->
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Paths &amp; Patterns</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">
+          The orchestrator always watches the drop zone and the agent's workspace directory.
+          Add additional paths here to ingest files from elsewhere on your machine.
+        </p>
+
+        <div id="fd-auto-paths" style="margin-bottom:12px;"></div>
+
+        <label class="h23s-section-title" style="font-size:0.85em;">Additional Watch Paths</label>
+        <div id="fd-watch-paths"></div>
+        <button class="h23s-btn-secondary" id="btn-fd-add-path" style="margin-top:8px;">+ Add Watch Path</button>
+
+        <div class="h23s-field" style="margin-top:16px;">
+          <label>Exclude Patterns (one per line, glob syntax)</label>
+          <textarea id="fd-exclude-patterns" rows="4" placeholder="node_modules/**&#10;.git/**&#10;*.pyc"></textarea>
+        </div>
+      </div>
+
+      <!-- Frequency & Batching -->
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Frequency &amp; Batching</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">Drives when pending documents are flushed from the ingestion queue to the live brain. Interactive uploads always trigger a debounced fast flush regardless of these settings.</p>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>Flush interval (seconds)</label>
+            <input type="number" id="fd-flush-interval" min="5" max="3600" value="30">
+          </div>
+          <div class="h23s-field">
+            <label>Batch size</label>
+            <input type="number" id="fd-batch-size" min="1" max="500" value="20">
+          </div>
+          <div class="h23s-field">
+            <label>Max chunk size (chars)</label>
+            <input type="number" id="fd-chunk-size" min="500" max="10000" value="3000">
+          </div>
+          <div class="h23s-field">
+            <label>Chunk overlap (chars)</label>
+            <input type="number" id="fd-chunk-overlap" min="0" max="2000" value="300">
+          </div>
+        </div>
+      </div>
+
+      <!-- Compiler -->
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Document Compiler</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">
+          The compiler runs raw documents through an LLM to extract concepts, relationships, and insights
+          before they enter your agent's brain. Disabling means documents go in as raw chunks — lower quality, more noise.
+        </p>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>Enabled</label>
+            <input type="checkbox" id="fd-compiler-enabled" checked>
+          </div>
+          <div class="h23s-field" style="flex:2;">
+            <label>Compiler Model</label>
+            <input type="text" id="fd-compiler-model" value="minimax-m2.7" placeholder="e.g., minimax-m2.7, gpt-5-mini">
+          </div>
+        </div>
+      </div>
+
+      <!-- Converter -->
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Binary Format Converter</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">
+          Uses MarkItDown (Python) to convert PDFs, DOCX, images, audio, and other binary formats to markdown before ingestion.
+          Requires <code>pip install markitdown</code>. Vision model needs OpenAI API access.
+        </p>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>Enabled</label>
+            <input type="checkbox" id="fd-converter-enabled" checked>
+          </div>
+          <div class="h23s-field">
+            <label>Vision Model</label>
+            <input type="text" id="fd-converter-vision" value="gpt-4o-mini">
+          </div>
+          <div class="h23s-field">
+            <label>Python Path</label>
+            <input type="text" id="fd-converter-python" value="python3">
+          </div>
+          <div class="h23s-field">
+            <label>Status</label>
+            <div id="fd-converter-status">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save actions + restart banner -->
+      <div class="h23s-actions">
+        <button class="h23s-btn-primary" id="btn-save-feeder">Save Feeder Settings</button>
+        <span class="h23s-save-status" id="feeder-status"></span>
+      </div>
+      <div class="h23s-section" id="feeder-restart-banner" style="display:none; margin-top:8px; padding:12px; background:rgba(251,146,60,0.1); border:1px solid #fb923c; border-radius:8px;">
+        <strong style="color:#fb923c;">⚠️ Engine restart required</strong>
+        <p style="margin:4px 0 8px 0; font-size:0.9em;">Some settings you changed need a full engine restart to take effect: <span id="fd-restart-list"></span></p>
+        <button class="h23s-btn-secondary" id="btn-feeder-restart-engine">Restart Engine Now</button>
+      </div>
+
+      <!-- Drop zone -->
+      <div class="h23s-section" style="margin-top:32px;">
+        <h3 class="h23s-section-title">Drop Zone</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">
+          Drag and drop files to ingest them into your agent's brain. Files land in the watched
+          drop zone directory and are auto-processed within a second. Max 100MB per file, 20 files per upload.
+        </p>
+        <div class="h23s-field" style="max-width:300px;">
+          <label>Label (optional — groups uploads)</label>
+          <input type="text" id="fd-upload-label" value="dropzone" placeholder="dropzone">
+        </div>
+        <div class="h23s-dropzone" id="fd-dropzone">
+          <div class="h23s-dropzone-inner">
+            <div class="h23s-dropzone-icon">⬇</div>
+            <div class="h23s-dropzone-text">Drop files here or click to browse</div>
+            <div class="h23s-dropzone-subtext">Any format — text files go direct, binaries via the converter</div>
+          </div>
+          <input type="file" id="fd-file-input" multiple style="display:none;">
+        </div>
+        <div id="fd-upload-progress"></div>
+      </div>
+
     </div>
 
     <!-- System Panel -->

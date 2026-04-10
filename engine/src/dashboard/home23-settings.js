@@ -817,6 +817,326 @@ async function buildTS() {
   }
 }
 
+// ── Feeder tab (STEP 17) ──
+
+let feederPollTimer = null;
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadFeeder() {
+  try {
+    const res = await fetch(`${API}/feeder`);
+    const data = await res.json();
+    renderFeeder(data);
+  } catch (err) {
+    console.error('Failed to load feeder config:', err);
+  }
+  loadFeederLiveStatus();
+}
+
+function renderFeeder(data) {
+  const f = data.feeder || {};
+
+  // Auto watch paths (read-only)
+  const autoHost = document.getElementById('fd-auto-paths');
+  if (autoHost) {
+    const autoList = (data.autoWatchPaths || [])
+      .map((p) => `<div class="h23s-field" style="padding:6px 10px; background:rgba(0,122,255,0.08); border-radius:6px; margin-bottom:4px;">
+        <div style="font-size:0.75em; color:var(--accent-blue); text-transform:uppercase;">${escapeHtml(p.label)}</div>
+        <div style="font-family:monospace; font-size:0.85em;">${escapeHtml(p.path)}</div>
+      </div>`)
+      .join('');
+    autoHost.innerHTML = autoList || '<em style="opacity:0.6;">No auto-watched paths</em>';
+  }
+
+  // Additional watch paths
+  const pathsHost = document.getElementById('fd-watch-paths');
+  const paths = Array.isArray(f.additionalWatchPaths) ? f.additionalWatchPaths : [];
+  pathsHost.innerHTML = paths.length
+    ? paths.map((p, i) => renderWatchPathRow(typeof p === 'string' ? { path: p } : p, i)).join('')
+    : '<em style="opacity:0.6;">No additional watch paths configured.</em>';
+
+  // Exclude patterns
+  document.getElementById('fd-exclude-patterns').value = (f.excludePatterns || []).join('\n');
+
+  // Frequency + batching
+  document.getElementById('fd-flush-interval').value = f.flush?.intervalSeconds ?? 30;
+  document.getElementById('fd-batch-size').value = f.flush?.batchSize ?? 20;
+  document.getElementById('fd-chunk-size').value = f.chunking?.maxChunkSize ?? 3000;
+  document.getElementById('fd-chunk-overlap').value = f.chunking?.overlap ?? 300;
+
+  // Compiler
+  document.getElementById('fd-compiler-enabled').checked = f.compiler?.enabled !== false;
+  document.getElementById('fd-compiler-model').value = f.compiler?.model || 'minimax-m2.7';
+
+  // Converter
+  document.getElementById('fd-converter-enabled').checked = f.converter?.enabled !== false;
+  document.getElementById('fd-converter-vision').value = f.converter?.visionModel || 'gpt-4o-mini';
+  document.getElementById('fd-converter-python').value = f.converter?.pythonPath || 'python3';
+}
+
+function renderWatchPathRow(entry, idx) {
+  const p = typeof entry === 'string' ? entry : (entry.path || '');
+  const label = typeof entry === 'string' ? '' : (entry.label || '');
+  return `<div class="h23s-field-row" data-fd-path-row="${idx}" style="align-items:flex-end; margin-bottom:6px;">
+    <div class="h23s-field" style="flex:3;">
+      <label>Path</label>
+      <input type="text" data-fd-path-input value="${escapeHtml(p)}" placeholder="/absolute/path">
+    </div>
+    <div class="h23s-field" style="flex:1;">
+      <label>Label</label>
+      <input type="text" data-fd-path-label value="${escapeHtml(label)}" placeholder="workspace">
+    </div>
+    <button class="h23s-btn-secondary" data-fd-remove-path="${idx}">Remove</button>
+  </div>`;
+}
+
+function collectFeederConfig() {
+  const pathRows = Array.from(document.querySelectorAll('[data-fd-path-row]'));
+  const additionalWatchPaths = pathRows
+    .map((row) => {
+      const path = row.querySelector('[data-fd-path-input]').value.trim();
+      const label = row.querySelector('[data-fd-path-label]').value.trim();
+      if (!path) return null;
+      return label ? { path, label } : { path };
+    })
+    .filter(Boolean);
+
+  const excludePatterns = document.getElementById('fd-exclude-patterns').value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return {
+    additionalWatchPaths,
+    excludePatterns,
+    flush: {
+      intervalSeconds: parseInt(document.getElementById('fd-flush-interval').value, 10) || 30,
+      batchSize: parseInt(document.getElementById('fd-batch-size').value, 10) || 20,
+    },
+    chunking: {
+      maxChunkSize: parseInt(document.getElementById('fd-chunk-size').value, 10) || 3000,
+      overlap: parseInt(document.getElementById('fd-chunk-overlap').value, 10) || 300,
+    },
+    compiler: {
+      enabled: document.getElementById('fd-compiler-enabled').checked,
+      model: document.getElementById('fd-compiler-model').value.trim() || 'minimax-m2.7',
+    },
+    converter: {
+      enabled: document.getElementById('fd-converter-enabled').checked,
+      visionModel: document.getElementById('fd-converter-vision').value.trim() || 'gpt-4o-mini',
+      pythonPath: document.getElementById('fd-converter-python').value.trim() || 'python3',
+    },
+  };
+}
+
+async function saveFeeder() {
+  const statusEl = document.getElementById('feeder-status');
+  const feeder = collectFeederConfig();
+  try {
+    const res = await fetch(`${API}/feeder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feeder }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      statusEl.style.color = 'var(--accent-red)';
+      return;
+    }
+
+    // Hot-apply: for compiler changes and added watch paths, call the live feeder directly
+    const applied = data.applied || [];
+    const hotCompiler = applied.includes('compiler');
+    const addedPaths = applied.filter((a) => a.startsWith('watchPath:+'));
+
+    if (hotCompiler) {
+      try {
+        await fetch('/home23/feeder/update-compiler', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: feeder.compiler.enabled, model: feeder.compiler.model }),
+        });
+      } catch { /* non-fatal */ }
+    }
+    for (const addStr of addedPaths) {
+      const p = addStr.slice('watchPath:+'.length);
+      const entry = feeder.additionalWatchPaths.find((w) => w.path === p);
+      try {
+        await fetch('/home23/feeder/add-watch-path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: p, label: entry?.label || null }),
+        });
+      } catch { /* non-fatal */ }
+    }
+
+    // Restart banner
+    const banner = document.getElementById('feeder-restart-banner');
+    const list = document.getElementById('fd-restart-list');
+    if ((data.requiresRestart || []).length > 0) {
+      banner.style.display = '';
+      list.textContent = data.requiresRestart.join(', ');
+    } else {
+      banner.style.display = 'none';
+    }
+
+    statusEl.textContent = 'Saved ' + (applied.length ? `(${applied.length} hot-applied)` : '');
+    statusEl.style.color = 'var(--accent-green)';
+    setTimeout(() => { statusEl.textContent = ''; }, 4000);
+    loadFeederLiveStatus();
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--accent-red)';
+  }
+}
+
+async function loadFeederLiveStatus() {
+  try {
+    const [liveRes, summaryRes] = await Promise.all([
+      fetch('/home23/feeder/live-status').catch(() => null),
+      fetch('/home23/feeder-status').catch(() => null),
+    ]);
+
+    let started = '—', watchers = '—', converter = '—';
+    if (liveRes && liveRes.ok) {
+      const live = await liveRes.json();
+      if (live.ok && live.status) {
+        started = live.status.started ? '✓ running' : '✗ stopped';
+        watchers = String(live.status.watching?.length ?? 0);
+        const cv = live.status.converter;
+        converter = cv?.available ? `✓ ${cv.visionModel || ''}` : '✗ unavailable';
+      }
+    } else {
+      started = 'engine unreachable';
+    }
+    document.getElementById('fd-live-started').textContent = started;
+    document.getElementById('fd-live-watchers').textContent = watchers;
+    document.getElementById('fd-live-converter').textContent = converter;
+    document.getElementById('fd-converter-status').textContent = converter;
+
+    if (summaryRes && summaryRes.ok) {
+      const summary = await summaryRes.json();
+      const first = (summary.feeders || [])[0] || {};
+      document.getElementById('fd-live-files').textContent = `${first.processedFiles ?? 0} / ${first.totalFiles ?? 0}`;
+      document.getElementById('fd-live-compiled').textContent = String(first.compiledCount ?? 0);
+      document.getElementById('fd-live-pending').textContent = String(first.pendingCount ?? 0);
+    }
+  } catch (err) {
+    console.warn('feeder status load failed:', err.message);
+  }
+}
+
+async function feederForceFlush() {
+  const statusEl = document.getElementById('feeder-action-status');
+  statusEl.textContent = 'Flushing…';
+  try {
+    const res = await fetch('/home23/feeder/flush', { method: 'POST' });
+    const data = await res.json();
+    statusEl.textContent = data.ok ? 'Flushed' : ('Error: ' + (data.error || 'unknown'));
+    statusEl.style.color = data.ok ? 'var(--accent-green)' : 'var(--accent-red)';
+    setTimeout(() => loadFeederLiveStatus(), 500);
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--accent-red)';
+  }
+}
+
+function setupFeederDropzone() {
+  const dz = document.getElementById('fd-dropzone');
+  const input = document.getElementById('fd-file-input');
+  if (!dz || !input) return;
+
+  dz.addEventListener('click', () => input.click());
+
+  dz.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dz.classList.add('drag-over');
+  });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length) uploadFiles(files);
+  });
+
+  input.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) uploadFiles(files);
+    input.value = '';
+  });
+}
+
+async function uploadFiles(files) {
+  const progressHost = document.getElementById('fd-upload-progress');
+  const label = (document.getElementById('fd-upload-label').value || 'dropzone').trim();
+
+  const rowId = `upload-${Date.now()}`;
+  progressHost.insertAdjacentHTML(
+    'afterbegin',
+    `<div class="h23s-field" id="${rowId}" style="margin-top:8px;">
+      <div style="font-size:0.85em;">Uploading ${files.length} file(s) to "${escapeHtml(label)}"…</div>
+    </div>`
+  );
+  const row = document.getElementById(rowId);
+
+  try {
+    const fd = new FormData();
+    fd.append('label', label);
+    for (const f of files) fd.append('files', f, f.name);
+
+    const res = await fetch('/home23/feeder/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) {
+      row.innerHTML = `<div style="color:var(--accent-red);">Upload failed: ${escapeHtml(data.error || 'unknown')}</div>`;
+      return;
+    }
+    const fileList = (data.files || []).map((f) => `<div style="font-family:monospace; font-size:0.8em; opacity:0.8;">→ ${escapeHtml(f.name)} (${Math.round(f.size / 1024)}KB)</div>`).join('');
+    row.innerHTML = `<div style="color:var(--accent-green);">✓ Uploaded ${data.count} file(s) to ${escapeHtml(data.label)}. Feeder will pick them up within ~1s.</div>${fileList}`;
+    // Poll for ingestion
+    setTimeout(() => loadFeederLiveStatus(), 1500);
+    setTimeout(() => loadFeederLiveStatus(), 4000);
+  } catch (err) {
+    row.innerHTML = `<div style="color:var(--accent-red);">Upload error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function restartEngine() {
+  const statusEl = document.getElementById('feeder-action-status');
+  statusEl.textContent = 'Restarting engine…';
+  try {
+    // Best-effort: use the existing PM2-restart pattern already in the settings API.
+    // If no dedicated endpoint exists, surface the CLI command to the user.
+    statusEl.innerHTML = 'Open a terminal and run: <code>pm2 restart home23-$(whoami)</code> — or use the Agents tab stop/start buttons.';
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+}
+
+function setupFeederHandlers() {
+  document.getElementById('btn-save-feeder')?.addEventListener('click', saveFeeder);
+  document.getElementById('btn-feeder-refresh')?.addEventListener('click', loadFeederLiveStatus);
+  document.getElementById('btn-feeder-flush')?.addEventListener('click', feederForceFlush);
+  document.getElementById('btn-feeder-restart-engine')?.addEventListener('click', restartEngine);
+  document.getElementById('btn-fd-add-path')?.addEventListener('click', () => {
+    const host = document.getElementById('fd-watch-paths');
+    if (host.querySelector('em')) host.innerHTML = '';
+    const idx = host.querySelectorAll('[data-fd-path-row]').length;
+    host.insertAdjacentHTML('beforeend', renderWatchPathRow({}, idx));
+  });
+  document.getElementById('fd-watch-paths')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-fd-remove-path]');
+    if (!btn) return;
+    btn.closest('[data-fd-path-row]')?.remove();
+  });
+  setupFeederDropzone();
+}
+
 // ── Init ──
 
 async function init() {
@@ -826,6 +1146,7 @@ async function init() {
   loadProviders();
   loadAgents();
   loadSystem();
+  loadFeeder();
 
   document.getElementById('btn-save-providers').addEventListener('click', saveProviders);
   document.getElementById('btn-create-agent').addEventListener('click', showWizard);
@@ -833,6 +1154,7 @@ async function init() {
   document.getElementById('btn-save-system').addEventListener('click', saveSystem);
   document.getElementById('btn-install-deps').addEventListener('click', installDeps);
   document.getElementById('btn-build-ts').addEventListener('click', buildTS);
+  setupFeederHandlers();
 
   setupWizard();
 }

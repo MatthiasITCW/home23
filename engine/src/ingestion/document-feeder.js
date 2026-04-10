@@ -183,6 +183,35 @@ class DocumentFeeder {
   }
 
   /**
+   * Stop watching a path and drop it from the active watcher list.
+   * Nodes already ingested from this path are NOT removed from the brain —
+   * use removeFile for that. This just stops future file events.
+   */
+  async removeWatchPath(watchPath) {
+    if (!this._started) throw new Error('Feeder not started');
+    const normalized = path.resolve(watchPath);
+    const idx = this._watchers.findIndex(w => path.resolve(w.path) === normalized);
+    if (idx < 0) return false;
+    const entry = this._watchers[idx];
+    try {
+      await entry.watcher.close();
+    } catch (err) {
+      this.logger?.warn?.('Error closing watcher', { path: watchPath, error: err.message });
+    }
+    this._watchers.splice(idx, 1);
+    this.logger?.info?.('Removed watch path', { path: watchPath });
+    return true;
+  }
+
+  /**
+   * Force an immediate manifest flush. Useful after interactive uploads.
+   */
+  async forceFlush() {
+    if (!this._started || !this.manifest) return { flushed: 0 };
+    return this.manifest.flush('manual');
+  }
+
+  /**
    * Get feeder status and stats.
    */
   async getStatus() {
@@ -235,12 +264,22 @@ class DocumentFeeder {
       return;
     }
 
+    // Build ignored matchers: always ignore dotfiles, plus any user-provided
+    // exclude patterns from config.feeder.excludePatterns (array of glob strings)
+    const userPatterns = Array.isArray(this.config.excludePatterns)
+      ? this.config.excludePatterns.filter(p => typeof p === 'string' && p.trim())
+      : [];
+    const ignored = [
+      /(^|[/\\])\../,  // dotfiles
+      ...userPatterns,
+    ];
+
     const watcher = chokidar.watch(watchPath, {
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
       depth: 99,
-      ignored: /(^|[/\\])\../  // ignore dotfiles
+      ignored
     });
 
     watcher.on('add', (filePath) => this._onFileEvent(filePath, fixedLabel, watchPath));

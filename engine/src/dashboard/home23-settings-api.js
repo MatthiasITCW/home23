@@ -600,6 +600,126 @@ function createSettingsRouter(home23Root) {
     }
   });
 
+  // ── Feeder configuration (STEP 17) ──
+  // The feeder config lives in configs/base-engine.yaml under the `feeder:` block.
+  // It's shared across all home23 agents on this host. Some fields hot-apply via
+  // the engine's /admin/feeder/* routes; others require an engine restart.
+
+  const BASE_ENGINE_PATH = path.join(home23Root, 'configs', 'base-engine.yaml');
+
+  const FEEDER_DEFAULTS = {
+    enabled: true,
+    additionalWatchPaths: [],
+    excludePatterns: [],
+    chunking: { maxChunkSize: 3000, overlap: 300 },
+    flush: { batchSize: 20, intervalSeconds: 30 },
+    compiler: { enabled: true, model: 'minimax-m2.7' },
+    converter: { enabled: true, visionModel: 'gpt-4o-mini', pythonPath: 'python3' },
+  };
+
+  function mergeFeederConfig(stored) {
+    const s = stored || {};
+    return {
+      enabled: s.enabled !== false,
+      additionalWatchPaths: Array.isArray(s.additionalWatchPaths) ? s.additionalWatchPaths : [],
+      excludePatterns: Array.isArray(s.excludePatterns) ? s.excludePatterns : [],
+      chunking: {
+        maxChunkSize: s.chunking?.maxChunkSize ?? FEEDER_DEFAULTS.chunking.maxChunkSize,
+        overlap: s.chunking?.overlap ?? FEEDER_DEFAULTS.chunking.overlap,
+      },
+      flush: {
+        batchSize: s.flush?.batchSize ?? FEEDER_DEFAULTS.flush.batchSize,
+        intervalSeconds: s.flush?.intervalSeconds ?? FEEDER_DEFAULTS.flush.intervalSeconds,
+      },
+      compiler: {
+        enabled: s.compiler?.enabled !== false,
+        model: s.compiler?.model || FEEDER_DEFAULTS.compiler.model,
+      },
+      converter: {
+        enabled: s.converter?.enabled !== false,
+        visionModel: s.converter?.visionModel || FEEDER_DEFAULTS.converter.visionModel,
+        pythonPath: s.converter?.pythonPath || FEEDER_DEFAULTS.converter.pythonPath,
+      },
+    };
+  }
+
+  router.get('/feeder', (req, res) => {
+    const baseEngine = loadYaml(BASE_ENGINE_PATH);
+    const feeder = mergeFeederConfig(baseEngine.feeder || {});
+    // Also surface the auto-added watch paths that the orchestrator wires on startup
+    const autoWatchPaths = [];
+    if (process.env.COSMO_RUNTIME_DIR) {
+      autoWatchPaths.push({
+        path: path.join(process.env.COSMO_RUNTIME_DIR, 'ingestion', 'documents'),
+        label: 'dropzone (auto)',
+        source: 'orchestrator:ingestion-directory',
+        readOnly: true,
+      });
+    }
+    if (process.env.COSMO_WORKSPACE_PATH) {
+      autoWatchPaths.push({
+        path: process.env.COSMO_WORKSPACE_PATH,
+        label: 'workspace (auto)',
+        source: 'orchestrator:COSMO_WORKSPACE_PATH',
+        readOnly: true,
+      });
+    }
+    res.json({
+      feeder,
+      autoWatchPaths,
+      configPath: BASE_ENGINE_PATH,
+    });
+  });
+
+  router.put('/feeder', (req, res) => {
+    const { feeder: input } = req.body || {};
+    if (!input || typeof input !== 'object') {
+      return res.status(400).json({ ok: false, error: 'feeder object required' });
+    }
+
+    const baseEngine = loadYaml(BASE_ENGINE_PATH);
+    const current = mergeFeederConfig(baseEngine.feeder || {});
+    const incoming = mergeFeederConfig(input);
+
+    // Classify changes as hot-apply vs restart-required
+    const applied = [];
+    const requiresRestart = [];
+
+    // Hot-apply candidates: compiler.enabled, compiler.model, additionalWatchPaths additions
+    if (current.compiler.enabled !== incoming.compiler.enabled || current.compiler.model !== incoming.compiler.model) {
+      applied.push('compiler');
+    }
+    const currentPaths = new Set((current.additionalWatchPaths || []).map((p) => JSON.stringify({ path: p.path || p, label: p.label || null })));
+    const incomingPaths = new Set((incoming.additionalWatchPaths || []).map((p) => JSON.stringify({ path: p.path || p, label: p.label || null })));
+    for (const p of incomingPaths) if (!currentPaths.has(p)) applied.push(`watchPath:+${JSON.parse(p).path}`);
+    for (const p of currentPaths) if (!incomingPaths.has(p)) requiresRestart.push(`watchPath:-${JSON.parse(p).path}`);
+
+    // Restart-required: flush, chunking, converter, excludePatterns
+    if (current.flush.batchSize !== incoming.flush.batchSize) requiresRestart.push('flush.batchSize');
+    if (current.flush.intervalSeconds !== incoming.flush.intervalSeconds) requiresRestart.push('flush.intervalSeconds');
+    if (current.chunking.maxChunkSize !== incoming.chunking.maxChunkSize) requiresRestart.push('chunking.maxChunkSize');
+    if (current.chunking.overlap !== incoming.chunking.overlap) requiresRestart.push('chunking.overlap');
+    if (current.converter.enabled !== incoming.converter.enabled) requiresRestart.push('converter.enabled');
+    if (current.converter.visionModel !== incoming.converter.visionModel) requiresRestart.push('converter.visionModel');
+    if (current.converter.pythonPath !== incoming.converter.pythonPath) requiresRestart.push('converter.pythonPath');
+    if (JSON.stringify(current.excludePatterns) !== JSON.stringify(incoming.excludePatterns)) requiresRestart.push('excludePatterns');
+
+    // Write to base-engine.yaml
+    baseEngine.feeder = {
+      ...(baseEngine.feeder || {}),
+      enabled: incoming.enabled,
+      additionalWatchPaths: incoming.additionalWatchPaths,
+      excludePatterns: incoming.excludePatterns,
+      chunking: incoming.chunking,
+      flush: incoming.flush,
+      compiler: incoming.compiler,
+      converter: incoming.converter,
+    };
+    saveYaml(BASE_ENGINE_PATH, baseEngine);
+
+    res.json({ ok: true, applied, requiresRestart });
+  });
+
   return { router, loadYaml, saveYaml, discoverAgents };
 }
 

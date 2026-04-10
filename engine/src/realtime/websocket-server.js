@@ -22,6 +22,7 @@ class RealtimeServer {
     this.httpServer = null;
     this.clients = new Set();
     this.eventListener = null;
+    this.orchestrator = null; // set via setOrchestrator for /admin/* routes
     this.stats = {
       eventsBroadcast: 0,
       clientsConnected: 0,
@@ -31,13 +32,32 @@ class RealtimeServer {
   }
 
   /**
+   * Wire a running orchestrator so admin HTTP routes can reach subsystems
+   * like the document feeder. Called from engine/src/index.js after the
+   * orchestrator starts.
+   */
+  setOrchestrator(orchestrator) {
+    this.orchestrator = orchestrator;
+  }
+
+  /**
    * Start the WebSocket server
    */
   async start() {
     return new Promise((resolve, reject) => {
       try {
-        // Create HTTP server for WebSocket upgrade
-        this.httpServer = http.createServer((req, res) => {
+        // Create HTTP server for WebSocket upgrade + small admin surface
+        this.httpServer = http.createServer(async (req, res) => {
+          // CORS for dashboard-side proxy calls
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          if (req.method === 'OPTIONS') {
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+
           // Health check endpoint
           if (req.url === '/health') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -54,6 +74,17 @@ class RealtimeServer {
           if (req.url === '/stats') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(this.getStats()));
+            return;
+          }
+
+          // ── Admin routes (feeder control) ──
+          if (req.url && req.url.startsWith('/admin/feeder/')) {
+            try {
+              await this._handleFeederAdmin(req, res);
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
             return;
           }
 
@@ -97,6 +128,92 @@ class RealtimeServer {
         reject(error);
       }
     });
+  }
+
+  /**
+   * Read a JSON body from an incoming HTTP request.
+   */
+  async _readJsonBody(req) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        if (chunks.length === 0) return resolve({});
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch (err) {
+          reject(new Error('Invalid JSON body'));
+        }
+      });
+      req.on('error', reject);
+    });
+  }
+
+  /**
+   * Handle /admin/feeder/* routes. Requires orchestrator + feeder to be wired.
+   */
+  async _handleFeederAdmin(req, res) {
+    const url = req.url;
+    const feeder = this.orchestrator?.feeder;
+    const json = (code, body) => {
+      res.writeHead(code, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+
+    if (!feeder) {
+      return json(503, { ok: false, error: 'Feeder not available' });
+    }
+
+    // GET /admin/feeder/status
+    if (req.method === 'GET' && url === '/admin/feeder/status') {
+      const status = await feeder.getStatus();
+      return json(200, { ok: true, status });
+    }
+
+    // POST /admin/feeder/flush
+    if (req.method === 'POST' && url === '/admin/feeder/flush') {
+      const result = await feeder.forceFlush();
+      return json(200, { ok: true, result });
+    }
+
+    // POST /admin/feeder/addWatchPath  { path, label }
+    if (req.method === 'POST' && url === '/admin/feeder/addWatchPath') {
+      const body = await this._readJsonBody(req);
+      if (!body.path || typeof body.path !== 'string') {
+        return json(400, { ok: false, error: 'path is required' });
+      }
+      await feeder.addWatchPath(body.path, body.label || null);
+      return json(200, { ok: true, added: body.path, label: body.label || null });
+    }
+
+    // POST /admin/feeder/removeWatchPath  { path }
+    if (req.method === 'POST' && url === '/admin/feeder/removeWatchPath') {
+      const body = await this._readJsonBody(req);
+      if (!body.path || typeof body.path !== 'string') {
+        return json(400, { ok: false, error: 'path is required' });
+      }
+      const removed = await feeder.removeWatchPath(body.path);
+      return json(200, { ok: true, removed, path: body.path });
+    }
+
+    // POST /admin/feeder/updateCompiler  { enabled?, model? }
+    if (req.method === 'POST' && url === '/admin/feeder/updateCompiler') {
+      const body = await this._readJsonBody(req);
+      if (!feeder.compiler) {
+        return json(503, { ok: false, error: 'Compiler not initialized' });
+      }
+      if (typeof body.enabled === 'boolean') {
+        feeder.compilerConfig.enabled = body.enabled;
+        if (feeder.compiler.config) feeder.compiler.config.enabled = body.enabled;
+      }
+      if (typeof body.model === 'string' && body.model.trim()) {
+        feeder.compilerConfig.model = body.model.trim();
+        if (feeder.compiler.config) feeder.compiler.config.model = body.model.trim();
+      }
+      return json(200, { ok: true, compiler: feeder.compilerConfig });
+    }
+
+    return json(404, { ok: false, error: `Unknown admin route: ${req.method} ${url}` });
   }
 
   /**

@@ -135,7 +135,7 @@ Multiple agents get sequential port blocks: first agent 5001-5004, second 5011-5
 
 The cognitive engine runs continuous think-consolidate-dream cycles. During waking hours, it processes thoughts, pursues goals, and responds to messages. During sleep periods, it dreams — synthesizing connections across its brain, consolidating knowledge, and growing.
 
-Documents fed through the feeder are LLM-synthesized before brain entry: raw text becomes structured knowledge with extracted concepts, relationships, and insights. A brain knowledge index is maintained automatically as a human-readable map of everything the agent knows.
+Documents fed through the feeder are LLM-synthesized before brain entry: raw text becomes structured knowledge with extracted concepts, relationships, and insights. A brain knowledge index is maintained automatically as a human-readable map of everything the agent knows. Feeder behavior is fully configurable from the dashboard's Settings → Feeder tab (watch paths, exclusion patterns, chunking, compiler model, converter, drop zone) — see "Document Feeder" below.
 
 The dashboard is the OS home screen. It shows real-time thoughts, provides a native chat interface with full thinking/tool visibility, runs intelligence synthesis on a schedule, and gives access to COSMO research and Evobrew IDE — all from a single URL.
 
@@ -179,6 +179,30 @@ Agent:   [launches with context → waits → compiles → reports]
 The compiled research lands in `instances/<agent>/workspace/research/` and the engine feeder automatically ingests it as a permanent memory node with citations back to the COSMO brain. Your agent now knows that fact forever.
 
 See `docs/design/STEP16-AGENT-COSMO-TOOLKIT-DESIGN.md` for the full design, schemas, and smoke test procedure.
+
+## Document Feeder
+
+The Feeder continuously ingests documents from watched directories into your agent's brain. Each file is LLM-synthesized by the document compiler into structured knowledge (concepts, relationships, insights) before being stored as a memory node. Binary formats (PDF, DOCX, images, audio) are converted to markdown first via MarkItDown.
+
+Configure everything from the dashboard at **Settings → Feeder**:
+
+| Section | What you control |
+|---|---|
+| **Live Status** | Real-time view: running state, watcher count, files processed / total, compiled count, pending queue, converter availability. `Force Flush Now` button to process the queue immediately. |
+| **Paths & Patterns** | Auto-watched paths (drop zone + workspace, shown read-only). Add your own watch paths with labels. Exclusion patterns (glob syntax, one per line) for things like `node_modules/**` or `.git/**`. |
+| **Frequency & Batching** | Flush interval (seconds), batch size, chunking parameters (max chunk size, overlap). |
+| **Compiler** | Enable/disable the LLM-powered document compiler. Choose the model (default: `minimax-m2.7`). Disabling means raw chunks enter the brain — lower quality, more noise. |
+| **Converter** | Enable/disable binary-to-markdown conversion. Pick the vision model for PDFs/images (default: `gpt-4o-mini`). Live status indicator shows whether MarkItDown is installed. |
+| **Drop Zone** | Drag-and-drop files directly into a watched directory. Optional label groups uploads. Max 100MB per file, 20 files per upload. Files are picked up within ~1 second and automatically ingested. |
+
+Settings are stored in `configs/base-engine.yaml` under the `feeder:` block and apply host-wide to all Home23 agents. Some changes hot-apply (compiler model, adding watch paths); others (flush interval, chunking, exclusion patterns, converter) require an engine restart — the UI shows a clear restart banner when needed.
+
+**Typical use:**
+- Drop a folder of reference PDFs into the dropzone — the feeder converts them to markdown, the compiler extracts key concepts, and each becomes a brain node the agent can recall via semantic search
+- Add a watch path to your project's docs directory — any new markdown file you save there is automatically ingested within a few seconds
+- Tune the compiler model to something cheaper/faster for bulk ingestion, then switch back for quality
+
+See `docs/design/STEP17-FEEDER-SETTINGS-DESIGN.md` for the full design.
 
 ## License
 

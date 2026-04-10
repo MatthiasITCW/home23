@@ -491,6 +491,49 @@
   border-color: var(--accent-blue);
 }
 
+/* ── Feeder drop zone (STEP 17) ── */
+
+.h23s-dropzone {
+  margin-top: 12px;
+  border: 2px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  background: rgba(0, 122, 255, 0.04);
+}
+
+.h23s-dropzone:hover,
+.h23s-dropzone.drag-over {
+  border-color: var(--accent-blue, #007AFF);
+  background: rgba(0, 122, 255, 0.1);
+}
+
+.h23s-dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.h23s-dropzone-icon {
+  font-size: 28px;
+  opacity: 0.7;
+}
+
+.h23s-dropzone-text {
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.h23s-dropzone-subtext {
+  font-size: 12px;
+  opacity: 0.55;
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 700px) {
