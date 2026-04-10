@@ -146,7 +146,7 @@
     <!-- Models Panel -->
     <div class="h23s-panel" id="panel-models">
       <h2 class="h23s-panel-title">Models</h2>
-      <p class="h23s-panel-desc">Model catalog, aliases, and default selections.</p>
+      <p class="h23s-panel-desc">Manage which models appear in evobrew and dashboard chat. Add models by name — they must be available from the provider.</p>
 
       <div class="h23s-section">
         <h3 class="h23s-section-title">Defaults</h3>
@@ -160,6 +160,12 @@
             <select id="models-default-model"></select>
           </div>
         </div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Available Models per Provider</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">These are the models shown in evobrew's dropdown. Add or remove to control what's available.</p>
+        <div id="provider-models-list"></div>
       </div>
 
       <div class="h23s-section">
@@ -231,8 +237,10 @@
 
       <div class="h23s-section">
         <h3 class="h23s-section-title">Embeddings</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;color:#fb923c;">Changing the embedding model or dimensions requires re-ingesting all documents. Existing brain embeddings become incompatible with the new model.</p>
         <div class="h23s-embed-list" id="embeddings-list">
         </div>
+        <button class="h23s-btn-secondary" id="btn-add-embedding" style="margin-top:8px;">+ Add Embedding Provider</button>
       </div>
 
       <div class="h23s-actions">

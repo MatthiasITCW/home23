@@ -223,6 +223,18 @@ function createSettingsRouter(home23Root) {
     }
   }
 
+  function regenerateEvobrewConfig() {
+    try {
+      const { execSync } = require('child_process');
+      execSync(`node --input-type=module -e "
+        import { writeEvobrewConfig } from './cli/lib/evobrew-config.js';
+        writeEvobrewConfig('.');
+      "`, { cwd: home23Root, stdio: 'pipe', timeout: 10000 });
+    } catch (err) {
+      console.warn('[Settings] Evobrew config regeneration error:', err.message);
+    }
+  }
+
   router.post('/agents', (req, res) => {
     const { name, displayName, ownerName, ownerTelegramId, timezone, botToken, model, provider } = req.body;
 
@@ -456,11 +468,12 @@ function createSettingsRouter(home23Root) {
   });
 
   router.put('/models', (req, res) => {
-    const { chat, aliases } = req.body;
+    const { chat, aliases, providerModels } = req.body;
     const configPath = path.join(home23Root, 'config', 'home.yaml');
     const homeConfig = loadYaml(configPath);
 
     if (chat) {
+      if (!homeConfig.chat) homeConfig.chat = {};
       if (chat.defaultProvider !== undefined) homeConfig.chat.defaultProvider = chat.defaultProvider;
       if (chat.defaultModel !== undefined) homeConfig.chat.defaultModel = chat.defaultModel;
     }
@@ -468,8 +481,17 @@ function createSettingsRouter(home23Root) {
       if (!homeConfig.models) homeConfig.models = {};
       homeConfig.models.aliases = aliases;
     }
+    // Update defaultModels per provider
+    if (providerModels) {
+      if (!homeConfig.providers) homeConfig.providers = {};
+      for (const [provName, models] of Object.entries(providerModels)) {
+        if (!homeConfig.providers[provName]) homeConfig.providers[provName] = {};
+        homeConfig.providers[provName].defaultModels = models;
+      }
+    }
 
     saveYaml(configPath, homeConfig);
+    regenerateEvobrewConfig();
     res.json({ ok: true });
   });
 
@@ -515,6 +537,7 @@ function createSettingsRouter(home23Root) {
 
     saveYaml(configPath, homeConfig);
     regenerateEcosystem();
+    regenerateEvobrewConfig();
     res.json({ ok: true });
   });
 

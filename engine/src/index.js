@@ -555,6 +555,9 @@ async function main() {
     // Wire logger to dashboard server (enables console streaming)
     logger.attachWebDashboard(global.dashboardServer);
     logger.info('✅ Console streaming to web dashboard enabled');
+
+    // Engine events flow to dashboard via WebSocket (port 5001)
+    // Dashboard JS connects directly to engine's realtime WebSocket
   }
 
   // Start real-time WebSocket server for Watch Panel

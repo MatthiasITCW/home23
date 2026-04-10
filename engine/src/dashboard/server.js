@@ -755,36 +755,70 @@ class DashboardServer {
       });
     });
 
-    // Home23 feeder status
+    // Home23 feeder status — reads from engine's DocumentFeeder manifest
     this.app.get('/home23/feeder-status', (req, res) => {
       const fsSync = require('fs');
-      const home23Root = this.getHome23Root();
-      const feederDir = path.join(home23Root, 'feeder');
+      const runtimeDir = process.env.COSMO_RUNTIME_DIR || path.join(__dirname, '..', 'runtime');
+      const workspacePath = process.env.COSMO_WORKSPACE_PATH;
+      const manifestPath = path.join(runtimeDir, 'ingestion-manifest.json');
+      const agentName = (process.env.INSTANCE_ID || 'home23-agent').replace('home23-', '');
+
       try {
-        // Read all manifest files to get ingested document info
-        const files = fsSync.readdirSync(feederDir).filter(f => f.startsWith('manifest-') && f.endsWith('.json'));
-        const feeders = files.map(f => {
-          const member = f.replace('manifest-', '').replace('.json', '');
-          const manifest = JSON.parse(fsSync.readFileSync(path.join(feederDir, f), 'utf8'));
-          const pendingPath = path.join(feederDir, `pending-${member}.json`);
-          const pending = fsSync.existsSync(pendingPath)
-            ? JSON.parse(fsSync.readFileSync(pendingPath, 'utf8'))
-            : [];
-          const entries = Object.entries(manifest);
-          return {
-            member,
-            totalFiles: entries.length,
-            pendingCount: Array.isArray(pending) ? pending.length : 0,
-            files: entries.map(([filePath, meta]) => ({
-              path: filePath,
-              label: meta.label || '',
-              hash: meta.hash || '',
-              chunks: Array.isArray(meta.nodeIds) ? meta.nodeIds.length : (meta.nodeId ? 1 : 0),
-              lastIngested: meta.ingestedAt || meta.ts || null,
-            })),
+        // Count total files in workspace (what needs to be ingested)
+        let workspaceFileCount = 0;
+        if (workspacePath && fsSync.existsSync(workspacePath)) {
+          const countFiles = (dir) => {
+            let count = 0;
+            try {
+              for (const entry of fsSync.readdirSync(dir, { withFileTypes: true })) {
+                if (entry.name.startsWith('.')) continue;
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) count += countFiles(full);
+                else if (entry.isFile()) count++;
+              }
+            } catch { /* unreadable dir */ }
+            return count;
           };
+          workspaceFileCount = countFiles(workspacePath);
+        }
+
+        if (!fsSync.existsSync(manifestPath)) {
+          res.json({ feeders: [{ member: agentName, totalFiles: workspaceFileCount, processedFiles: 0, pendingCount: workspaceFileCount, compiledCount: 0, files: [] }] });
+          return;
+        }
+
+        const manifest = JSON.parse(fsSync.readFileSync(manifestPath, 'utf8'));
+        const entries = Object.entries(manifest);
+        const compiled = entries.filter(([, meta]) => meta.compiled);
+        const quarantined = entries.filter(([, meta]) => meta.parseStatus === 'suspect_truncation' || meta.parseStatus === 'un_normalizable');
+        const chunks = entries.reduce((sum, [, meta]) => sum + (meta.nodeCount || (Array.isArray(meta.nodeIds) ? meta.nodeIds.length : 0)), 0);
+        const remaining = Math.max(0, workspaceFileCount - entries.length);
+
+        const files = entries
+          .sort(([, a], [, b]) => (b.ingestedAt || '').localeCompare(a.ingestedAt || ''))
+          .slice(0, 50)
+          .map(([filePath, meta]) => ({
+            path: filePath,
+            label: meta.label || '',
+            hash: (meta.hash || '').slice(0, 12),
+            chunks: meta.nodeCount || (Array.isArray(meta.nodeIds) ? meta.nodeIds.length : 0),
+            lastIngested: meta.ingestedAt || meta.ts || null,
+            compiled: meta.compiled || false,
+            status: meta.parseStatus || 'ok',
+          }));
+
+        res.json({
+          feeders: [{
+            member: agentName,
+            totalFiles: workspaceFileCount,
+            processedFiles: entries.length,
+            pendingCount: remaining,
+            compiledCount: compiled.length,
+            quarantinedCount: quarantined.length,
+            chunkCount: chunks,
+            files,
+          }]
         });
-        res.json({ feeders });
       } catch (err) {
         res.json({ feeders: [], error: err.message });
       }

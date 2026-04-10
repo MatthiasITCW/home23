@@ -69,16 +69,12 @@ class CognitiveStateModulator {
     // Update energy (decreases with activity, recovers during sleep)
     if (this.config.energyEnabled) {
       if (this.state.mode === 'sleeping') {
-        // Gradual recovery during sleep - sleep is restorative
-        // FIX: Increased from 0.03 to 0.05 to prevent excessive sleep duration
-        // Recovery time from 0.2 (sleep threshold) to 0.8 (wake threshold):
-        //   Old: 0.6 / 0.03 = 20 cycles
-        //   New: 0.6 / 0.05 = 12 cycles
-        const energyRecovery = 0.05;  // Recover 5% per cycle during sleep
+        // Gradual recovery during sleep — configurable from base-engine.yaml
+        const energyRecovery = this.config.energyRecoveryRate || 0.10;
         this.state.energy = Math.min(1.0, this.state.energy + energyRecovery);
       } else {
-        // Energy drain during activity
-        const energyDrain = 0.02;
+        // Energy drain during activity — configurable from base-engine.yaml
+        const energyDrain = this.config.energyDrainRate || 0.01;
         this.state.energy = Math.max(0, this.state.energy - energyDrain);
       }
     }
@@ -114,26 +110,17 @@ class CognitiveStateModulator {
   checkModeTransition() {
     const timeSinceChange = Date.now() - this.state.lastModeChange.getTime();
 
-    // Low energy -> sleep mode
-    if (this.state.energy < 0.2 && this.state.mode !== 'sleeping') {
+    // Low energy -> sleep mode (configurable threshold)
+    const sleepThreshold = this.config.sleepThreshold || 0.15;
+    if (this.state.energy < sleepThreshold && this.state.mode !== 'sleeping') {
       this.transitionToMode('sleeping');
       return;
     }
 
-    // High energy after sleep -> active mode
-    if (this.state.energy > 0.8 && this.state.mode === 'sleeping') {
+    // Energy recovered after sleep -> active mode (configurable threshold)
+    const wakeThreshold = this.config.wakeThreshold || 0.35;
+    if (this.state.energy > wakeThreshold && this.state.mode === 'sleeping') {
       this.transitionToMode('active');
-      return;
-    }
-
-    // Force wake if energy is moderate and stuck in sleep mode
-    // Safety net: handles edge cases where temporal rhythms wake but state doesn't transition
-    if (this.state.energy > 0.5 && this.state.mode === 'sleeping') {
-      this.transitionToMode('active');
-      this.logger?.debug('Force wake from sleep mode', {
-        energy: this.state.energy.toFixed(3),
-        reason: 'moderate_energy_recovery'
-      });
       return;
     }
 

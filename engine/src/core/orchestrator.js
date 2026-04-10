@@ -901,26 +901,11 @@ class Orchestrator {
         if (!this.sleepSession.consolidationRun) {
           this.logger.info(`🛌 Sleep Cycle ${cyclesAsleep + 1}: Running deep consolidation...`);
           const consolidationResult = await this.performDeepSleepConsolidation();
-          
+
           if (consolidationResult.consolidated) {
             // Only set flag if NOT in dream mode (dream mode runs consolidation every cycle)
             if (!this.config.execution?.dreamMode) {
               this.sleepSession.consolidationRun = true;
-            }
-
-            // NOTICE PASS: after consolidation, before chaos logic later in cycle
-            if (!this.sleepSession.noticePassRun) {
-              try {
-                const noticePass = new NoticePass(this.memory, this.config, this.logger);
-                const noticings = await noticePass.run();
-                if (noticings.length > 0) {
-                  await this.processNoticings(noticings);
-                }
-                this.sleepSession.noticePassRun = true;
-              } catch (e) {
-                // Non-fatal: never interrupt sleep cycle
-                this.logger?.warn?.('[NoticePass] failed (non-fatal)', { error: e.message });
-              }
             }
 
             this.logger.info('✅ Deep consolidation complete', {
@@ -928,21 +913,34 @@ class Orchestrator {
               minimumCyclesRemaining: minCyclesRemaining
             });
           } else if (consolidationResult.deferred) {
-            // Consolidation was rate-limited - wake immediately, no point staying asleep
-            this.logger.info('⏭️  Consolidation deferred, waking early', {
+            // LLM consolidation rate-limited — still run fast brain maintenance
+            this.logger.info('⏭️  LLM consolidation deferred, running fast maintenance', {
               reason: consolidationResult.reason,
               nextAvailableIn: consolidationResult.nextAvailableIn
             });
-            this.sleepSession.active = false;
-            this.sleepSession.consolidationRun = false;
-            this.sleepSession.noticePassRun = false;
-            this.temporal.wake();
-            this.stateModulator.transitionToMode('active');
-            return;
+            this.sleepSession.consolidationRun = true; // Don't retry LLM this session
+
+            // Fast maintenance: GC, rewiring, decay (no LLM calls)
+            await this.performFastSleepMaintenance();
+          }
+
+          // NOTICE PASS: runs after both full and deferred consolidation
+          if (!this.sleepSession.noticePassRun) {
+            try {
+              const noticePass = new NoticePass(this.memory, this.config, this.logger);
+              const noticings = await noticePass.run();
+              if (noticings.length > 0) {
+                await this.processNoticings(noticings);
+              }
+              this.sleepSession.noticePassRun = true;
+            } catch (e) {
+              // Non-fatal: never interrupt sleep cycle
+              this.logger?.warn?.('[NoticePass] failed (non-fatal)', { error: e.message });
+            }
           }
         } else {
-          // Subsequent sleep cycles - just rest and dream
-          this.logger.info(`💤 Sleep Cycle ${cyclesAsleep + 1}: Resting and processing...`, {
+          // Subsequent sleep cycles - just rest
+          this.logger.info(`💤 Sleep Cycle ${cyclesAsleep + 1}: Resting...`, {
             energy: cognitiveState.energy.toFixed(3),
             cyclesAsleep: cyclesAsleep + 1,
             minimumCyclesRemaining: minCyclesRemaining
@@ -965,7 +963,8 @@ class Orchestrator {
         // Check if should wake up (both systems must agree or minimum cycles met)
         // In dream mode, never wake (stays asleep until maxCycles)
         const cyclesCompleted = cyclesAsleep + 1;
-        const energyRestored = cognitiveState.energy >= 0.6;
+        const wakeThreshold = this.config.cognitiveState?.wakeThreshold || 0.35;
+        const energyRestored = cognitiveState.energy >= wakeThreshold;
         const minimumMet = cyclesCompleted >= this.sleepSession.minimumCycles;
         
         if (!this.config.execution?.dreamModeSettings?.preventWake && minimumMet && energyRestored) {
@@ -994,13 +993,54 @@ class Orchestrator {
 
           // Continue with normal cycle (don't return)
         } else {
-          // Still sleeping - save state periodically and return
+          // Still sleeping - generate a sleep-status thought so dashboard stays fresh
+          const sleepCycleNum = cyclesAsleep + 1;
+          const sleepThoughts = [
+            `Resting... energy at ${(cognitiveState.energy * 100).toFixed(0)}%, cycle ${sleepCycleNum}`,
+            `Sleep cycle ${sleepCycleNum} — consolidating memories, energy recovering (${(cognitiveState.energy * 100).toFixed(0)}%)`,
+            `Dreaming... processing experiences from today. Energy: ${(cognitiveState.energy * 100).toFixed(0)}%`,
+            `Deep rest cycle ${sleepCycleNum}. Mind is quiet, energy rebuilding (${(cognitiveState.energy * 100).toFixed(0)}%)`,
+            `Sleeping... letting thoughts settle. ${minCyclesRemaining > 0 ? `${minCyclesRemaining} cycles until wake check` : 'Will wake when energy restores'}`
+          ];
+          const sleepThought = sleepThoughts[sleepCycleNum % sleepThoughts.length];
+
+          const sleepEntry = {
+            cycle: this.cycleCount,
+            role: 'sleep',
+            thought: sleepThought,
+            reasoning: null,
+            goal: null,
+            surprise: 0,
+            cognitiveState: { ...cognitiveState },
+            oscillatorMode: 'sleeping',
+            perturbation: null,
+            tunnel: false,
+            goalsAutoCaptured: 0,
+            usedWebSearch: false,
+            model: 'internal',
+            timestamp: new Date()
+          };
+
+          this.journal.push(sleepEntry);
+          await this.logThought(sleepEntry);
+
+          cosmoEvents.emitThought({
+            cycle: this.cycleCount,
+            thought: sleepThought,
+            role: 'sleep',
+            surprise: 0,
+            model: 'internal',
+            reasoning: null,
+            usedWebSearch: false
+          });
+
+          // Save state periodically
           await this.saveState();
 
           // Record cycle completion time for metrics
           const cycleDuration = Date.now() - cycleStart.getTime();
           this.logger.info(`✓ Sleep cycle completed in ${cycleDuration}ms`);
-          
+
           return; // Skip normal cycle operations during sleep
         }
       } else if (this.sleepSession.active) {
@@ -2645,6 +2685,51 @@ class Orchestrator {
       deferred: false,
       reason: 'success'
     };
+  }
+
+  /**
+   * Fast sleep maintenance — runs when LLM consolidation is rate-limited.
+   * GC, decay, rewiring, mood reset. No LLM calls. Keeps the brain healthy
+   * even when full consolidation can't run.
+   */
+  async performFastSleepMaintenance() {
+    this.logger.info('🧹 Fast sleep maintenance (no LLM)...');
+
+    // 1. Memory garbage collection (same as full consolidation step 5)
+    const removed = this.summarizer.garbageCollect(this.memory);
+    this.logger.info('  ✓ GC complete', { nodesRemoved: removed });
+
+    // 2. Memory decay (normally only runs in awake % 30 — run during sleep too)
+    if (typeof this.memory.applyDecay === 'function') {
+      this.memory.applyDecay();
+      this.logger.info('  ✓ Decay applied');
+    }
+
+    // 3. Dream rewiring at moderate probability (p=0.1 — less than dreams but more than awake's 0.01)
+    if (this.config.architecture?.temporal?.dreamRewiring !== false) {
+      const rewired = await this.memory.rewire(0.1);
+      this.logger.info('  ✓ Rewiring complete', { edgesRewired: rewired });
+    }
+
+    // 4. Goal maintenance
+    if (this.goals) {
+      this.goals.elevateStalePriorities?.();
+      this.goals.mergeSimilarGoals?.();
+      this.logger.info('  ✓ Goal maintenance');
+    }
+
+    // 5. Mood recovery if needed
+    const currentMood = this.stateModulator.getState().mood;
+    if (currentMood < 0.3) {
+      this.stateModulator.updateState({
+        type: 'sleep_recovery',
+        valence: 0.2,
+        surprise: 0
+      });
+      this.logger.info('  ✓ Mood recovery');
+    }
+
+    this.logger.info('🧹 Fast maintenance complete');
   }
 
   generateDreamPrompt() {
@@ -4474,9 +4559,9 @@ class Orchestrator {
   calculateNextInterval() {
     let interval = this.config.execution.baseInterval * 1000;
     const baseInterval = interval;
+    const state = this.stateModulator.getState();
 
     if (this.config.execution.adaptiveTimingEnabled) {
-      const state = this.stateModulator.getState();
       
       // FIX: Guard against null/undefined state values (causes NaN interval → infinite loop)
       const curiosity = (state.curiosity !== null && state.curiosity !== undefined) ? state.curiosity : 0.5;
@@ -4513,6 +4598,13 @@ class Orchestrator {
         baseInterval: this.config.execution.baseInterval
       });
       interval = this.config.execution.baseInterval * 1000;
+    }
+
+    // During sleep, cap cycle interval so recovery doesn't drag
+    // (low energy makes adaptive timing stretch cycles — counterproductive during sleep)
+    if (state.mode === 'sleeping') {
+      const maxSleepInterval = (this.config.cognitiveState?.maxSleepCycleInterval || 45) * 1000;
+      return Math.max(30000, Math.min(maxSleepInterval, interval));
     }
 
     return Math.max(30000, Math.min(600000, interval)); // 30s - 10min range

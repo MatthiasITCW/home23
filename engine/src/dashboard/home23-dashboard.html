@@ -36,11 +36,18 @@
     </div>
   </div>
 
-  <!-- Status pills -->
-  <div class="h23-pills" id="status-pills">
-    <span class="h23-pill" id="pill-cycle">🧠 —</span>
-    <span class="h23-pill" id="pill-mode">—</span>
-    <span class="h23-pill" id="pill-updated">sensors —</span>
+  <!-- Engine pulse bar -->
+  <div class="h23-pulse-bar" id="engine-pulse">
+    <span class="h23-pulse-dot" id="pulse-dot"></span>
+    <span class="h23-pulse-state" id="pulse-state">—</span>
+    <span class="h23-pulse-sep">·</span>
+    <span class="h23-pulse-phase" id="pulse-phase">—</span>
+    <span class="h23-pulse-sep">·</span>
+    <span class="h23-pulse-energy" id="pulse-energy">⚡ —</span>
+    <span class="h23-pulse-sep">·</span>
+    <span class="h23-pulse-cycle" id="pulse-cycle">cycle —</span>
+    <span class="h23-pulse-sep">·</span>
+    <span class="h23-pulse-ago" id="pulse-ago">—</span>
   </div>
 
   <!-- Tab bar -->
@@ -129,14 +136,6 @@
         <div class="h23-system-bar-item"><label>Last</label><div class="value" id="sys-last">—</div></div>
       </div>
 
-      <!-- Feeder tile -->
-      <div class="h23-tile h23-tile-feeder" id="tile-feeder">
-        <div class="h23-tile-header"><span class="icon">📥</span> Feeder</div>
-        <div id="home-feeder">
-          <p class="h23-muted">Loading...</p>
-        </div>
-      </div>
-
       <!-- Brain + Dream Logs (side by side) -->
       <div class="h23-logs-row">
         <div class="h23-tile h23-tile-brainlog" onclick="openLogOverlay('brain')">
@@ -168,6 +167,25 @@
             <button class="h23-log-overlay-close" onclick="closeLogOverlay()">&#10005;</button>
           </div>
           <div class="h23-log-overlay-body" id="log-overlay-body"></div>
+        </div>
+      </div>
+
+      <!-- Feeder tile (bottom) -->
+      <div class="h23-tile h23-tile-feeder" id="tile-feeder" onclick="openFeederOverlay()">
+        <div class="h23-tile-header"><span class="icon">📥</span> Ingestion Compiler</div>
+        <div id="home-feeder">
+          <p class="h23-muted">Loading...</p>
+        </div>
+      </div>
+
+      <!-- Feeder overlay (click-to-expand details) -->
+      <div class="h23-log-overlay" id="feeder-overlay" onclick="if(event.target===this)closeFeederOverlay()">
+        <div class="h23-log-overlay-panel h23-feeder-overlay-panel">
+          <div class="h23-log-overlay-header">
+            <span class="h23-brainlog-title">📥 Ingestion Compiler</span>
+            <button class="h23-log-overlay-close" onclick="closeFeederOverlay()">&#10005;</button>
+          </div>
+          <div class="h23-log-overlay-body" id="feeder-overlay-body"></div>
         </div>
       </div>
 

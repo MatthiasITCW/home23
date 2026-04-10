@@ -516,6 +516,31 @@ function renderModels(data) {
   provSelect.addEventListener('change', fillModelSelect);
   fillModelSelect();
 
+  // Per-provider model lists
+  const pmList = document.getElementById('provider-models-list');
+  const providerOrder = ['ollama-cloud', 'anthropic', 'openai', 'openai-codex', 'xai'];
+  pmList.innerHTML = providerOrder.map(name => {
+    const models = data.providers?.[name]?.defaultModels || [];
+    return `
+      <div class="h23s-provider-card" style="padding:12px 16px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span style="font-weight:600;color:#fff;">${PROVIDER_DISPLAY[name] || name}</span>
+          <span style="font-size:11px;color:var(--text-muted);">${models.length} model${models.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div id="pm-models-${name}">
+          ${models.map(m => `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;" data-pm-entry="${name}">
+              <input type="text" value="${m}" style="flex:1;font-size:13px;" data-pm-model>
+              <button class="h23s-btn-danger" onclick="this.parentElement.remove()" style="padding:2px 8px;font-size:11px;">x</button>
+            </div>
+          `).join('')}
+        </div>
+        <button class="h23s-btn-secondary" onclick="addProviderModel('${name}')" style="padding:4px 10px;font-size:11px;margin-top:4px;">+ Add Model</button>
+      </div>
+    `;
+  }).join('');
+
+  // Aliases
   const tbody = document.getElementById('aliases-body');
   const aliases = data.aliases || {};
   tbody.innerHTML = Object.entries(aliases).map(([alias, cfg]) => `
@@ -539,6 +564,28 @@ function renderModels(data) {
   };
 }
 
+function addProviderModel(provName) {
+  const container = document.getElementById(`pm-models-${provName}`);
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:4px;';
+  div.setAttribute('data-pm-entry', provName);
+  div.innerHTML = `
+    <input type="text" value="" placeholder="model-name" style="flex:1;font-size:13px;" data-pm-model autofocus>
+    <button class="h23s-btn-danger" onclick="this.parentElement.remove()" style="padding:2px 8px;font-size:11px;">x</button>
+  `;
+  container.appendChild(div);
+  div.querySelector('input').focus();
+}
+
+function collectProviderModels() {
+  const result = {};
+  for (const name of ['ollama-cloud', 'anthropic', 'openai', 'openai-codex', 'xai']) {
+    const entries = document.querySelectorAll(`[data-pm-entry="${name}"] [data-pm-model]`);
+    result[name] = Array.from(entries).map(el => el.value.trim()).filter(Boolean);
+  }
+  return result;
+}
+
 async function saveModels() {
   const aliases = {};
   document.querySelectorAll('#aliases-body tr').forEach(row => {
@@ -556,6 +603,7 @@ async function saveModels() {
       defaultModel: document.getElementById('models-default-model').value,
     },
     aliases,
+    providerModels: collectProviderModels(),
   };
 
   const statusEl = document.getElementById('models-status');
@@ -633,20 +681,63 @@ function renderSystem(data) {
   }
 
   const embList = document.getElementById('embeddings-list');
-  const providers = data.embeddings?.providers || [];
-  embList.innerHTML = providers.map((p, i) => `
-    <div class="h23s-provider-card" style="padding:12px 16px;margin-bottom:8px;">
-      <div style="display:flex;gap:12px;align-items:center;font-size:13px;">
-        <span style="color:var(--text-muted);min-width:20px;">${i === 0 ? 'Primary' : 'Fallback ' + i}.</span>
-        <span style="color:#fff;font-weight:500;">${PROVIDER_DISPLAY[p.provider] || p.provider}</span>
-        <span style="color:var(--text-secondary);">${p.model}</span>
-        <span style="color:var(--text-muted);">${p.dimensions} dimensions</span>
+  const embProviders = data.embeddings?.providers || [];
+  embList.innerHTML = embProviders.map((p, i) => `
+    <div class="h23s-provider-card" style="padding:12px 16px;margin-bottom:8px;" data-emb-entry>
+      <div style="display:flex;gap:8px;align-items:center;font-size:12px;flex-wrap:wrap;">
+        <span style="color:var(--text-muted);min-width:55px;font-weight:600;">${i === 0 ? 'Primary' : 'Fallback ' + i}</span>
+        <select data-emb-provider style="font-size:12px;padding:4px 8px;">
+          <option value="ollama-local" ${p.provider === 'ollama-local' ? 'selected' : ''}>Ollama Local</option>
+          <option value="ollama-cloud" ${p.provider === 'ollama-cloud' ? 'selected' : ''}>Ollama Cloud</option>
+          <option value="openai" ${p.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
+        </select>
+        <input type="text" data-emb-model value="${p.model || ''}" placeholder="model" style="flex:1;min-width:120px;font-size:12px;">
+        <input type="text" data-emb-endpoint value="${p.endpoint || ''}" placeholder="endpoint URL (optional)" style="flex:1;min-width:160px;font-size:12px;">
+        <input type="number" data-emb-dims value="${p.dimensions || 768}" style="width:70px;font-size:12px;" title="Dimensions">
+        <span style="color:var(--text-muted);font-size:11px;">dims</span>
+        <button class="h23s-btn-danger" onclick="this.closest('[data-emb-entry]').remove()" style="padding:2px 8px;font-size:11px;">x</button>
       </div>
     </div>
   `).join('') || '<p class="h23s-panel-desc" style="margin:0;">No embedding providers configured.</p>';
+
+  document.getElementById('btn-add-embedding').onclick = () => {
+    const div = document.createElement('div');
+    div.className = 'h23s-provider-card';
+    div.style.cssText = 'padding:12px 16px;margin-bottom:8px;';
+    div.setAttribute('data-emb-entry', '');
+    div.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;font-size:12px;flex-wrap:wrap;">
+        <span style="color:var(--text-muted);min-width:55px;font-weight:600;">New</span>
+        <select data-emb-provider style="font-size:12px;padding:4px 8px;">
+          <option value="ollama-local">Ollama Local</option>
+          <option value="ollama-cloud">Ollama Cloud</option>
+          <option value="openai">OpenAI</option>
+        </select>
+        <input type="text" data-emb-model value="nomic-embed-text" placeholder="model" style="flex:1;min-width:120px;font-size:12px;">
+        <input type="text" data-emb-endpoint value="" placeholder="endpoint URL" style="flex:1;min-width:160px;font-size:12px;">
+        <input type="number" data-emb-dims value="768" style="width:70px;font-size:12px;">
+        <span style="color:var(--text-muted);font-size:11px;">dims</span>
+        <button class="h23s-btn-danger" onclick="this.closest('[data-emb-entry]').remove()" style="padding:2px 8px;font-size:11px;">x</button>
+      </div>
+    `;
+    embList.appendChild(div);
+  };
 }
 
 async function saveSystem() {
+  // Collect embeddings from form
+  const embEntries = document.querySelectorAll('[data-emb-entry]');
+  const embeddingProviders = Array.from(embEntries).map(el => {
+    const provider = el.querySelector('[data-emb-provider]')?.value;
+    const model = el.querySelector('[data-emb-model]')?.value?.trim();
+    const endpoint = el.querySelector('[data-emb-endpoint]')?.value?.trim();
+    const dimensions = parseInt(el.querySelector('[data-emb-dims]')?.value) || 768;
+    if (!provider || !model) return null;
+    const entry = { provider, model, dimensions };
+    if (endpoint) entry.endpoint = endpoint;
+    return entry;
+  }).filter(Boolean);
+
   const body = {
     evobrew: { port: parseInt(document.getElementById('sys-evobrew-port').value) },
     cosmo23: {
@@ -662,6 +753,7 @@ async function saveSystem() {
       historyBudget: parseInt(document.getElementById('sys-history-budget').value),
       sessionGapMs: parseInt(document.getElementById('sys-session-gap').value),
     },
+    embeddings: { providers: embeddingProviders },
   };
 
   const statusEl = document.getElementById('system-status');

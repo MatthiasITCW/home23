@@ -371,6 +371,17 @@ export class AgentLoop {
       // Get system prompt — provider-aware (overlay + voice + core)
       let rawSystemPrompt = this.contextManager.getSystemPrompt(this.provider);
 
+      // ── Situational awareness: inject channel context ──
+      if (chatId.startsWith('evobrew:')) {
+        const toolDefs = this.registry.getAnthropicTools();
+        const toolNames = toolDefs.map(t => t.name).join(', ');
+        rawSystemPrompt += `\n\n[SITUATIONAL CONTEXT]
+You are operating inside evobrew (AI IDE). The user is working in a code/document workspace.
+You have ${toolDefs.length} tools available: ${toolNames}.
+ALWAYS use your tools for file operations — read_file to read, write_file to write, list_files to list, search_files to search, shell to run commands. Never guess or hallucinate file contents.
+Model: ${this.model} (${this.provider})`;
+      }
+
       // ── Memory: Semantic Recall (before every turn) ──────
       try {
         const recall = await this.memory.semanticRecall(userText);

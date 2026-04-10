@@ -338,15 +338,15 @@ class DocumentFeeder {
       if (chunks.length === 0) return;
 
       // Validate — gate broken documents before they enter the index
+      // Skip truncation checks on compiled syntheses (LLM output won't match raw-doc heuristics)
       const validation = this.validator.validate(textForChunking, chunks, { filePath, format });
 
-      if (validation.status === 'suspect_truncation' || validation.status === 'un_normalizable') {
+      if (!usedCompiler && (validation.status === 'suspect_truncation' || validation.status === 'un_normalizable')) {
         this.logger?.warn?.('Document quarantined — validation failed', {
           filePath,
           status: validation.status,
           issues: validation.issues
         });
-        // Track in manifest with parseStatus but do not enqueue for memory
         await this.manifest.trackQuarantined(filePath, label, fullHash, validation);
         return;
       }
@@ -359,7 +359,8 @@ class DocumentFeeder {
         parseStatus: validation.status,
         structuralSignature: validation.structuralSignature,
         docFamily: classification.family,
-        docFamilyConfidence: classification.confidence
+        docFamilyConfidence: classification.confidence,
+        compiled: usedCompiler
       });
 
       this.logger?.debug?.('File enqueued for ingestion', {

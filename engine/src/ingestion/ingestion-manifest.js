@@ -85,19 +85,18 @@ class IngestionManifest {
       this._pending.push(...items);
       this._debouncedSavePending();
 
-      // Update manifest entry with enrichment metadata
-      if (enrichment.parseStatus || enrichment.docFamily) {
-        const existing = this._manifest[filePath] || {};
-        this._manifest[filePath] = {
-          ...existing,
-          hash: fullHash,
-          label,
-          parseStatus: enrichment.parseStatus || null,
-          docFamily: enrichment.docFamily || null,
-          docFamilyConfidence: enrichment.docFamilyConfidence || null,
-          structuralSignature: enrichment.structuralSignature || null
-        };
-      }
+      // Update manifest entry — clear quarantine fields on successful enqueue
+      this._manifest[filePath] = {
+        hash: fullHash,
+        label,
+        parseStatus: enrichment.compiled ? 'ok' : (enrichment.parseStatus || null),
+        docFamily: enrichment.docFamily || null,
+        docFamilyConfidence: enrichment.docFamilyConfidence || null,
+        structuralSignature: enrichment.structuralSignature || null,
+        compiled: enrichment.compiled || false,
+        nodeCount: chunks.length,
+        ingestedAt: new Date().toISOString()
+      };
     });
   }
 
@@ -263,11 +262,13 @@ class IngestionManifest {
             label: representative.label,
             ingestedAt: representative.ingestedAt,
             nodeIds,
+            nodeCount: nodeIds.length,
             totalChunks: representative.totalChunks,
-            parseStatus: representative.parseStatus || existing.parseStatus || null,
+            parseStatus: existing.compiled ? 'ok' : (representative.parseStatus || existing.parseStatus || null),
             docFamily: representative.docFamily || existing.docFamily || null,
             docFamilyConfidence: representative.docFamilyConfidence || existing.docFamilyConfidence || null,
-            structuralSignature: existing.structuralSignature || null
+            structuralSignature: existing.structuralSignature || null,
+            compiled: existing.compiled || false
           };
         }
 

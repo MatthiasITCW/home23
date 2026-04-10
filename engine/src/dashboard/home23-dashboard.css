@@ -56,7 +56,7 @@ body::before {
   pointer-events: none;
 }
 
-.h23-header, .h23-pills, .h23-tabs, .h23-main {
+.h23-header, .h23-pills, .h23-pulse-bar, .h23-tabs, .h23-main {
   position: relative;
   z-index: 1;
 }
@@ -168,6 +168,82 @@ body::before {
   font-size: 0.75rem;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* ── Engine Pulse Bar ── */
+
+.h23-pulse-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 24px 10px;
+  font-size: 0.78rem;
+  font-family: 'Inter', monospace;
+  color: var(--text-secondary);
+  position: relative;
+  z-index: 1;
+}
+
+.h23-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+
+.h23-pulse-dot.awake {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.h23-pulse-dot.sleeping {
+  background: #a78bfa;
+  box-shadow: 0 0 6px rgba(167, 139, 250, 0.4);
+  animation: pulse-glow-sleep 3s ease-in-out infinite;
+}
+
+.h23-pulse-dot.thinking {
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+  animation: pulse-glow-think 1s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes pulse-glow-sleep {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes pulse-glow-think {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(56, 189, 248, 0.6); }
+  50% { opacity: 0.8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.9); }
+}
+
+.h23-pulse-state {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
+.h23-pulse-sep {
+  color: rgba(255,255,255,0.15);
+}
+
+.h23-pulse-phase, .h23-pulse-energy, .h23-pulse-cycle {
+  color: var(--text-secondary);
+}
+
+.h23-pulse-ago {
+  color: rgba(255,255,255,0.35);
+  font-size: 0.72rem;
 }
 
 /* ── Tab Bar ── */
@@ -504,12 +580,19 @@ body::before {
 
 .h23-tile-feeder {
   margin-bottom: 16px;
+  cursor: pointer;
+  transition: border-color 0.2s;
 }
 
-.h23-feeder-stats {
+.h23-tile-feeder:hover {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.h23-feeder-summary {
   display: flex;
-  gap: 24px;
-  margin-bottom: 12px;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
 .h23-feeder-stat {
@@ -526,8 +609,79 @@ body::before {
   display: block;
 }
 
-.h23-feeder-files {
-  max-height: 200px;
+.h23-feeder-stat .value.compiling {
+  color: #38bdf8;
+}
+
+.h23-feeder-progress {
+  flex: 1;
+  min-width: 120px;
+}
+
+.h23-feeder-progress-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.h23-feeder-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4ade80, #38bdf8);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.h23-feeder-progress-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.h23-feeder-recent {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h23-feeder-recent .filename {
+  color: var(--text-secondary);
+}
+
+/* Feeder overlay */
+
+.h23-feeder-overlay-panel {
+  max-width: 800px;
+  max-height: 80vh;
+}
+
+.h23-feeder-overlay-stats {
+  display: flex;
+  gap: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.h23-feeder-overlay-section {
+  margin-bottom: 16px;
+}
+
+.h23-feeder-overlay-section h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px 0;
+}
+
+.h23-feeder-file-list {
+  max-height: 400px;
   overflow-y: auto;
 }
 
@@ -535,9 +689,10 @@ body::before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
   font-size: 12px;
+  gap: 8px;
 }
 
 .h23-feeder-file:last-child {
@@ -550,12 +705,48 @@ body::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  min-width: 0;
+}
+
+.h23-feeder-file .meta {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.h23-feeder-file .badge {
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.h23-feeder-file .badge.compiled {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+}
+
+.h23-feeder-file .badge.raw {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+}
+
+.h23-feeder-file .badge.quarantined {
+  background: rgba(251, 146, 60, 0.15);
+  color: #fb923c;
 }
 
 .h23-feeder-file .chunks {
   color: var(--text-muted);
-  margin-left: 12px;
   white-space: nowrap;
+}
+
+.h23-feeder-file .ago {
+  color: rgba(255,255,255,0.3);
+  white-space: nowrap;
+  min-width: 50px;
+  text-align: right;
 }
 
 /* ── Brain Log tile (full width) ── */

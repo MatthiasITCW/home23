@@ -186,6 +186,12 @@ architecture:
     initialCuriosity: 0.5
     initialMood: 0.5
     initialEnergy: 1.0
+    # Sleep/wake tuning (Home23: short naps, long awake)
+    sleepThreshold: 0.15       # Enter sleep when energy drops below this
+    wakeThreshold: 0.35        # Wake when energy recovers to this
+    energyDrainRate: 0.01      # Energy cost per awake cycle
+    energyRecoveryRate: 0.10   # Energy recovered per sleep cycle
+    maxSleepCycleInterval: 45  # Cap sleep cycle interval (seconds) — don't let adaptive timing drag
   
   reflection:
     enabled: true

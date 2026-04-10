@@ -3333,13 +3333,29 @@ app.get('/api/providers/models', async (req, res) => {
 
     let models = registry.listModels({ includeAliases: true });
 
-    // Add OpenClaw (COZ) as a virtual provider option
-    models.push({
-      id: 'openclaw:coz',
-      provider: 'openclaw',
-      value: qualifyModelSelection('openclaw', 'openclaw:coz'),
-      label: 'COZ \u2014 Agent with Memory'
-    });
+    // When running under Home23, filter to only allowed models from home.yaml
+    if (home23Config?._home23 && home23Config.allowedModels) {
+      const allowed = home23Config.allowedModels;
+      models = models.filter(m => {
+        // Always keep local agents
+        if (m.provider?.startsWith('local:')) return true;
+        // Check if this model's provider has an allow-list
+        const providerAllowed = allowed[m.provider];
+        if (!providerAllowed) return false; // Provider not in home.yaml — hide it
+        // Check if model ID is in the allow-list
+        return providerAllowed.some(a => m.id === a || m.id?.startsWith(a));
+      });
+    }
+
+    // Add OpenClaw (COZ) as a virtual provider option (only in standalone mode)
+    if (!home23Config?._home23) {
+      models.push({
+        id: 'openclaw:coz',
+        provider: 'openclaw',
+        value: qualifyModelSelection('openclaw', 'openclaw:coz'),
+        label: 'COZ \u2014 Agent with Memory'
+      });
+    }
 
     // Include local agents from registry
     const allProviders = registry.getAllProviders();
@@ -4437,7 +4453,9 @@ app.get('/api/setup/status', async (req, res) => {
         https_port: Number(HTTPS_PORT),
         https_enabled: httpsEnabled,
         terminal_enabled: terminalSessionManager.isEnabled(),
-        ui_refresh_enabled: process.env.UI_REFRESH_V1 !== 'false'
+        ui_refresh_enabled: process.env.UI_REFRESH_V1 !== 'false',
+        managed_by_home23: Boolean(home23Config?._home23),
+        home23_settings_url: home23Config?._home23 ? `/home23/settings` : null
       },
       status: configStatus,
       details: {
@@ -4488,6 +4506,18 @@ app.get('/api/setup/status', async (req, res) => {
     console.error('[SETUP-STATUS] Failed to build setup status:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Block provider config changes when managed by Home23
+// PUT/DELETE to provider setup endpoints would overwrite the Home23-managed config
+app.use('/api/setup/providers', (req, res, next) => {
+  if (home23Config?._home23 && (req.method === 'PUT' || req.method === 'DELETE')) {
+    return res.status(403).json({
+      success: false,
+      error: 'Provider configuration is managed by Home23. Use the Home23 dashboard settings to change providers and API keys.'
+    });
+  }
+  next();
 });
 
 app.post('/api/setup/providers/ollama-cloud/test', async (req, res) => {

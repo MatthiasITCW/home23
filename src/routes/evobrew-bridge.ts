@@ -148,8 +148,15 @@ export function createStopHandler(config: BridgeConfig) {
   };
 }
 
-export function createHealthHandler(config: { agentName: string }) {
+export function createHealthHandler(config: { agentName: string; agent?: AgentLoop }) {
   return (_req: Request, res: Response): void => {
-    res.json({ status: 'ok', agent: config.agentName, type: 'cosmohome', endpoint: '/api/chat' });
+    res.json({
+      status: 'ok',
+      agent: config.agentName,
+      type: 'cosmohome',
+      endpoint: '/api/chat',
+      model: config.agent?.getModel?.() || null,
+      provider: config.agent?.getProvider?.() || null,
+    });
   };
 }

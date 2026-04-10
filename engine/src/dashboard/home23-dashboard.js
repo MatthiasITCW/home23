@@ -17,6 +17,16 @@ let evobrewUrl = '';
 let cosmo23Loaded = false;
 let intelRefreshInterval = null;
 
+// ── Engine Pulse State ──
+const enginePulse = {
+  state: 'unknown',    // awake, sleeping, thinking
+  phase: '',           // current activity description
+  energy: 0,
+  cycle: 0,
+  lastEventTime: null, // Date of last engine event
+  lastThought: null,   // timestamp of last thought
+};
+
 // ── Init ──
 
 async function init() {
@@ -36,6 +46,171 @@ async function init() {
   if (typeof initChat === 'function') {
     initChat('tile');
   }
+
+  // Connect engine pulse SSE
+  connectEnginePulse();
+
+  // Update pulse "ago" timer every second
+  setInterval(updatePulseAgo, 1000);
+}
+
+// ── Engine Pulse (Live Activity Indicator) ──
+
+function connectEnginePulse() {
+  // Connect directly to engine's WebSocket (port 5001) for real-time events
+  const enginePort = primaryAgent ? primaryAgent.enginePort || 5001 : 5001;
+  const wsUrl = `ws://${window.location.hostname}:${enginePort}`;
+  let ws;
+  let reconnectTimer = null;
+
+  function connect() {
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      const dot = document.getElementById('pulse-dot');
+      if (dot && !dot.className.includes('awake') && !dot.className.includes('sleeping')) {
+        dot.className = 'h23-pulse-dot awake';
+      }
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'connected') return; // welcome message
+        enginePulse.lastEventTime = new Date();
+        handleEngineEvent(data);
+        renderPulse();
+      } catch { /* ignore parse errors */ }
+    };
+
+    ws.onclose = () => {
+      const dot = document.getElementById('pulse-dot');
+      if (dot) dot.className = 'h23-pulse-dot';
+      // Reconnect after 5 seconds
+      if (!reconnectTimer) {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connect();
+        }, 5000);
+      }
+    };
+
+    ws.onerror = () => {
+      // onclose will handle reconnect
+    };
+  }
+
+  connect();
+}
+
+function handleEngineEvent(data) {
+  switch (data.type) {
+    case 'cycle_start':
+      enginePulse.cycle = data.cycle || enginePulse.cycle;
+      enginePulse.state = data.mode === 'sleeping' ? 'sleeping' : 'awake';
+      enginePulse.phase = 'starting cycle';
+      if (data.cognitiveState) {
+        enginePulse.energy = data.cognitiveState.energy || enginePulse.energy;
+      }
+      break;
+
+    case 'thought_generated':
+      enginePulse.state = data.role === 'sleep' ? 'sleeping' : 'thinking';
+      enginePulse.phase = data.role === 'sleep'
+        ? data.thought?.substring(0, 60) || 'resting'
+        : `thinking (${data.role || 'focus'})`;
+      enginePulse.cycle = data.cycle || enginePulse.cycle;
+      enginePulse.lastThought = new Date();
+      break;
+
+    case 'sleep_triggered':
+      enginePulse.state = 'sleeping';
+      enginePulse.phase = 'entering sleep';
+      enginePulse.energy = data.energy || enginePulse.energy;
+      break;
+
+    case 'wake_triggered':
+      enginePulse.state = 'awake';
+      enginePulse.phase = 'waking up';
+      enginePulse.energy = data.energyRestored || enginePulse.energy;
+      break;
+
+    case 'coordinator_review':
+      enginePulse.phase = 'strategic review';
+      break;
+
+    case 'executive_decision':
+      enginePulse.phase = `executive: ${(data.action || '').toLowerCase()}`;
+      break;
+
+    case 'agent_spawned':
+      enginePulse.phase = `spawning ${data.agentType || 'agent'}`;
+      break;
+
+    case 'agent_completed':
+      enginePulse.phase = `${data.agentType || 'agent'} completed`;
+      break;
+
+    case 'dream_rewiring':
+      enginePulse.state = 'sleeping';
+      enginePulse.phase = 'dreaming (rewiring)';
+      break;
+
+    case 'cognitive_state_changed':
+    case 'cognitive_state_update':
+      if (data.energy !== undefined) enginePulse.energy = data.energy;
+      if (data.mode) {
+        enginePulse.state = data.mode === 'sleeping' ? 'sleeping' : 'awake';
+      }
+      if (data.newValue && data.metric === 'mode') {
+        enginePulse.state = data.newValue === 'sleeping' ? 'sleeping' : 'awake';
+      }
+      break;
+
+    case 'cycle_complete':
+      enginePulse.phase = 'cycle complete';
+      break;
+
+    case 'node_created':
+      enginePulse.phase = 'creating memory';
+      break;
+  }
+}
+
+// Cached pulse DOM elements (populated on first render)
+let _pulseEls = null;
+let _pulseRafPending = false;
+
+function renderPulse() {
+  // Throttle to one render per animation frame
+  if (_pulseRafPending) return;
+  _pulseRafPending = true;
+  requestAnimationFrame(_renderPulseNow);
+}
+
+function _renderPulseNow() {
+  _pulseRafPending = false;
+  if (!_pulseEls) {
+    _pulseEls = {
+      dot: document.getElementById('pulse-dot'),
+      state: document.getElementById('pulse-state'),
+      phase: document.getElementById('pulse-phase'),
+      energy: document.getElementById('pulse-energy'),
+      cycle: document.getElementById('pulse-cycle'),
+    };
+  }
+  if (!_pulseEls.dot) return;
+
+  _pulseEls.dot.className = 'h23-pulse-dot ' + (enginePulse.state || '');
+  _pulseEls.state.textContent = enginePulse.state || '—';
+  _pulseEls.phase.textContent = enginePulse.phase || '—';
+  _pulseEls.energy.textContent = `⚡ ${Math.round((enginePulse.energy || 0) * 100)}%`;
+  _pulseEls.cycle.textContent = `cycle ${enginePulse.cycle || '—'}`;
+}
+
+function updatePulseAgo() {
+  const ref = enginePulse.lastThought || enginePulse.lastEventTime;
+  setText('pulse-ago', ref ? timeSince(ref) : '—');
 }
 
 // ── Clock ──
@@ -285,7 +460,7 @@ async function loadHomeTiles() {
     const state = await apiFetch(`${base}/api/state`);
     if (state) {
       updateSystemTile(state);
-      updatePills(state);
+      updatePulseFromState(state);
       const dot = document.getElementById('cosmo-dot');
       if (dot) { dot.className = 'status-dot alive'; }
       setText('cosmo-status-text', 'COSMO');
@@ -345,13 +520,26 @@ function updateSystemTile(state) {
   }
 }
 
-function updatePills(state) {
+function updatePulseFromState(state) {
+  // Feed pulse bar from state API (initial + polling fallback)
+  const cs = state.cognitiveState || {};
+  const temporal = state.temporal || {};
+  enginePulse.cycle = state.cycleCount || enginePulse.cycle;
+  enginePulse.energy = cs.energy || enginePulse.energy;
+  if (temporal.state === 'sleeping' || cs.mode === 'sleeping') {
+    enginePulse.state = 'sleeping';
+  } else if (enginePulse.state === 'unknown') {
+    enginePulse.state = 'awake';
+  }
+  if (!enginePulse.phase || enginePulse.phase === '—') {
+    enginePulse.phase = state.oscillatorMode || 'focus';
+  }
   const journal = state.journal || [];
-  const modelName = state.model || state.modelName || '';
-  const cycleCount = state.cycleCount || '—';
-  setText('pill-cycle', modelName ? `🧠 cycle ${cycleCount} · ${modelName}` : `🧠 cycle ${cycleCount}`);
-  setText('pill-mode', `${state.oscillatorMode || 'focus'}`);
-  setText('pill-updated', `sensors ${timeSince(new Date())}`);
+  if (journal.length > 0) {
+    const last = journal[journal.length - 1];
+    if (last.timestamp) enginePulse.lastThought = new Date(last.timestamp);
+  }
+  renderPulse();
 }
 
 function updateThoughtsTile(thoughts) {
@@ -430,12 +618,13 @@ function updateDreamLog(dreams) {
 
 // ── Feeder Tile ──
 
+let _cachedFeederData = null;
+
 function updateFeederTile(data) {
   const container = document.getElementById('home-feeder');
   if (!container) return;
 
   const feeders = data.feeders || [];
-  // Find the feeder for our primary agent
   const feeder = feeders.find(f => f.member === primaryAgent.name) || feeders[0];
 
   if (!feeder) {
@@ -443,26 +632,104 @@ function updateFeederTile(data) {
     return;
   }
 
+  _cachedFeederData = feeder;
   const files = feeder.files || [];
+  const compiled = feeder.compiledCount || 0;
+  const total = feeder.totalFiles || 0;
+  const processed = feeder.processedFiles || files.length;
+  const pending = feeder.pendingCount || 0;
+  const chunks = feeder.chunkCount || files.reduce((sum, f) => sum + (f.chunks || 0), 0);
+  const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+  // Most recent file
   const sorted = [...files].sort((a, b) => (b.lastIngested || '').localeCompare(a.lastIngested || ''));
+  const recent = sorted[0];
+  const recentName = recent ? recent.path.split('/').pop() : '';
+  const recentAgo = recent?.lastIngested ? timeSince(new Date(recent.lastIngested)) : '';
 
   container.innerHTML = `
-    <div class="h23-feeder-stats">
-      <div class="h23-feeder-stat"><span class="value">${feeder.totalFiles}</span> documents</div>
-      <div class="h23-feeder-stat"><span class="value">${feeder.pendingCount}</span> pending</div>
-      <div class="h23-feeder-stat"><span class="value">${files.reduce((sum, f) => sum + (f.chunks || 0), 0)}</span> chunks</div>
+    <div class="h23-feeder-summary">
+      <div class="h23-feeder-stat"><span class="value">${total}</span> in workspace</div>
+      <div class="h23-feeder-stat"><span class="value${processed < total ? ' compiling' : ''}">${processed}</span> processed</div>
+      <div class="h23-feeder-stat"><span class="value">${compiled}</span> compiled</div>
+      <div class="h23-feeder-stat"><span class="value">${chunks}</span> nodes</div>
+      <div class="h23-feeder-progress">
+        <div class="h23-feeder-progress-bar"><div class="h23-feeder-progress-fill" style="width:${pct}%"></div></div>
+        <div class="h23-feeder-progress-label">${processed} of ${total} · ${pending > 0 ? pending + ' remaining' : 'complete'}</div>
+      </div>
     </div>
-    <div class="h23-feeder-files">
-      ${sorted.map(f => {
-        const name = f.path.split('/').pop();
-        const label = f.label ? `[${f.label}]` : '';
-        return `<div class="h23-feeder-file">
-          <span class="path">${name} ${label}</span>
-          <span class="chunks">${f.chunks || 0} chunks</span>
-        </div>`;
-      }).join('')}
+    ${recentName ? `<div class="h23-feeder-recent">Latest: <span class="filename">${recentName}</span> · ${recentAgo}</div>` : ''}
+  `;
+}
+
+function openFeederOverlay() {
+  const overlay = document.getElementById('feeder-overlay');
+  const body = document.getElementById('feeder-overlay-body');
+  if (!overlay || !body) return;
+
+  if (!_cachedFeederData) {
+    body.innerHTML = '<p class="h23-muted">No feeder data available</p>';
+    overlay.style.display = 'flex';
+    return;
+  }
+
+  const f = _cachedFeederData;
+  const files = f.files || [];
+  const compiled = f.compiledCount || 0;
+  const quarantined = f.quarantinedCount || 0;
+  const total = f.totalFiles || 0;
+  const processed = f.processedFiles || files.length;
+  const chunks = f.chunkCount || files.reduce((sum, x) => sum + (x.chunks || 0), 0);
+  const pending = f.pendingCount || 0;
+  const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+  const sorted = [...files].sort((a, b) => (b.lastIngested || '').localeCompare(a.lastIngested || ''));
+
+  body.innerHTML = `
+    <div class="h23-feeder-overlay-stats">
+      <div class="h23-feeder-stat"><span class="value">${total}</span> in workspace</div>
+      <div class="h23-feeder-stat"><span class="value${processed < total ? ' compiling' : ''}">${processed}</span> processed</div>
+      <div class="h23-feeder-stat"><span class="value">${compiled}</span> compiled</div>
+      <div class="h23-feeder-stat"><span class="value">${chunks}</span> brain nodes</div>
+      <div class="h23-feeder-stat"><span class="value">${pending}</span> remaining</div>
+      ${quarantined ? `<div class="h23-feeder-stat"><span class="value" style="color:#fb923c">${quarantined}</span> quarantined</div>` : ''}
+    </div>
+    <div class="h23-feeder-progress" style="margin-bottom:16px">
+      <div class="h23-feeder-progress-bar"><div class="h23-feeder-progress-fill" style="width:${pct}%"></div></div>
+      <div class="h23-feeder-progress-label">${processed} of ${total} files processed · ${compiled} through LLM compiler</div>
+    </div>
+    <div class="h23-feeder-overlay-section">
+      <h3>Recent Files (${Math.min(sorted.length, 50)} shown)</h3>
+      <div class="h23-feeder-file-list">
+        ${sorted.map(x => {
+          const name = x.path.split('/').pop();
+          const dir = x.path.split('/').slice(-2, -1)[0] || '';
+          const ago = x.lastIngested ? timeSince(new Date(x.lastIngested)) : '—';
+          const isQuarantined = x.status === 'suspect_truncation' || x.status === 'un_normalizable';
+          const badge = isQuarantined
+            ? '<span class="badge quarantined">quarantined</span>'
+            : x.compiled
+              ? '<span class="badge compiled">compiled</span>'
+              : '<span class="badge raw">raw</span>';
+          return `<div class="h23-feeder-file">
+            <span class="path" title="${x.path}">${dir ? dir + '/' : ''}${name}</span>
+            <span class="meta">
+              ${badge}
+              <span class="chunks">${x.chunks || 0} chunks</span>
+              <span class="ago">${ago}</span>
+            </span>
+          </div>`;
+        }).join('')}
+      </div>
     </div>
   `;
+
+  overlay.style.display = 'flex';
+}
+
+function closeFeederOverlay() {
+  const overlay = document.getElementById('feeder-overlay');
+  if (overlay) overlay.style.display = 'none';
 }
 
 // ── Secondary Agent Panels ──

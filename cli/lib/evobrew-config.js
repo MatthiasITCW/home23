@@ -2,7 +2,10 @@
  * Evobrew Config Generator
  *
  * Reads Home23's home.yaml, secrets.yaml, and instances/ to produce
- * evobrew's config.json. No encryption — Home23 manages secrets separately.
+ * evobrew's config.json. API keys are NOT written — PM2 env vars handle that.
+ * This file provides structure: agents, brains, allowed models, ports.
+ *
+ * Regenerated on every engine start (not just first start).
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
@@ -16,7 +19,6 @@ function loadYaml(filePath) {
 
 export function generateEvobrewConfig(home23Root) {
   const homeConfig = loadYaml(join(home23Root, 'config', 'home.yaml'));
-  const secrets = loadYaml(join(home23Root, 'config', 'secrets.yaml'));
   const instancesDir = join(home23Root, 'instances');
 
   // Scan instances for agents
@@ -27,17 +29,14 @@ export function generateEvobrewConfig(home23Root) {
       if (!existsSync(agentConfigPath)) continue;
       const agentConfig = loadYaml(agentConfigPath);
       const brainPath = join(instancesDir, name, 'brain');
-
-      // Each agent's harness bridge runs on its bridge port
-      const bridgePort = agentConfig.ports?.bridge ?? (4610 + agents.length * 10);
-      const bridgeToken = secrets.agents?.[name]?.bridgeToken ?? '';
+      const bridgePort = agentConfig.ports?.bridge ?? (5004 + agents.length * 10);
 
       agents.push({
         id: name,
         name: agentConfig.agent?.displayName || name,
         url: `http://localhost:${bridgePort}`,
         endpoint: '/api/chat',
-        api_key: bridgeToken,
+        api_key: '',
         brainPath,
         enabled: true,
         capabilities: {
@@ -60,24 +59,32 @@ export function generateEvobrewConfig(home23Root) {
     }
   }
 
-  // Build evobrew config
+  // Build allowed models from home.yaml providers.*.defaultModels
+  const providers = homeConfig.providers || {};
+  const allowedModels = {};
+  for (const [providerId, providerConfig] of Object.entries(providers)) {
+    if (providerConfig?.defaultModels?.length) {
+      allowedModels[providerId] = providerConfig.defaultModels;
+    }
+  }
+
+  // Build evobrew config — NO API KEYS (PM2 env vars handle auth)
   const config = {
     _generated: true,
-    _source: 'Home23 config generator — do not edit manually',
+    _generatedAt: new Date().toISOString(),
+    _source: 'Home23 config generator — do not edit manually. Regenerated on every start.',
+    _home23: true,
 
     providers: {
-      anthropic: {
-        api_key: secrets.providers?.anthropic?.apiKey || '',
-        oauth: false,
-      },
-      openai: {
-        api_key: secrets.providers?.openai?.apiKey || '',
-      },
-      xai: {
-        api_key: secrets.providers?.xai?.apiKey || '',
-      },
+      // No API keys — PM2 injects ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
+      anthropic: { oauth: false },
+      openai: {},
+      xai: {},
       ollama: {
-        url: homeConfig.providers?.['ollama-local']?.baseUrl || 'http://127.0.0.1:11434',
+        url: providers['ollama-local']?.baseUrl || 'http://127.0.0.1:11434',
+      },
+      'ollama-cloud': {
+        url: providers['ollama-cloud']?.baseUrl || 'https://ollama.com/v1',
       },
       local_agents: agents.map(a => ({
         id: a.id,
@@ -88,6 +95,15 @@ export function generateEvobrewConfig(home23Root) {
         enabled: a.enabled,
         capabilities: a.capabilities,
       })),
+    },
+
+    // Model allow-list from home.yaml — evobrew filters to these only
+    allowedModels,
+
+    // Default selections from home.yaml chat section
+    defaults: {
+      provider: homeConfig.chat?.defaultProvider || '',
+      model: homeConfig.chat?.defaultModel || '',
     },
 
     brain: {
@@ -101,8 +117,10 @@ export function generateEvobrewConfig(home23Root) {
     features: {
       brains: {
         enabled: true,
-        // Scanner looks for <dir>/<subdir>/state.json.gz, so point at instance dirs (not brain/ directly)
-        directories: agents.map(a => join(home23Root, 'instances', a.id)),
+        directories: [
+          ...agents.map(a => join(home23Root, 'instances', a.id)),
+          ...(existsSync(cosmo23RunsDir) ? [cosmo23RunsDir] : []),
+        ],
       },
     },
 
@@ -135,7 +153,8 @@ export function writeEvobrewConfig(home23Root) {
 
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   console.log(`[evobrew] Config written to ${configPath}`);
-  console.log(`[evobrew] ${config.providers.local_agents.length} agent(s) registered`);
+  console.log(`[evobrew]   ${config.providers.local_agents.length} agent(s), ${Object.keys(config.brain.researchBrains).length} research brain(s)`);
+  console.log(`[evobrew]   Allowed models: ${Object.entries(config.allowedModels).map(([p, m]) => `${p}(${m.length})`).join(', ')}`);
 
   return configPath;
 }

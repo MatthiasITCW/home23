@@ -23,7 +23,7 @@ class TemporalRhythms {
     // Debounce settings to prevent thrashing
     this.minAwakeDuration = 10 * 60 * 1000; // 10 minutes minimum awake time
     this.lastConsolidationTime = null;
-    this.minConsolidationInterval = 60 * 60 * 1000; // 1 hour minimum between consolidations
+    this.minConsolidationInterval = 20 * 60 * 1000; // 20 minutes between LLM consolidations (Home23: shorter cycles)
   }
 
   /**
@@ -77,10 +77,11 @@ class TemporalRhythms {
       return;
     }
 
-    // 1. Cycle-based consolidation (every 100 cycles)
+    // 1. Cycle-based consolidation (every 200 cycles)
     // Ensures regular deep sleep even if energy/fatigue don't trigger
+    // Home23: increased from 100 to 200 — always-on AI needs longer awake windows
     const cyclesSinceLastSleep = activityCount - this.lastSleepCycle;
-    if (cyclesSinceLastSleep >= 100 && activityCount > 0) {
+    if (cyclesSinceLastSleep >= 200 && activityCount > 0) {
       this.logger?.info('🌙 Scheduled consolidation (cycle-based)', {
         cyclesSinceLastSleep,
         currentCycle: activityCount
@@ -91,10 +92,9 @@ class TemporalRhythms {
     }
 
     // 2. Emergency sleep triggers (backup coordination with cognitive system)
-    // Cognitive system triggers at energy < 0.2
-    // Temporal provides backup at 0.15 if cognitive missed it
-    // Critical safety net at 0.1
-    const emergencyEnergyThreshold = 0.15;  // Between cognitive (0.2) and critical (0.1)
+    // Cognitive system triggers at energy < 0.15 (configurable sleepThreshold)
+    // Temporal provides backup at 0.10 if cognitive missed it
+    const emergencyEnergyThreshold = 0.10;  // Below cognitive threshold as safety net
     const emergencyFatigueThreshold = 0.7;  // Restore to reasonable level (was 0.9)
     
     if (energyLevel < emergencyEnergyThreshold || this.fatigue > emergencyFatigueThreshold) {

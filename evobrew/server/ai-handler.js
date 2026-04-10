@@ -1946,7 +1946,6 @@ Execute the pending steps now. Start with the first step that has status "pendin
           let textContent = '';
 
           for await (const chunk of stream) {
-            console.log(`[AI] Local agent chunk:`, JSON.stringify(chunk).substring(0, 200));
             if (chunk.type === 'text' && chunk.text) {
               textContent += chunk.text;
               eventEmitter?.({ type: 'response_chunk', chunk: chunk.text });
@@ -1955,9 +1954,25 @@ Execute the pending steps now. Start with the first step that has status "pendin
               textContent += chunk.delta.text;
               eventEmitter?.({ type: 'response_chunk', chunk: chunk.delta.text });
             }
+            // Home23 bridge format: type=response_chunk with .chunk
+            if (chunk.type === 'response_chunk' && chunk.chunk) {
+              textContent += chunk.chunk;
+              eventEmitter?.({ type: 'response_chunk', chunk: chunk.chunk });
+            }
             if (chunk.type === 'thinking' && chunk.text) {
               eventEmitter?.({ type: 'thinking', content: chunk.text });
             }
+            // Home23 bridge tool events — agent already executed the tool, just show activity
+            if (chunk.type === 'tool_start') {
+              eventEmitter?.({ type: 'tool_start', toolName: chunk.tool, args: chunk.args });
+            }
+            if (chunk.type === 'tool_result') {
+              eventEmitter?.({ type: 'tool_complete', toolName: chunk.tool, result: chunk.result, success: chunk.success });
+            }
+            if (chunk.type === 'media') {
+              eventEmitter?.({ type: 'info', message: `[Media: ${chunk.caption || chunk.path || 'attachment'}]` });
+            }
+            // Standard adapter tool call protocol (for non-bridge local agents)
             if (chunk.type === 'tool_use_start') {
               eventEmitter?.({ type: 'tool_preparing', toolName: chunk.toolName, toolId: chunk.toolId });
               toolCalls.push({ id: chunk.toolId, name: chunk.toolName, arguments: '' });

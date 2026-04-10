@@ -631,7 +631,7 @@ async function main(): Promise<void> {
   };
   bridgeApp.post('/api/chat', createEvobrewChatHandler(bridgeConfig));
   bridgeApp.post('/api/stop', createStopHandler(bridgeConfig));
-  bridgeApp.get('/health', createHealthHandler({ agentName: AGENT_NAME }));
+  bridgeApp.get('/health', createHealthHandler({ agentName: AGENT_NAME, agent }));
 
   bridgeApp.listen(BRIDGE_PORT, () => {
     console.log(`[home] Evobrew bridge listening on port ${BRIDGE_PORT} (/api/chat, /api/stop, /health)`);
