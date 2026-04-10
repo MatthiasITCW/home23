@@ -592,6 +592,8 @@ Model: ${this.model} (${this.provider})`;
                 store: false,
               };
 
+              console.log(`[agent] codex request: model=${this.model}, tools=${codexTools.length}, input_items=${inputItems.length}, instructions_len=${instructions.length}`);
+
               const codexTimeout = 120_000;
               // AbortSignal.any is Node 20+; fall back to ac.signal if unavailable
               const fetchSignal = (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any
