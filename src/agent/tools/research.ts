@@ -172,24 +172,32 @@ async function getStatus(runId?: string, ctx?: ToolContext): Promise<ToolResult>
   const COSMO23_URL = getCosmoBase(ctx);
   const parts: string[] = [];
 
+  // Active run status
   try {
-    const currentRes = await fetch(`${COSMO23_URL}/api/runs/current`, {
+    const statusRes = await fetch(`${COSMO23_URL}/api/status`, {
       signal: AbortSignal.timeout(10_000),
     });
 
-    if (!currentRes.ok) {
+    if (!statusRes.ok) {
       return { content: 'COSMO 2.3 is not running or unreachable.', is_error: true };
     }
 
-    const current = await currentRes.json() as {
-      name?: string;
-      metadata?: { cycle?: number; agentCount?: number; status?: string } | null;
-      logsDir?: string;
+    const status = await statusRes.json() as {
+      running?: boolean;
+      activeContext?: {
+        runName?: string;
+        topic?: string;
+        explorationMode?: string;
+        startedAt?: string;
+      } | null;
+      processStatus?: { running?: Array<{ name?: string }>; count?: number };
     };
 
-    const isActive = current.name && current.name !== 'brain' && current.name !== 'runtime';
-    if (isActive) {
-      parts.push(`Active run: "${current.name}" — cycle ${current.metadata?.cycle || '?'}, ${current.metadata?.agentCount || 0} agents`);
+    if (status.running && status.activeContext?.runName) {
+      const ctx2 = status.activeContext;
+      parts.push(`Active run: "${ctx2.runName}" (${ctx2.explorationMode || 'guided'}) — topic: ${ctx2.topic || '?'}`);
+      if (ctx2.startedAt) parts.push(`  started: ${ctx2.startedAt}`);
+      parts.push(`  processes: ${status.processStatus?.count || 0} running`);
     } else {
       parts.push('No active research run.');
     }
@@ -197,21 +205,24 @@ async function getStatus(runId?: string, ctx?: ToolContext): Promise<ToolResult>
     return { content: 'COSMO 2.3 is not running or unreachable.', is_error: true };
   }
 
+  // Completed brains
   try {
-    const runsRes = await fetch(`${COSMO23_URL}/api/runs`, {
+    const brainsRes = await fetch(`${COSMO23_URL}/api/brains`, {
       signal: AbortSignal.timeout(10_000),
     });
-    if (runsRes.ok) {
-      const runsData = await runsRes.json() as {
-        current?: { name?: string };
-        runs?: Array<{ name?: string; metadata?: { status?: string } | null }>;
+    if (brainsRes.ok) {
+      const brainsData = await brainsRes.json() as {
+        brains?: Array<{ id?: string; name?: string; path?: string; source?: string; updatedAt?: string }>;
       };
-      const runs = (runsData.runs || []).filter(r => !runId || r.name === runId);
-      if (runs.length > 0) {
-        parts.push(`\nCompleted research brains (${runs.length}):`);
-        for (const r of runs.slice(0, 10)) {
-          parts.push(`  - ${r.name || 'unnamed'}${r.metadata?.status ? ` [${r.metadata.status}]` : ''}`);
+      const brains = (brainsData.brains || []).filter(b => !runId || b.name === runId || b.id === runId);
+      if (brains.length > 0) {
+        parts.push(`\nAvailable research brains (${brains.length}):`);
+        for (const b of brains.slice(0, 10)) {
+          const tag = b.source && b.source !== 'local' ? ` [${b.source}]` : '';
+          parts.push(`  - ${b.name || b.id || 'unnamed'}${tag}`);
         }
+      } else {
+        parts.push('\nNo completed research brains yet.');
       }
     }
   } catch {

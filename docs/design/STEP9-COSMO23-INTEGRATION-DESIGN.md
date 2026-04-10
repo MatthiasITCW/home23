@@ -1,7 +1,13 @@
 # Step 9: COSMO 2.3 Integration Design
 
 **Date:** 2026-04-07
-**Status:** Approved
+**Status:** Approved · Smoke-tested 2026-04-10
+
+> **Vendored patches:** structural fixes to the bundled `cosmo23/` source are
+> tracked in [COSMO23-VENDORED-PATCHES.md](./COSMO23-VENDORED-PATCHES.md).
+> **Re-apply or re-verify those patches any time `cli/home23.js cosmo23 update`
+> pulls fresh upstream.** Without them, config reads and writes diverge and
+> encrypted API keys leak into outbound HTTP as literal bearer tokens.
 
 ## Summary
 

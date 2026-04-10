@@ -105,10 +105,24 @@ const DEFAULT_CONFIG = {
 // ============================================================================
 
 /**
- * Get the path to the config directory (~/.cosmo2.3/)
+ * Get the path to the config directory.
+ *
+ * HOME23 PATCH: honor COSMO23_CONFIG_DIR (and COSMO23_CONFIG_PATH) so that
+ * embedded deployments (Home23 bundles cosmo23 at a non-standard location) can
+ * redirect BOTH reads and writes to the same directory. Without this, reads go
+ * through config-loader-sync.js (which already honors the env var) and writes
+ * go to ~/.cosmo2.3 — they fall out of sync silently.
+ *
+ * Falls back to ~/.cosmo2.3/ for standalone installs.
  * @returns {string}
  */
 function getConfigDir() {
+  if (process.env.COSMO23_CONFIG_DIR) {
+    return process.env.COSMO23_CONFIG_DIR;
+  }
+  if (process.env.COSMO23_CONFIG_PATH) {
+    return path.dirname(process.env.COSMO23_CONFIG_PATH);
+  }
   return path.join(os.homedir(), CONFIG_DIR_NAME);
 }
 

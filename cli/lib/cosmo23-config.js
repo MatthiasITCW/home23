@@ -41,10 +41,21 @@ export function seedCosmo23Config(home23Root) {
   if (!config.providers) config.providers = {};
   if (!config.security) config.security = {};
   if (!config.server) config.server = {};
+  if (!config.features) config.features = {};
 
-  // Pre-seed API keys from Home23 secrets
+  // Home23 owns brain discovery — never leak stale reference paths from a prior
+  // install or from a standalone COSMO tutorial run. Always start with the
+  // local runs/ dir only (COSMO scans that automatically).
+  config.features.brains = { enabled: true, directories: [] };
+
+  // Pre-seed API keys from Home23 secrets (plaintext — config dir is gitignored).
+  // The cosmo23 server's launch path prefers process.env under Home23 (PM2
+  // injection), so these stored values mostly serve the Web UI setup checker.
+  // Still seeded so `/api/setup/status` reports `configured=true`.
   const openaiKey = secrets.providers?.openai?.apiKey || '';
   const xaiKey = secrets.providers?.xai?.apiKey || '';
+  const ollamaCloudKey = secrets.providers?.['ollama-cloud']?.apiKey || '';
+  const anthropicKey = secrets.providers?.anthropic?.apiKey || '';
 
   if (openaiKey) {
     config.providers.openai = { ...config.providers.openai, enabled: true, api_key: openaiKey };
@@ -52,6 +63,17 @@ export function seedCosmo23Config(home23Root) {
   if (xaiKey) {
     config.providers.xai = { ...config.providers.xai, enabled: true, api_key: xaiKey };
   }
+  if (ollamaCloudKey) {
+    config.providers['ollama-cloud'] = { ...config.providers['ollama-cloud'], enabled: true, api_key: ollamaCloudKey };
+  }
+  if (anthropicKey) {
+    // COSMO anthropic is OAuth-only — we still record enabled=true so UI shows provider as available
+    config.providers.anthropic = { ...config.providers.anthropic, enabled: true };
+  }
+
+  // Ensure ollama (local) and ollama-cloud base URLs come from home.yaml
+  const ollamaLocalUrl = homeConfig.providers?.['ollama-local']?.baseUrl || 'http://localhost:11434';
+  config.providers.ollama = { ...config.providers.ollama, enabled: true, base_url: ollamaLocalUrl, auto_detect: true };
 
   // Ensure encryption key exists (generate once, preserve forever)
   if (!config.security.encryption_key) {

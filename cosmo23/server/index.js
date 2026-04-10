@@ -384,6 +384,29 @@ async function applyStoredConfig() {
   resetDefaultRegistry();
 }
 
+/**
+ * HOME23 PATCH: Resolve a provider API key for use in a per-run config.yaml.
+ *
+ * Resolution order:
+ *   1. process.env[envName]  — always wins (PM2 injection under Home23)
+ *   2. setupConfig plaintext  — only used if the stored value is NOT the
+ *      "encrypted:..." ciphertext form (those must never be shipped into the
+ *      per-run yaml; the engine would send them as bearer tokens verbatim).
+ *   3. '' — engine will fall back to its own env var lookup.
+ *
+ * This prevents the "401 unauthorized: encrypted:..." failure mode where an
+ * encrypted config value is bypassed past decryption into outbound HTTP calls.
+ */
+function resolveProviderKey(providerId, setupConfig, envName) {
+  const envValue = process.env[envName];
+  if (envValue && String(envValue).trim()) return String(envValue).trim();
+  const stored = setupConfig?.providers?.[providerId]?.api_key;
+  if (typeof stored === 'string' && stored && !stored.startsWith('encrypted:')) {
+    return stored;
+  }
+  return '';
+}
+
 function serializeLaunchSettings(payload, setupConfig) {
   const catalog = loadModelCatalogSync();
   const defaults = getCatalogDefaults(catalog);
@@ -482,7 +505,11 @@ function serializeLaunchSettings(payload, setupConfig) {
     strategic_model: selectedModels.strategic,
     enable_local_llm: usesLocal,
     enable_ollama_cloud: usesOllamaCloud,
-    ollama_cloud_api_key: setupConfig?.providers?.['ollama-cloud']?.api_key || process.env.OLLAMA_CLOUD_API_KEY || '',
+    // HOME23 PATCH: prefer env var over config file. Under Home23, PM2 injects
+    // OLLAMA_CLOUD_API_KEY from secrets.yaml; under standalone, config file wins
+    // only when the stored value is plaintext (never ship encrypted strings into
+    // the per-run config.yaml — the engine would send them as bearer tokens).
+    ollama_cloud_api_key: resolveProviderKey('ollama-cloud', setupConfig, 'OLLAMA_CLOUD_API_KEY'),
     local_llm_base_url: payload.localLlmBaseUrl || ollamaBaseUrl,
     local_llm_default_model: localPrimaryModel,
     local_llm_fast_model: localFastModel,
@@ -764,9 +791,20 @@ app.post('/api/setup/bootstrap', async (req, res) => {
   }
 
   await saveConfig(nextConfig);
-  process.env.OPENAI_API_KEY = nextConfig.providers.openai.api_key || '';
-  process.env.XAI_API_KEY = nextConfig.providers.xai.api_key || '';
-  process.env.OLLAMA_CLOUD_API_KEY = nextConfig.providers['ollama-cloud']?.api_key || '';
+  // HOME23 PATCH: only overwrite process.env if the stored value is plaintext.
+  // Never propagate "encrypted:..." ciphertext into process.env — downstream
+  // HTTP clients would send it as a literal bearer token. Encrypted values are
+  // decrypted on demand by config-loader-sync / encryption.js; leaving env
+  // alone lets the PM2-injected keys (Home23) or the loader's decrypt path
+  // (standalone) win.
+  const safeAssignEnv = (key, value) => {
+    if (typeof value === 'string' && value && !value.startsWith('encrypted:')) {
+      process.env[key] = value;
+    }
+  };
+  safeAssignEnv('OPENAI_API_KEY', nextConfig.providers.openai.api_key);
+  safeAssignEnv('XAI_API_KEY', nextConfig.providers.xai.api_key);
+  safeAssignEnv('OLLAMA_CLOUD_API_KEY', nextConfig.providers['ollama-cloud']?.api_key);
   await applyStoredConfig();
 
   res.json({
