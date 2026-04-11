@@ -515,7 +515,7 @@ async function loadHomeTiles() {
     fetchEngineHealth(primaryAgent).catch(() => null),
     apiFetch(`${base}/api/home/summary`, { timeoutMs: 4000 }).catch(() => null),
     apiFetch('/home23/feeder-status', { timeoutMs: 4000 }).catch(() => null),
-    apiFetch(`${base}/api/thoughts?limit=20`, { timeoutMs: 5000 }).catch(() => null),
+    apiFetch(`${base}/api/thoughts?limit=120`, { timeoutMs: 5000 }).catch(() => null),
     apiFetch(`${base}/api/dreams?limit=20&lite=1`, { timeoutMs: 3000 }).catch(() => null),
   ]);
 
@@ -537,7 +537,7 @@ async function loadHomeTiles() {
     const thoughts = thoughtData.thoughts || thoughtData.journal || thoughtData || [];
     _cachedThoughts = thoughts;
     updateThoughtsTile(thoughts);
-    updateBrainLog(thoughts);
+    updateBrainLog(thoughts.slice(-20));
   }
 
   if (dreamData) {
