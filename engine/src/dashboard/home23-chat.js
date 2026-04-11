@@ -45,16 +45,8 @@ async function initChat(mode) {
     return;
   }
 
+  renderAgentSelectors(primary.name);
   await switchAgent(primary.name);
-
-  // Agent selector
-  const select = document.getElementById('chat-agent-select');
-  if (select) {
-    select.innerHTML = chatAgents.map(a =>
-      `<option value="${a.name}" ${a.name === primary.name ? 'selected' : ''}>${a.displayName || a.name}${a.isPrimary ? ' (primary)' : ''}</option>`
-    ).join('');
-    select.addEventListener('change', () => switchAgent(select.value));
-  }
 
   // Model selector — use agent's current model (may have been changed in settings)
   chatModel = primary.model;
@@ -95,10 +87,23 @@ function bindInput(inputId, btnId, source) {
   if (btn) btn.addEventListener('click', () => sendMessage(source));
 }
 
-function populateModelSelect(provider, currentModel) {
-  const select = document.getElementById('chat-model-select');
-  if (!select) return;
+function renderAgentSelectors(selectedName) {
+  const options = chatAgents.map(agent =>
+    `<option value="${agent.name}" ${agent.name === selectedName ? 'selected' : ''}>${agent.displayName || agent.name}${agent.isPrimary ? ' (primary)' : ''}</option>`
+  ).join('');
 
+  document.querySelectorAll('.h23-chat-agent-select').forEach(select => {
+    select.innerHTML = options;
+    select.value = selectedName;
+    select.title = select.selectedOptions[0]?.textContent || '';
+    if (!select.dataset.bound) {
+      select.addEventListener('change', () => switchAgent(select.value));
+      select.dataset.bound = 'true';
+    }
+  });
+}
+
+function populateModelSelect(provider, currentModel) {
   // Collect all models across providers
   const allModels = [];
   for (const [provName, cfg] of Object.entries(chatModels)) {
@@ -107,32 +112,54 @@ function populateModelSelect(provider, currentModel) {
     }
   }
 
-  select.innerHTML = allModels.map(m =>
-    `<option value="${m.model}" data-provider="${m.provider}" ${m.model === currentModel ? 'selected' : ''}>${m.model}</option>`
+  const options = allModels.map(modelEntry =>
+    `<option value="${modelEntry.model}" data-provider="${modelEntry.provider}" title="${modelEntry.model}" ${modelEntry.model === currentModel ? 'selected' : ''}>${formatModelLabel(modelEntry.model)}</option>`
   ).join('');
 
-  // Remove old listener by replacing element
-  const newSelect = select.cloneNode(true);
-  select.parentNode.replaceChild(newSelect, select);
+  document.querySelectorAll('.h23-chat-model-select').forEach(select => {
+    select.innerHTML = options;
+    if (currentModel) {
+      select.value = currentModel;
+    }
+    select.title = select.selectedOptions[0]?.value || currentModel || '';
 
-  newSelect.addEventListener('change', async () => {
-    chatModel = newSelect.value;
-    const selectedOpt = newSelect.selectedOptions[0];
-    const selectedProvider = selectedOpt?.dataset?.provider || '';
+    if (!select.dataset.bound) {
+      select.addEventListener('change', async () => {
+        chatModel = select.value;
+        const selectedOpt = select.selectedOptions[0];
+        const selectedProvider = selectedOpt?.dataset?.provider || '';
+        syncModelSelectors(chatModel);
 
-    // Persist to agent config so it's reflected everywhere (settings, etc.)
-    if (chatAgent?.agentName) {
-      try {
-        await fetch(`/home23/api/settings/agents/${chatAgent.agentName}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: chatModel, provider: selectedProvider }),
-        });
-      } catch (err) {
-        console.warn('Failed to persist model change:', err);
-      }
+        if (chatAgent?.agentName) {
+          try {
+            await fetch(`/home23/api/settings/agents/${chatAgent.agentName}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model: chatModel, provider: selectedProvider }),
+            });
+          } catch (err) {
+            console.warn('Failed to persist model change:', err);
+          }
+        }
+      });
+      select.dataset.bound = 'true';
     }
   });
+
+  syncModelSelectors(currentModel);
+}
+
+function syncModelSelectors(modelName) {
+  if (!modelName) return;
+
+  document.querySelectorAll('.h23-chat-model-select').forEach(select => {
+    select.value = modelName;
+    select.title = select.selectedOptions[0]?.value || modelName;
+  });
+}
+
+function formatModelLabel(modelName) {
+  return modelName.length > 28 ? `${modelName.slice(0, 25)}…` : modelName;
 }
 
 // ── Slash Commands ──
@@ -182,10 +209,19 @@ async function switchAgent(name) {
     return;
   }
 
+  renderAgentSelectors(name);
+  const overlayTitle = document.getElementById('chat-overlay-title-label');
+  if (overlayTitle) {
+    overlayTitle.textContent = `Talk to ${chatAgent.displayName || chatAgent.agentName || name}`;
+  }
+
   // Reset model to agent's default
   chatModel = null;
   const agentData = chatAgents.find(a => a.name === name);
-  if (agentData) populateModelSelect(agentData.provider, agentData.model);
+  if (agentData) {
+    chatModel = agentData.model;
+    populateModelSelect(agentData.provider, agentData.model);
+  }
 
   // Load conversation list, then start a new conversation
   await loadConversationList(name);

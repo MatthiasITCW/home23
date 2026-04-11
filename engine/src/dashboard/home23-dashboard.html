@@ -323,11 +323,20 @@
   <!-- Chat overlay -->
   <div class="h23-chat-overlay" id="chat-overlay">
     <div class="h23-chat-overlay-panel">
-      <div class="h23-chat-header">
-        <select class="h23-chat-agent-select" id="chat-overlay-agent-select"></select>
-        <div class="h23-chat-actions">
-          <button class="h23-chat-expand-btn" id="chat-standalone-btn" title="Open in new tab">&#8599;</button>
-          <button class="h23-chat-expand-btn" id="chat-minimize-btn" title="Minimize">&#8601;</button>
+      <div class="h23-chat-overlay-header">
+        <div class="h23-chat-overlay-brand">
+          <div class="h23-chat-overlay-kicker">Home23 Native Chat</div>
+          <div class="h23-chat-overlay-title" id="chat-overlay-title-label">Loading agent…</div>
+        </div>
+        <div class="h23-chat-overlay-controls">
+          <div class="h23-chat-selects h23-chat-selects-overlay">
+            <select class="h23-chat-agent-select" id="chat-overlay-agent-select"></select>
+            <select class="h23-chat-model-select" id="chat-overlay-model-select"></select>
+          </div>
+          <div class="h23-chat-actions">
+            <button class="h23-chat-expand-btn" id="chat-standalone-btn" title="Open in new tab">&#8599;</button>
+            <button class="h23-chat-expand-btn" id="chat-minimize-btn" title="Minimize">&#8601;</button>
+          </div>
         </div>
       </div>
       <div class="h23-chat-messages" id="chat-overlay-body"></div>

@@ -9,6 +9,7 @@
 // ── Config ──
 
 const REFRESH_MS = 30000;
+const HOME_THOUGHT_ROTATE_MS = 16000;
 let agents = [];
 let primaryAgent = null;
 let currentTab = 'home';
@@ -16,6 +17,7 @@ let cosmo23Url = '';
 let evobrewUrl = '';
 let cosmo23Loaded = false;
 let intelRefreshInterval = null;
+let homeThoughtRotationTimer = null;
 
 // ── Engine Pulse State ──
 const enginePulse = {
@@ -38,6 +40,7 @@ async function init() {
   setupTabHandlers();
   setupVibeActions();
   await loadHomeTiles();
+  startHomeThoughtRotation();
   startAutoRefresh();
   updateCosmoIndicator();
   setInterval(updateCosmoIndicator, REFRESH_MS);
@@ -544,14 +547,8 @@ function updatePulseFromState(state) {
 }
 
 function updateThoughtsTile(thoughts) {
-  if (thoughts.length === 0) return;
-  const latest = thoughts[thoughts.length - 1];
-  const text = latest.thought || latest.content || latest.text || '';
-  const role = latest.role || '';
-  const cycle = latest.cycle || '';
-
-  setText('home-thought', text.slice(0, 400));
-  setText('home-thought-meta', `CYCLE ${cycle}`);
+  _cachedThoughts = thoughts;
+  refreshHomeThoughtFeed();
 }
 
 function updateBrainLog(thoughts) {
@@ -588,6 +585,7 @@ function updateBrainLog(thoughts) {
 function updateDreamLog(dreams) {
   const container = document.getElementById('home-dreamlog');
   if (!container) return;
+  _cachedDreams = dreams;
 
   const stamp = document.getElementById('dreamlog-stamp');
   if (stamp) stamp.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -615,6 +613,174 @@ function updateDreamLog(dreams) {
       <div class="h23-dream-text">${text}</div>
     </div>`;
   }).join('');
+
+  refreshHomeThoughtFeed();
+}
+
+function startHomeThoughtRotation() {
+  if (homeThoughtRotationTimer) return;
+
+  homeThoughtRotationTimer = setInterval(() => {
+    if (currentTab !== 'home' || _homeThoughtFeed.length <= 1) return;
+    _homeThoughtIndex = (_homeThoughtIndex + 1) % _homeThoughtFeed.length;
+    renderHomeThoughtEntry(_homeThoughtFeed[_homeThoughtIndex]);
+  }, HOME_THOUGHT_ROTATE_MS);
+}
+
+function refreshHomeThoughtFeed() {
+  const nextFeed = buildHomeThoughtFeed(_cachedThoughts, _cachedDreams);
+  const textEl = document.getElementById('home-thought');
+  const metaEl = document.getElementById('home-thought-meta');
+  if (!textEl || !metaEl) return;
+
+  if (nextFeed.length === 0) {
+    textEl.dataset.kind = 'thought';
+    metaEl.dataset.kind = 'thought';
+    setText('home-thought', 'Loading...');
+    setText('home-thought-meta', '');
+    _homeThoughtFeed = [];
+    _homeThoughtCurrentId = null;
+    _homeThoughtIndex = 0;
+    return;
+  }
+
+  const existingIndex = nextFeed.findIndex(entry => entry.id === _homeThoughtCurrentId);
+  if (existingIndex >= 0) {
+    _homeThoughtIndex = existingIndex;
+  } else if (_homeThoughtIndex >= nextFeed.length) {
+    _homeThoughtIndex = 0;
+  }
+
+  _homeThoughtFeed = nextFeed;
+  renderHomeThoughtEntry(_homeThoughtFeed[_homeThoughtIndex]);
+}
+
+function buildHomeThoughtFeed(thoughts, dreams) {
+  const thoughtEntries = buildRoleDiverseThoughtEntries(thoughts, 8);
+  const dreamEntries = buildDreamEntries(dreams, 4);
+  const feed = [];
+
+  while (thoughtEntries.length || dreamEntries.length) {
+    for (let i = 0; i < 2 && thoughtEntries.length; i += 1) {
+      feed.push(thoughtEntries.shift());
+    }
+
+    if (dreamEntries.length) {
+      feed.push(dreamEntries.shift());
+    }
+
+    if (!dreamEntries.length && thoughtEntries.length) {
+      feed.push(thoughtEntries.shift());
+    }
+  }
+
+  return dedupeFeedEntries(feed).slice(0, 10);
+}
+
+function buildRoleDiverseThoughtEntries(thoughts, maxEntries = 8) {
+  const validThoughts = [...(thoughts || [])]
+    .filter(entry => {
+      const text = (entry.thought || entry.content || entry.text || '').trim();
+      return text && entry.role !== 'sleep';
+    })
+    .sort((a, b) => getTimestampMs(b.timestamp) - getTimestampMs(a.timestamp));
+
+  const buckets = new Map();
+  for (const thought of validThoughts) {
+    const role = thought.role || 'thought';
+    if (!buckets.has(role)) buckets.set(role, []);
+    buckets.get(role).push(thought);
+  }
+
+  const roleOrder = [...buckets.entries()]
+    .sort((a, b) => getTimestampMs(b[1][0]?.timestamp) - getTimestampMs(a[1][0]?.timestamp))
+    .map(([role]) => role);
+
+  const entries = [];
+  while (entries.length < maxEntries) {
+    let added = false;
+    for (const role of roleOrder) {
+      const bucket = buckets.get(role);
+      if (bucket && bucket.length > 0) {
+        entries.push(normalizeThoughtEntry(bucket.shift()));
+        added = true;
+        if (entries.length >= maxEntries) break;
+      }
+    }
+    if (!added) break;
+  }
+
+  return entries.filter(Boolean);
+}
+
+function buildDreamEntries(dreams, maxEntries = 4) {
+  return [...(dreams || [])]
+    .filter(entry => (entry.content || entry.thought || '').trim().length > 20)
+    .sort((a, b) => getTimestampMs(b.timestamp) - getTimestampMs(a.timestamp))
+    .slice(0, maxEntries)
+    .map(normalizeDreamEntry)
+    .filter(Boolean);
+}
+
+function normalizeThoughtEntry(entry) {
+  const text = (entry.thought || entry.content || entry.text || '').trim();
+  if (!text) return null;
+
+  const timestampMs = getTimestampMs(entry.timestamp);
+  const meta = ['Thought', (entry.role || 'inner life').toUpperCase()];
+  if (entry.cycle) meta.push(`Cycle ${entry.cycle}`);
+  if (timestampMs) meta.push(timeSince(new Date(timestampMs)));
+
+  return {
+    id: `thought:${entry.timestamp || entry.cycle || text.slice(0, 24)}`,
+    kind: 'thought',
+    text,
+    meta: meta.join(' · '),
+    timestampMs,
+  };
+}
+
+function normalizeDreamEntry(entry) {
+  const text = (entry.content || entry.thought || '').trim();
+  if (!text) return null;
+
+  const timestampMs = getTimestampMs(entry.timestamp);
+  const meta = ['Dream'];
+  if (entry.cycle) meta.push(`Cycle ${entry.cycle}`);
+  if (timestampMs) meta.push(timeSince(new Date(timestampMs)));
+
+  return {
+    id: `dream:${entry.id || entry.timestamp || entry.cycle || text.slice(0, 24)}`,
+    kind: 'dream',
+    text,
+    meta: meta.join(' · '),
+    timestampMs,
+  };
+}
+
+function dedupeFeedEntries(entries) {
+  const seen = new Set();
+  return entries.filter(entry => {
+    const key = (entry.text || '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .slice(0, 160);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderHomeThoughtEntry(entry) {
+  const textEl = document.getElementById('home-thought');
+  const metaEl = document.getElementById('home-thought-meta');
+  if (!textEl || !metaEl || !entry) return;
+
+  _homeThoughtCurrentId = entry.id;
+  textEl.dataset.kind = entry.kind;
+  metaEl.dataset.kind = entry.kind;
+  setText('home-thought', entry.text);
+  setText('home-thought-meta', entry.meta);
 }
 
 // ── Feeder Tile ──
@@ -795,8 +961,8 @@ async function loadAgentPanel(agentName) {
       const thoughts = data.thoughts || data.journal || data || [];
       if (thoughts.length > 0) {
         const latest = thoughts[thoughts.length - 1];
-        setText(`thought-${agentName}`, (latest.thought || '').slice(0, 400));
-        setText(`thought-meta-${agentName}`, `CYCLE ${latest.cycle || ''}`);
+        setText(`thought-${agentName}`, latest.thought || latest.content || '');
+        setText(`thought-meta-${agentName}`, `${(latest.role || 'thought').toUpperCase()} · CYCLE ${latest.cycle || ''}`);
       }
       // Brain log
       const container = document.getElementById(`brainlog-${agentName}`);
@@ -923,6 +1089,9 @@ async function loadVibeTile(agent, { imageId, captionId, galleryHrefId = null })
 // Cache the last fetched data for overlay rendering
 let _cachedThoughts = [];
 let _cachedDreams = [];
+let _homeThoughtFeed = [];
+let _homeThoughtIndex = 0;
+let _homeThoughtCurrentId = null;
 
 function openLogOverlay(type) {
   const overlay = document.getElementById('log-overlay');
@@ -995,6 +1164,11 @@ async function apiFetch(url) {
 function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
+}
+
+function getTimestampMs(value) {
+  const ms = Date.parse(value || '');
+  return Number.isFinite(ms) ? ms : 0;
 }
 
 function timeSince(date) {
