@@ -39,7 +39,8 @@ async function init() {
   renderAgentTabs();
   setupTabHandlers();
   setupVibeActions();
-  await loadHomeTiles();
+  connectEnginePulse();
+  loadHomeTiles().catch(() => { /* initial home load is best-effort */ });
   startHomeThoughtRotation();
   startAutoRefresh();
   updateCosmoIndicator();
@@ -49,9 +50,6 @@ async function init() {
   if (typeof initChat === 'function') {
     initChat('tile');
   }
-
-  // Connect engine pulse SSE
-  connectEnginePulse();
 
   // Update pulse "ago" timer every second
   setInterval(updatePulseAgo, 1000);
@@ -74,6 +72,11 @@ function connectEnginePulse() {
       if (dot && !dot.className.includes('awake') && !dot.className.includes('sleeping')) {
         dot.className = 'h23-pulse-dot awake';
       }
+      if (!enginePulse.state || enginePulse.state === 'unknown') {
+        enginePulse.state = 'awake';
+        renderPulse();
+      }
+      setEngineOnlineStatus(enginePulse.state);
     };
 
     ws.onmessage = (e) => {
@@ -89,6 +92,7 @@ function connectEnginePulse() {
     ws.onclose = () => {
       const dot = document.getElementById('pulse-dot');
       if (dot) dot.className = 'h23-pulse-dot';
+      setEngineOfflineStatus();
       // Reconnect after 5 seconds
       if (!reconnectTimer) {
         reconnectTimer = setTimeout(() => {
@@ -214,6 +218,49 @@ function _renderPulseNow() {
 function updatePulseAgo() {
   const ref = enginePulse.lastThought || enginePulse.lastEventTime;
   setText('pulse-ago', ref ? timeSince(ref) : '—');
+}
+
+function setEngineOnlineStatus(temporalState = 'awake') {
+  const dot = document.getElementById('engine-dot');
+  if (dot) dot.className = 'status-dot alive';
+  setText('engine-status-text', temporalState === 'sleeping' ? 'ENGINE · SLEEPING' : 'ENGINE');
+}
+
+function setEngineOfflineStatus() {
+  const dot = document.getElementById('engine-dot');
+  if (dot) dot.className = 'status-dot dead';
+  setText('engine-status-text', 'ENGINE offline');
+}
+
+async function fetchEngineHealth(agent) {
+  const enginePort = agent ? agent.enginePort || 5001 : 5001;
+  return apiFetch(`http://${window.location.hostname}:${enginePort}/health`, { timeoutMs: 3000 });
+}
+
+function seedPulseFromSummary(summary, engineHealth = null) {
+  if (!summary && !engineHealth) return;
+
+  if (summary?.cycleCount && (!enginePulse.cycle || enginePulse.cycle < summary.cycleCount)) {
+    enginePulse.cycle = summary.cycleCount;
+  }
+
+  if (summary?.lastThoughtAt && !enginePulse.lastThought) {
+    enginePulse.lastThought = new Date(summary.lastThoughtAt);
+  }
+
+  if ((!enginePulse.state || enginePulse.state === 'unknown') && summary?.temporalState) {
+    enginePulse.state = summary.temporalState;
+  } else if ((!enginePulse.state || enginePulse.state === 'unknown') && engineHealth) {
+    enginePulse.state = 'awake';
+  }
+
+  if (!enginePulse.phase && summary?.lastThoughtRole) {
+    enginePulse.phase = summary.lastThoughtRole === 'sleep'
+      ? 'resting'
+      : `thinking (${summary.lastThoughtRole})`;
+  }
+
+  renderPulse();
 }
 
 // ── Clock ──
@@ -458,70 +505,68 @@ function setupTabHandlers() {
 async function loadHomeTiles() {
   const base = apiBase(primaryAgent);
 
-  // State → Home23 engine status indicator
-  try {
-    const state = await apiFetch(`${base}/api/state`);
-    if (state) {
-      updateSystemTile(state);
-      updatePulseFromState(state);
-      const dot = document.getElementById('engine-dot');
-      if (dot) { dot.className = 'status-dot alive'; }
-      const temporalState = state.temporal?.state || state.cognitiveState?.mode || 'awake';
-      setText('engine-status-text', temporalState === 'sleeping' ? 'ENGINE · SLEEPING' : 'ENGINE');
-    }
-  } catch {
-    const dot = document.getElementById('engine-dot');
-    if (dot) { dot.className = 'status-dot dead'; }
-    setText('engine-status-text', 'ENGINE offline');
-  }
-
-  // Feeder status
-  try {
-    const feederData = await apiFetch('/home23/feeder-status');
-    if (feederData) updateFeederTile(feederData);
-  } catch { /* offline */ }
-
-  // Thoughts
-  try {
-    const data = await apiFetch(`${base}/api/thoughts?limit=20`);
-    if (data) {
-      const thoughts = data.thoughts || data.journal || data || [];
-      _cachedThoughts = thoughts;
-      updateThoughtsTile(thoughts);
-      updateBrainLog(thoughts);
-    }
-  } catch { /* offline */ }
-
-  // Dreams
-  try {
-    const dreamData = await apiFetch(`${base}/api/dreams?limit=20`);
-    if (dreamData) {
-      const dreams = dreamData.dreams || dreamData || [];
-      _cachedDreams = dreams;
-      updateDreamLog(dreams);
-    }
-  } catch { /* offline */ }
-
-  await loadVibeTile(primaryAgent, {
+  loadVibeTile(primaryAgent, {
     imageId: 'home-vibe-image',
     captionId: 'home-vibe-caption',
     galleryHrefId: 'home-vibe-gallery-link',
-  });
+  }).catch(() => { /* best-effort */ });
+
+  const [engineHealth, summary, feederData, thoughtData, dreamData] = await Promise.all([
+    fetchEngineHealth(primaryAgent).catch(() => null),
+    apiFetch(`${base}/api/home/summary`, { timeoutMs: 4000 }).catch(() => null),
+    apiFetch('/home23/feeder-status', { timeoutMs: 4000 }).catch(() => null),
+    apiFetch(`${base}/api/thoughts?limit=20`, { timeoutMs: 5000 }).catch(() => null),
+    apiFetch(`${base}/api/dreams?limit=20&lite=1`, { timeoutMs: 3000 }).catch(() => null),
+  ]);
+
+  if (summary) {
+    updateSystemTile(summary);
+    seedPulseFromSummary(summary, engineHealth);
+  }
+
+  if (engineHealth) {
+    setEngineOnlineStatus(enginePulse.state);
+    setText('sys-uptime', formatDurationMs(engineHealth.uptime));
+  } else if (!enginePulse.lastEventTime && (!enginePulse.state || enginePulse.state === 'unknown')) {
+    setEngineOfflineStatus();
+  }
+
+  if (feederData) updateFeederTile(feederData);
+
+  if (thoughtData) {
+    const thoughts = thoughtData.thoughts || thoughtData.journal || thoughtData || [];
+    _cachedThoughts = thoughts;
+    updateThoughtsTile(thoughts);
+    updateBrainLog(thoughts);
+  }
+
+  if (dreamData) {
+    const dreams = dreamData.dreams || dreamData || [];
+    _cachedDreams = dreams;
+    updateDreamLog(dreams);
+  }
 }
 
 function updateSystemTile(state) {
-  const journal = state.journal || [];
+  const journal = Array.isArray(state.journal) ? state.journal : [];
   const lastThought = journal.length > 0 ? journal[journal.length - 1] : null;
+  const uptime = state.uptime || formatUptime(state);
+  const thoughtCount = state.thoughtCount ?? journal.length;
+  const nodeCount = state.memoryNodes ?? state.nodeCount ?? state.memory?.nodes?.length ?? null;
+  const lastThoughtAt = state.lastThoughtAt || lastThought?.timestamp || null;
 
-  setText('sys-uptime', state.uptime || formatUptime(state));
-  setText('sys-thoughts', String(journal.length));
-  setText('sys-nodes', String(state.memoryNodes || state.nodeCount || '—'));
-  setText('sys-last', lastThought ? timeSince(new Date(lastThought.timestamp || Date.now())) : '—');
+  if (uptime && uptime !== '—') setText('sys-uptime', uptime);
+  setText('sys-thoughts', thoughtCount != null ? String(thoughtCount) : '—');
+  setText('sys-nodes', nodeCount != null ? String(nodeCount) : '—');
+  setText('sys-last', lastThoughtAt ? timeSince(new Date(lastThoughtAt)) : '—');
 
   // Excerpt of latest thought in system tile
-  if (lastThought?.thought) {
-    setText('sys-excerpt', lastThought.thought.slice(0, 120) + '...');
+  const latestThoughtText = state.lastThoughtText || lastThought?.thought;
+  if (latestThoughtText) {
+    setText('sys-excerpt', latestThoughtText.slice(0, 120) + '...');
   }
+
+  updatePulseFromState(state);
 }
 
 function updatePulseFromState(state) {
@@ -943,17 +988,20 @@ async function loadAgentPanel(agentName) {
   if (!agent) return;
   const base = apiBase(agent);
 
-  try {
-    const state = await apiFetch(`${base}/api/state`);
-    if (state) {
-      const journal = state.journal || [];
-      const last = journal.length > 0 ? journal[journal.length - 1] : null;
-      setText(`sys2-uptime-${agentName}`, state.uptime || '—');
-      setText(`sys2-thoughts-${agentName}`, String(journal.length));
-      setText(`sys2-nodes-${agentName}`, String(state.memoryNodes || '—'));
-      setText(`sys2-last-${agentName}`, last ? timeSince(new Date(last.timestamp || Date.now())) : '—');
-    }
-  } catch { /* offline */ }
+  const [summary, engineHealth] = await Promise.all([
+    apiFetch(`${base}/api/home/summary`, { timeoutMs: 4000 }).catch(() => null),
+    fetchEngineHealth(agent).catch(() => null)
+  ]);
+
+  if (summary) {
+    setText(`sys2-thoughts-${agentName}`, summary.thoughtCount != null ? String(summary.thoughtCount) : '—');
+    setText(`sys2-nodes-${agentName}`, summary.memoryNodes != null ? String(summary.memoryNodes) : '—');
+    setText(`sys2-last-${agentName}`, summary.lastThoughtAt ? timeSince(new Date(summary.lastThoughtAt)) : '—');
+  }
+
+  if (engineHealth) {
+    setText(`sys2-uptime-${agentName}`, formatDurationMs(engineHealth.uptime));
+  }
 
   try {
     const data = await apiFetch(`${base}/api/thoughts?limit=20`);
@@ -1153,10 +1201,9 @@ function closeLogOverlay() {
   if (overlay) overlay.classList.remove('active');
 }
 
-async function apiFetch(url) {
-  // 15s timeout — /api/state serializes the full brain and can take several seconds
-  // over Tailscale / LAN when the brain has thousands of nodes
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+async function apiFetch(url, options = {}) {
+  const { timeoutMs = 15000 } = options;
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) return null;
   return res.json();
 }
@@ -1190,6 +1237,21 @@ function formatUptime(state) {
     return `${h}h ${m}m`;
   }
   return '—';
+}
+
+function formatDurationMs(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 // ── Intelligence Tab ──

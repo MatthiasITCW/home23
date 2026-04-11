@@ -72,6 +72,7 @@ class DashboardServer {
     // Console log streaming clients (SSE)
     this.logStreamClients = new Set();
     this.metadataErrorCache = new Set();
+    this.homeSummaryCache = { data: null, expiresAt: 0 };
     
     // Logger for route handlers - using console for consistency
     this.logger = console;
@@ -4306,6 +4307,15 @@ Be specific, actionable, and maintain research continuity.`;
     });
 
     // API: Get current state
+    this.app.get('/api/home/summary', async (req, res) => {
+      try {
+        const summary = await this.getHomeSummary();
+        res.json(summary);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
     this.app.get('/api/state', async (req, res) => {
       try {
         const state = await this.loadState();
@@ -4923,9 +4933,10 @@ Be specific, actionable, and maintain research continuity.`;
       try {
         const limit = parseInt(req.query.limit) || 20;
         const runName = req.query.run || 'runtime';
+        const lite = req.query.lite === '1' || req.query.lite === 'true';
         
         // Load dreams for the specified run
-        const dreams = await this.getDreamsForRun(runName, limit);
+        const dreams = await this.getDreamsForRun(runName, limit, { lite });
         res.json(dreams);
       } catch (error) {
         console.error('Failed to get dreams:', error);
@@ -7577,6 +7588,108 @@ You are empowered to explore and understand. The user trusts you to discover the
     }
   }
 
+  async getHomeSummary(maxAgeMs = 5000) {
+    if (this.homeSummaryCache.data && this.homeSummaryCache.expiresAt > Date.now()) {
+      return this.homeSummaryCache.data;
+    }
+
+    const summary = await this.buildHomeSummary();
+    this.homeSummaryCache = {
+      data: summary,
+      expiresAt: Date.now() + maxAgeMs
+    };
+    return summary;
+  }
+
+  async buildHomeSummary() {
+    const [thoughtSummary, memoryNodes] = await Promise.all([
+      this.getThoughtsSummary(),
+      this.getFastMemoryNodeCount()
+    ]);
+
+    const lastThought = thoughtSummary.lastThought;
+    const lastThoughtRole = lastThought?.role || null;
+
+    return {
+      cycleCount: lastThought?.cycle || 0,
+      thoughtCount: thoughtSummary.count,
+      memoryNodes: Number.isFinite(memoryNodes) ? memoryNodes : null,
+      lastThoughtAt: lastThought?.timestamp || null,
+      lastThoughtRole,
+      lastThoughtText: lastThought?.thought || lastThought?.content || lastThought?.text || null,
+      temporalState: lastThoughtRole === 'sleep' ? 'sleeping' : 'awake',
+      generatedAt: new Date().toISOString()
+    };
+  }
+
+  async getThoughtsSummary() {
+    const thoughtsPath = path.join(this.logsDir, 'thoughts.jsonl');
+    let count = 0;
+    let lastThought = null;
+
+    try {
+      const fileStream = createReadStream(thoughtsPath);
+      const rl = createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        count += 1;
+        try {
+          lastThought = JSON.parse(line);
+        } catch {
+          // Ignore malformed lines and keep the last valid thought.
+        }
+      }
+    } catch {
+      return { count: 0, lastThought: null };
+    }
+
+    return { count, lastThought };
+  }
+
+  async getFastMemoryNodeCount() {
+    const cachePath = path.join(this.logsDir, 'dashboard-cache.json');
+    try {
+      const cache = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+      if (Number.isFinite(cache?.nodeCount)) {
+        return cache.nodeCount;
+      }
+    } catch {
+      // Fall through to evaluation metrics.
+    }
+
+    const metricsPath = path.join(this.logsDir, 'evaluation-metrics.json');
+    try {
+      const metrics = JSON.parse(await fs.readFile(metricsPath, 'utf8'));
+      const totalNodes = metrics?.metrics?.memory?.totalNodes;
+      if (Number.isFinite(totalNodes)) {
+        return totalNodes;
+      }
+    } catch {
+      // Fall through to state only if it's small enough.
+    }
+
+    const statePathGz = path.join(this.logsDir, 'state.json.gz');
+    try {
+      const stats = await fs.stat(statePathGz);
+      const maxInlineSummarySize = 30 * 1024 * 1024;
+      if (stats.size <= maxInlineSummarySize) {
+        const state = await this.loadState();
+        const nodeCount = state?.memory?.nodes?.length;
+        if (Number.isFinite(nodeCount)) {
+          return nodeCount;
+        }
+      }
+    } catch {
+      // No lightweight node source available.
+    }
+
+    return null;
+  }
+
   /**
    * Safely count completed items from progress tracker
    * Handles both Map and plain object formats (JSON serialization converts Maps to objects)
@@ -7795,8 +7908,9 @@ You are empowered to explore and understand. The user trusts you to discover the
    * Get dreams for a specific run
    * FIX (2025-12-11): Now properly scoped to run parameter
    */
-  async getDreamsForRun(runName, limit = 100) {
+  async getDreamsForRun(runName, limit = 100, options = {}) {
     const dreams = [];
+    const { lite = false } = options;
     
     // Resolve run directory
     const runDir = (runName === 'runtime' || runName === 'current') ? this.defaultRunDir : path.join(this.runsDir, runName);
@@ -7833,6 +7947,21 @@ You are empowered to explore and understand. The user trusts you to discover the
             }
           }
         }
+      }
+
+      if (lite) {
+        dreams.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const limitedDreams = dreams.slice(0, limit);
+        return {
+          dreams: limitedDreams,
+          stats: {
+            total: dreams.length,
+            narratives: dreams.filter(d => d.source === 'dreams_file').length,
+            fromGoals: 0,
+            fromMemory: 0,
+            completed: 0
+          }
+        };
       }
       
       // Load state from the correct run directory
