@@ -222,7 +222,7 @@ function tryLoadHnsw() {
         
         if (!this.initialized) {
           // Initialize with expected size (can grow)
-          this.hnsw.initIndex(10000, this.config.M, this.config.efConstruction);
+          this.hnsw.initIndex(this.config.maxElements || 50000, this.config.M, this.config.efConstruction);
           this.initialized = true;
         }
         

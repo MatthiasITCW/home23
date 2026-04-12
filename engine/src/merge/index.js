@@ -87,22 +87,16 @@ async function mergeRuns(loadedRuns, options = {}) {
   // Initialize domain registry
   const domainRegistry = new DomainRegistry();
   
-  // Initialize domain embedding provider
-  const domainEmbeddings = new DomainEmbeddingProvider(
-    { alpha: opts.domainAlpha, dimensions: 512 },
-    logger
-  );
-  
   // Collect all nodes from all runs with domain info
   const allNodes = [];
   const runDomains = new Map();
-  
+
   const loadStart = Date.now();
   for (const run of loadedRuns) {
     const domain = detectDomain(run);
     runDomains.set(run.name || run.runName, domain);
     domainRegistry.getDomainIndex(domain); // Register domain
-    
+
     const nodes = run.state?.memory?.nodes || [];
     for (const node of nodes) {
       allNodes.push({
@@ -113,6 +107,17 @@ async function mergeRuns(loadedRuns, options = {}) {
     }
   }
   metrics.loadTimeMs = Date.now() - loadStart;
+
+  // Detect embedding dimensions from first node with an embedding
+  const sampleNode = allNodes.find(n => n.embedding && Array.isArray(n.embedding));
+  const embeddingDim = sampleNode ? sampleNode.embedding.length : 768;
+  logger.info?.(`Detected embedding dimensions: ${embeddingDim}`);
+
+  // Initialize domain embedding provider
+  const domainEmbeddings = new DomainEmbeddingProvider(
+    { alpha: opts.domainAlpha, dimensions: embeddingDim },
+    logger
+  );
   
   logger.info?.(`Loaded ${allNodes.length} nodes from ${loadedRuns.length} runs`);
   logger.info?.(`Domains: ${domainRegistry.getDomains().join(', ')}`);
@@ -146,7 +151,7 @@ async function mergeRuns(loadedRuns, options = {}) {
   
   // Build ANN index
   const indexStart = Date.now();
-  const annIndex = createAnnIndex(512, {}, logger);
+  const annIndex = createAnnIndex(embeddingDim, {}, logger);
   metrics.indexBuildTimeMs = Date.now() - indexStart;
   
   // Main merge loop
