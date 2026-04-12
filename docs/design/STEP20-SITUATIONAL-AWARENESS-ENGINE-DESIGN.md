@@ -36,7 +36,7 @@ From deep research (GPT-5.4 brain analysis, 2026-04-12):
 
 ## Design Principle
 
-> **Home23 should be designed as a system that persistently carries forward changes in understanding — not a warehouse for artifacts.**
+> **Home23 should not merely remember prior content; it should carry forward governed, source-bounded, triggerable changes in understanding, while making degraded continuity and stale continuity equally visible.**
 
 Memory is real only when it can answer: what changed, why it changed, what evidence grounded it, how certain it was, where it applies, when it should come back, and what happened downstream.
 
@@ -85,7 +85,12 @@ Later session → checkpoint loaded → prior memory reactivated → continuity 
 
 **Latency budget:** Brain search endpoint: ~50-100ms. Trigger index scan: ~10ms. Surface file reads: negligible. Total: under 200ms. Replaces the current `semanticRecall` which shells out to Python FAISS with a 500ms timeout — faster while doing more.
 
-**Failure mode:** If brain unreachable or slow, returns nothing. Turn proceeds with static identity files only — exactly how it works today. Never blocks the agent.
+**Failure mode — explicit degraded mode:** If brain unreachable or slow, the assembly layer doesn't silently fall back. It enters **explicit degraded mode**:
+- Emits a `RetrievalDegraded` event to the ledger (reason, timestamp, what was unavailable)
+- Injects a short banner into the system prompt: `[SITUATIONAL AWARENESS: DEGRADED — operating without continuity layer. Brain unreachable. Treat prior context as unverified.]`
+- Suppresses confidence escalation — the agent should not sound certain about things it can't verify in this state
+
+Why: silent failure is the most dangerous kind. If continuity fails and the agent sounds smooth, the user trusts answers that have no backing. Degraded mode must be visible to both the agent and the audit trail. Never blocks the agent — the turn still proceeds — but the agent knows it's operating amputated.
 
 **Context budget:** The assembled `[SITUATIONAL AWARENESS]` block has a hard character limit of **6000 chars**. When brain cues + triggered memories + surfaces exceed this, the assembly layer applies salience ranking: triggered memories outrank brain similarity results, higher-confidence items outrank lower, more recent outranks older. Items that don't fit get dropped, not truncated. This prevents the block from bloating as durable memories accumulate — salience control, not unbounded accumulation.
 
@@ -146,6 +151,14 @@ Trigger types:
 | `recurrence` | `"similar question asked without resolution"` | Pattern matches prior unresolved thread |
 
 Trigger index lives in `instances/<agent>/brain/trigger-index.json`. Loaded once on startup, checked per-turn. Fast — structured condition evaluation, not embedding math.
+
+**Trigger audit loop:** Triggers will drift, overfire, or underfire. The event ledger records trigger-specific events:
+- `TriggerFired` — a trigger condition matched
+- `TriggerAccepted` — the fired trigger's memory was loaded into context and acted on
+- `TriggerRejected` — the fired trigger's memory was loaded but the agent/assembly determined it was irrelevant (salience cutoff, stale, etc.)
+- `TriggerMissed` — a later correction shows the right trigger should have fired but didn't
+
+The curator computes from these: trigger precision (accepted/fired), nuisance rate (rejected/fired), dead trigger rate (triggers that never fire). Without this audit, "triggerable memory" quietly becomes "noisy superstition" and undermines the assembly layer.
 
 **What replaces:**
 - `semanticRecall` in `memory.ts` — superseded by brain-driven retrieval + triggers
@@ -210,6 +223,14 @@ interface MemoryObject {
   };
 
   // The critical field — what changed
+  // NOTE: confidence must be downstream of provenance, not parallel to it.
+  // Anti-theater rule: confidence.score is constrained by evidence type,
+  // number of independent grounding links, review state, reuse history,
+  // and whether source is runtime-verified vs user-stated vs reflection-synthesized.
+  // A reflection-synthesized insight with no independent evidence cannot exceed 0.6.
+  // A user-stated fact with session provenance starts at 0.8.
+  // A runtime-verified operational fact starts at 0.95.
+  // Without these constraints, confidence becomes decorative.
   state_delta: {
     delta_class: DeltaClass;
     before: Record<string, unknown>;
@@ -242,6 +263,14 @@ interface MemoryObject {
 
   // Sensitivity
   privacy_class?: 'internal' | 'personal' | 'sensitive';
+
+  // Personal memory consent (required when privacy_class is 'personal' or 'sensitive')
+  consent?: {
+    consent_scope: 'this_session' | 'ongoing' | 'until_revoked';
+    retention_basis: string;           // why this is being kept
+    do_not_surface_without_trigger: boolean;  // don't proactively surface — only on direct relevance
+    user_confirmed?: boolean;          // user explicitly confirmed this should be remembered
+  };
 }
 
   // Reuse tracking
@@ -541,13 +570,23 @@ The brain has 21,000+ nodes and grows every cycle. The curator cannot and should
 
 | Surface | Content | Character budget |
 |---------|---------|-----------------|
-| `TOPOLOGY.md` | Active ports, services, publication surfaces, runtime dirs. The house map. | 2500 |
+| `TOPOLOGY.md` | Active ports, services, publication surfaces, runtime dirs. The house map. **FACT SURFACE — see below.** | 2500 |
 | `PROJECTS.md` | What's in flight, what was decided, what's next. Active work state. | 3000 |
 | `PERSONAL.md` | Ongoing threads about the owner — health, family, finances, interests. The relational layer. Only stores what was shared, doesn't infer. | 2500 |
 | `DOCTRINE.md` | How we work together. Conventions, preferences, communication style. **Also: boundaries, operating constraints, approval gates, known non-negotiables, routing rules.** The brain analysis identifies boundaries as a distinct identity concern — not decorative metadata but behavioral control surfaces. | 2500 |
 | `RECENT.md` | Last 24-48 hours digest. What happened, what changed, what was established. | 3000 |
 
 Surfaces are loaded selectively by the assembly layer based on brain relevance and trigger matches. `RECENT.md` gets a permanent relevance boost — recency always matters.
+
+### Fact surfaces vs interpretive surfaces
+
+Not all surfaces are the same kind of truth. The curator must treat them differently:
+
+**Fact surfaces** (`TOPOLOGY.md`): Operational facts — ports, services, URLs, runtime locations. These should be rendered from **authoritative or verified sources**, not mainly from reflective synthesis. If TOPOLOGY.md is curator-composed from brain nodes alone, it can become a polished version of stale understanding — recreating the 8090 problem in a more elegant form.
+
+Rule: **Operational facts should be registry-backed, not memory-backed.** The curator can summarize and present, but the actual port map should come from a probed or verified source (PM2 process list, runtime config, recent `promote_to_memory` calls from conversation where the user established the fact). Memory can carry the significance ("we created this because..."). The registry carries the truth ("port 8090 is currently serving...").
+
+**Interpretive surfaces** (`PROJECTS.md`, `PERSONAL.md`, `DOCTRINE.md`, `RECENT.md`): Synthesized understanding — what's in flight, how we work, what matters. These are appropriately curator-authored from brain nodes, conversation extractions, and promoted memories. The curator's judgment is the right authoring mechanism here.
 
 ---
 
@@ -596,46 +635,49 @@ Surfaces are loaded selectively by the assembly layer based on brain relevance a
 
 The system is interconnected but can be built incrementally, with each phase delivering standalone value:
 
-### Phase 1: Assembly layer + surfaces (biggest bang)
-- Create domain surface files (hand-seeded initially)
+### Phase 1: Assembly layer + surfaces + degraded mode (biggest bang)
+- Create domain surface files (hand-seeded initially, with fact/interpretive split for TOPOLOGY)
 - Build `context-assembly.ts` with brain similarity search + context budget + salience ranking
 - Include resume verification (stale tagging) from day one
+- Include explicit degraded mode (`RetrievalDegraded` event + banner) from day one
 - Wire into `loop.ts` replacing `semanticRecall`
-- **Value:** Agent immediately starts showing up with relevant context, with staleness protection
+- **Value:** Agent immediately starts showing up with relevant context, with staleness protection and honest degradation
 
 ### Phase 2: Memory object model + promote tool
-- Build `memory-objects.ts` with types and storage (including `procedure`, `correction`, `breakdown_diagnostic` types)
+- Build `memory-objects.ts` with types and storage (including `procedure`, `correction`, `breakdown_diagnostic` types + consent fields for personal memory)
 - Build `promote_to_memory` tool
 - Build `problem-threads.json` registry with goal hierarchy
 - Include working-layer quality floor for checkpoints
+- Include confidence anti-theater constraints
 - **Value:** Agent can capture important knowledge mid-conversation with structure
 
-### Phase 3: Upgraded promotion pipeline
+### Phase 3: Event ledger + completion chain (moved earlier per review)
+- Build `event-ledger.ts`
+- Wire events into assembly layer, agent loop, promotion pipeline
+- Include `MemoryActedOn`, `BreakdownDiagnosed`, and trigger audit events from day one
+- Wire reuse tracking (`reuse_count`, `last_reactivated`, `last_acted_on` updates)
+- **Value:** Continuity becomes provable and auditable immediately — critical for validating phases 1-2
+
+### Phase 4: Upgraded promotion pipeline
 - Upgrade `extractAndSave` to produce structured MemoryObjects
 - Domain-classify extractions into appropriate surfaces
 - Corrections as priority extraction target
 - **Value:** Session-end extraction becomes meaningful, not generic bullets
 
-### Phase 4: Event ledger + completion chain
-- Build `event-ledger.ts`
-- Wire events into assembly layer, agent loop, promotion pipeline
-- Include `MemoryActedOn` and `BreakdownDiagnosed` events from day one
-- Wire reuse tracking (`reuse_count`, `last_reactivated`, `last_acted_on` updates)
-- **Value:** Continuity becomes provable and auditable, with full completion chain
-
-### Phase 5: Trigger index
+### Phase 5: Trigger index + trigger audit
 - Build `trigger-index.ts`
 - Wire trigger evaluation into assembly layer alongside brain search
-- **Value:** Memories resurface by structural relevance, not just text similarity
+- Include trigger audit events (`TriggerFired`, `TriggerAccepted`, `TriggerRejected`, `TriggerMissed`)
+- **Value:** Memories resurface by structural relevance, not just text similarity, with audit to prevent trigger drift
 
 ### Phase 6: Curator cycle
 - Build `curator-cycle.js` in engine
 - Implement brain-node intake governance (eligibility filter, rate limits, dedup)
 - Implement hard promotion gates (including gate 8: demonstrated relevance)
-- Implement surface rewriting (compress, prioritize, drop stale, weight by reuse)
+- Implement surface rewriting (compress, prioritize, drop stale, weight by reuse) with fact/interpretive distinction
 - Implement usage-based decay (flag zero-reuse durable memories)
 - Wire ledger reading for continuity gap detection
-- Compute behavioral audit metrics from event ledger
+- Compute behavioral audit metrics from event ledger (domain-segmented)
 - **Value:** The loop closes — brain thinks, curator governs intake, surfaces stay current, agent knows
 
 ### The continuity proof test
@@ -672,6 +714,13 @@ The event ledger collects raw data. These metrics tell us if the system is actua
 | **Promotion gate rejection rate** | `MemoryRejected` / `MemoryCandidateCreated` | Are the gates too strict or too loose? |
 
 The curator reads these periodically and can surface trends into `DOCTRINE.md` ("reactivation rate dropping — trigger conditions may be too narrow") or flag systemic issues.
+
+**Segment by domain and thread level.** Unsegmented averages hide failure. Track all metrics broken down by:
+- Domain: ops/topology, personal/relational, doctrine/preferences, active project threads
+- Thread level: constitutional, strategic, tactical, immediate
+- Trigger metrics: precision, nuisance rate, dead trigger rate (from trigger audit events)
+
+A system can look "good on average" while being terrible exactly where continuity matters most. Domain-segmented metrics surface that.
 
 V1 implementation: compute these from the event ledger on demand (curator cycle or manual query). V2: dashboard visualization.
 
