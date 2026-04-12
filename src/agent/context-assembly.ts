@@ -17,7 +17,7 @@ import type { TriggerIndex } from './trigger-index.js';
 
 // ─── Constants ──────────────────────────────────────────
 const CONTEXT_BUDGET = 6000;
-const BRAIN_SEARCH_TIMEOUT_MS = 150;
+const BRAIN_SEARCH_TIMEOUT_MS = 5000;   // brain searches 21k+ nodes, needs ~2-3s
 const BRAIN_SEARCH_LIMIT = 8;
 const STALENESS_HOURS = 24;
 
