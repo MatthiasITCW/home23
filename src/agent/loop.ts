@@ -50,6 +50,14 @@ function getStealthHeaders(): Record<string, string> {
   };
 }
 
+function getClaudeCodeSystemPrompt(): { type: 'text'; text: string; cache_control: { type: 'ephemeral' } } {
+  return {
+    type: 'text',
+    text: "You are Claude Code, Anthropic's official CLI for Claude.",
+    cache_control: { type: 'ephemeral' },
+  };
+}
+
 // Cache model capabilities from Ollama Cloud /api/show
 const ollamaCapabilitiesCache = new Map<string, Set<string>>();
 
@@ -431,7 +439,8 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
 
       const systemPrompt = this.isOAuth
         ? [
-            { type: 'text' as const, text: rawSystemPrompt, cache_control: { type: 'ephemeral' as const } },
+            getClaudeCodeSystemPrompt(),
+            { type: 'text' as const, text: rawSystemPrompt },
           ]
         : rawSystemPrompt;
 
