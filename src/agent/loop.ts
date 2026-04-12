@@ -18,6 +18,7 @@ import { MemoryManager } from './memory.js';
 import type { CompactionManager } from './compaction.js';
 import type { MediaAttachment } from '../types.js';
 import { getCodexCredentials, getCodexHeaders } from './codex-auth.js';
+import { assembleContext } from './context-assembly.js';
 
 const MAX_ITERATIONS = 100;
 const TYPING_INTERVAL_MS = 4000;
@@ -462,20 +463,46 @@ export class AgentLoop {
       // Get system prompt — provider-aware (overlay + voice + core)
       let rawSystemPrompt = this.contextManager.getSystemPrompt(this.provider);
 
-      // ── Situational awareness: inject channel context ──
-      if (chatId.startsWith('evobrew:')) {
-        const toolDefs = this.registry.getAnthropicTools();
-        const toolNames = toolDefs.map(t => t.name).join(', ');
-        rawSystemPrompt += `\n\n[SITUATIONAL CONTEXT]
-You are operating inside evobrew (AI IDE). The user is working in a code/document workspace.
-You have ${toolDefs.length} tools available: ${toolNames}.
-ALWAYS use your tools for file operations — read_file to read, write_file to write, list_files to list, search_files to search, shell to run commands. Never guess or hallucinate file contents.
-Model: ${this.model} (${this.provider})`;
+      // ── Situational Awareness: Context Assembly (Step 20) ──
+      // Replaces: hardcoded evobrew/cosmo checks + semanticRecall
+      try {
+        const recentTurns = truncated
+          .filter((m): m is StoredMessage => 'role' in m)
+          .slice(-5)
+          .map(m => ({
+            role: m.role,
+            content: typeof m.content === 'string' ? m.content : stringifyContent(m.content as ContentBlock[]),
+          }));
+
+        const assembly = await assembleContext(
+          userText,
+          chatId,
+          recentTurns,
+          {
+            workspacePath: this.workspacePath,
+            brainDir: join(this.workspacePath, '..', 'brain'),
+            enginePort: this.toolContext.enginePort,
+            sessionId: chatId,
+          },
+        );
+
+        if (assembly.block) {
+          rawSystemPrompt += `\n\n${assembly.block}`;
+        }
+
+        // Log assembly result
+        if (assembly.degraded) {
+          console.warn('[agent] Situational awareness: DEGRADED — brain unreachable');
+        } else if (assembly.brainCueCount > 0 || assembly.surfacesLoaded.length > 0) {
+          console.log(`[agent] Situational awareness: ${assembly.brainCueCount} brain cues, ${assembly.surfacesLoaded.length} surfaces (${assembly.surfacesLoaded.join(', ')})`);
+        }
+      } catch (err) {
+        // Never block on assembly failure — proceed with static identity only
+        console.warn('[agent] Context assembly failed, proceeding without situational awareness:', err instanceof Error ? err.message : err);
       }
 
       // ── Situational awareness: COSMO 2.3 active-run check ──
-      // If any research_* tool is registered and a run is currently in flight,
-      // inject a live state block so the agent doesn't double-launch.
+      // Keep this — it's a real-time probe, not a surface/memory concern
       if (this.registry.get('research_launch')) {
         try {
           const { checkCosmoActiveRun } = await import('./tools/research.js');
@@ -492,16 +519,6 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
         } catch {
           // Never block on situational awareness failure
         }
-      }
-
-      // ── Memory: Semantic Recall (before every turn) ──────
-      try {
-        const recall = await this.memory.semanticRecall(userText);
-        if (recall) {
-          rawSystemPrompt = `${rawSystemPrompt}\n\n${recall}`;
-        }
-      } catch {
-        // Never block on memory failure
       }
 
       // ── Memory: Recovery Bundle (after truncation/compaction) ───────
