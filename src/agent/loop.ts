@@ -20,6 +20,8 @@ import type { MediaAttachment } from '../types.js';
 import { getCodexCredentials, getCodexHeaders } from './codex-auth.js';
 import { assembleContext } from './context-assembly.js';
 import { EventLedger } from './event-ledger.js';
+import { TriggerIndex } from './trigger-index.js';
+import { MemoryObjectStore } from './memory-objects.js';
 
 const MAX_ITERATIONS = 100;
 const TYPING_INTERVAL_MS = 4000;
@@ -211,6 +213,8 @@ export class AgentLoop {
   private sessionGapMs: number;
   private workspacePath: string;
   private eventLedger: EventLedger;
+  private triggerIndex: TriggerIndex;
+  private memoryStore: MemoryObjectStore;
 
   constructor(opts: {
     apiKey: string;
@@ -254,6 +258,10 @@ export class AgentLoop {
     this.sessionGapMs = opts.sessionGapMs ?? 30 * 60 * 1000;
     this.workspacePath = opts.workspacePath;
     this.eventLedger = new EventLedger(join(this.workspacePath, '..', 'brain'));
+    const brainDir = join(this.workspacePath, '..', 'brain');
+    this.memoryStore = new MemoryObjectStore(brainDir);
+    this.triggerIndex = new TriggerIndex();
+    this.triggerIndex.loadFrom(this.memoryStore);
   }
 
   private async compileSessionTranscript(chatId: string, records: HistoryRecord[]): Promise<void> {
@@ -486,6 +494,7 @@ export class AgentLoop {
             brainDir: join(this.workspacePath, '..', 'brain'),
             enginePort: this.toolContext.enginePort,
             sessionId: chatId,
+            triggerIndex: this.triggerIndex,
           },
           this.eventLedger,
         );

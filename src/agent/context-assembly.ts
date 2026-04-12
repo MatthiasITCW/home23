@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AssemblyResult, EventEnvelope } from '../types.js';
 import type { EventLedger } from './event-ledger.js';
+import type { TriggerIndex } from './trigger-index.js';
 
 // ─── Constants ──────────────────────────────────────────
 const CONTEXT_BUDGET = 6000;
@@ -33,6 +34,7 @@ interface AssemblyConfig {
   brainDir: string;
   enginePort: number;
   sessionId: string;
+  triggerIndex?: TriggerIndex;
 }
 
 // ─── Domain Surfaces ────────────────────────────────────
@@ -171,6 +173,23 @@ export async function assembleContext(
     });
   }
 
+  // ── Step 1b: Trigger evaluation ──
+  let triggerMatches: Array<{ memoryId: string; memory: { title: string; statement: string; confidence: { score: number } }; trigger: { trigger_type: string; condition: string } }> = [];
+
+  if (config.triggerIndex) {
+    try {
+      const isFirstTurn = recentTurns.length === 0;
+      triggerMatches = config.triggerIndex.evaluate(
+        userText,
+        { isFirstTurn },
+        ledger,
+        config.sessionId,
+      );
+    } catch {
+      // Never block on trigger evaluation failure
+    }
+  }
+
   // ── Step 2: Score surfaces based on brain cues ──
   const surfacesLoaded: string[] = [];
   const salienceItems: SalienceItem[] = [];
@@ -180,6 +199,15 @@ export async function assembleContext(
       text: `- ${cue.content.slice(0, 300)}${cue.tag ? ` [${cue.tag}]` : ''}`,
       score: cue.score,
       source: 'brain',
+    });
+  }
+
+  // Add triggered memories to salience items (they outrank brain similarity)
+  for (const match of triggerMatches) {
+    salienceItems.push({
+      text: `- [trigger: ${match.trigger.trigger_type}] ${match.memory.title}: ${match.memory.statement.slice(0, 250)}`,
+      score: match.memory.confidence.score + 0.1, // boost triggered memories
+      source: 'trigger',
     });
   }
 
@@ -219,7 +247,7 @@ export async function assembleContext(
       block: '[SITUATIONAL AWARENESS: DEGRADED — operating without continuity layer. Brain unreachable. Treat prior context as unverified.]',
       degraded: true,
       brainCueCount: 0,
-      triggerCount: 0,
+      triggerCount: triggerMatches.length,
       surfacesLoaded: [],
       events,
     };
@@ -233,7 +261,7 @@ export async function assembleContext(
       block: '',
       degraded: false,
       brainCueCount: brainCues.length,
-      triggerCount: 0,
+      triggerCount: triggerMatches.length,
       surfacesLoaded,
       events,
     };
