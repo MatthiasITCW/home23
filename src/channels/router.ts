@@ -119,6 +119,7 @@ export class SessionRouter {
   private bindingsPath: string;
   private turnsDir: string;
   private deliveryReceiptsPath: string;
+  private activeRuns: Set<string> = new Set();
 
   constructor(config: SessionsConfig, handler: MessageHandler, sessionsDir: string) {
     this.config = config;
@@ -171,6 +172,31 @@ export class SessionRouter {
         console.error(`[router] Failed to stop channel ${name}:`, err);
       }
     }
+  }
+
+  /**
+   * Mark a router key as having an active agent run.
+   * While active, flushQueue will hold messages instead of processing.
+   */
+  markRunActive(key: string): void {
+    this.activeRuns.add(key);
+  }
+
+  /**
+   * Mark a router key's agent run as complete.
+   */
+  markRunComplete(key: string): void {
+    this.activeRuns.delete(key);
+  }
+
+  /**
+   * Drain any messages that queued during an active run.
+   * Called after markRunComplete. If nothing queued, this is a no-op.
+   */
+  async drainPending(key: string): Promise<void> {
+    const queue = this.queues.get(key);
+    if (!queue || queue.length === 0) return;
+    await this.flushQueue(key);
   }
 
   /**
@@ -249,6 +275,12 @@ export class SessionRouter {
   private async flushQueue(key: string): Promise<void> {
     const queue = this.queues.get(key);
     if (!queue || queue.length === 0) return;
+
+    // If an agent run is active for this key, hold messages in queue
+    // They'll be drained via drainPending() when the run completes
+    if (this.config.messageQueue.queueDuringRun !== false && this.activeRuns.has(key)) {
+      return;
+    }
 
     // Combine queued messages into one
     const messages = queue.splice(0);
