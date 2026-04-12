@@ -1,17 +1,15 @@
 /**
  * COSMO Home 2.3 — MemoryManager
  *
- * Three memory systems for Althea:
+ * Two memory systems:
  *
- * A) extractAndSave   — session end: extract learnings via Claude, write to daily file + MEMORY.md
+ * A) extractAndSave   — session end: extract structured MemoryObjects via Claude
  * B) buildRecoveryBundle — post-compaction: reinject last 24h memory into system prompt
- * C) semanticRecall   — pre-turn: FAISS search over memory chunks, inject top hits
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import {
   readFileSync,
-  writeFileSync,
   appendFileSync,
   existsSync,
   readdirSync,
@@ -19,25 +17,10 @@ import {
   statSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { execFile } from 'node:child_process';
 import type { StoredMessage } from './history.js';
 
-// Derive search script path from project root (workspace/../memory-pipeline/search.py)
-// Falls back gracefully — existsSync check in semanticRecall handles missing script
-const SEARCH_SCRIPT_NAME = 'memory-pipeline/search.py';
 const MEMORY_DIR_NAME = 'memory';
-const MEMORY_FILE = 'MEMORY.md';
 const MAX_RECOVERY_CHARS = 2000;
-const MAX_RECALL_CHARS = 2000;
-const SEMANTIC_TIMEOUT_MS = 500;
-
-// ─── Types ───────────────────────────────────────────────────
-
-interface SearchResult {
-  source_file: string;
-  score: number;
-  preview: string;
-}
 
 // ─── MemoryManager ───────────────────────────────────────────
 
@@ -46,7 +29,6 @@ export class MemoryManager {
   private model: string;
   private workspacePath: string;
   private memoryDir: string;
-  private searchScript: string;
 
   constructor(opts: {
     client: Anthropic;
@@ -57,7 +39,6 @@ export class MemoryManager {
     this.model = opts.model;
     this.workspacePath = opts.workspacePath;
     this.memoryDir = join(opts.workspacePath, MEMORY_DIR_NAME);
-    this.searchScript = join(opts.workspacePath, '..', SEARCH_SCRIPT_NAME);
     mkdirSync(this.memoryDir, { recursive: true });
   }
 
@@ -94,11 +75,27 @@ export class MemoryManager {
       const response = await this.client.messages.create({
         model: 'claude-haiku-4-5',
         max_tokens: 500,
-        system: 'You are a memory extraction assistant. Extract only concrete facts, decisions, and context worth remembering. Be terse. No fluff.',
+        system: `You are a memory extraction assistant for a persistent AI agent. Extract structured memory objects from conversations.
+
+For each important item, output a JSON object on its own line with these fields:
+- type: "insight" | "observation" | "correction" | "procedure" | "uncertainty_item"
+- title: short title
+- statement: the knowledge itself
+- domain: "ops" | "project" | "personal" | "doctrine"
+- before: what was true/believed before (empty string if new knowledge)
+- after: what is now true
+- why: why this changed or matters
+- trigger_keywords: comma-separated keywords that should resurface this
+- applies_to: comma-separated contexts where this applies
+- priority: "high" | "medium" | "low"
+
+Prioritize: corrections (agent was wrong about something), new conventions, topology changes, personal context shared, key decisions.
+Skip: pleasantries, repetitive questions, implementation details already in code.
+Output ONLY the JSON objects, one per line. No prose.`,
         messages: [
           {
             role: 'user',
-            content: `Extract the key facts, decisions, and important context from this conversation that should be remembered for future sessions. Focus on: what was built/changed, what was decided, what was learned, what is in progress. Be concise — bullet points only.\n\n${transcript}`,
+            content: `Extract structured memory objects from this conversation:\n\n${transcript}`,
           },
         ],
       });
@@ -111,39 +108,124 @@ export class MemoryManager {
 
       if (!extracted) return;
 
-      const dateStr = new Date().toISOString().split('T')[0]!;
-      const timeStr = new Date().toLocaleTimeString('en-US', {
-        timeZone: 'America/New_York',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      // Parse structured output into MemoryObjects
+      const lines = extracted.split('\n').filter(l => l.trim().startsWith('{'));
 
-      // Write to daily memory file
-      const dailyPath = join(this.memoryDir, `${dateStr}.md`);
-      const dailyEntry = `\n## Session ${timeStr} ET — chat:${chatId}\n\n${extracted}\n`;
-      appendFileSync(dailyPath, dailyEntry, 'utf-8');
-
-      // Append condensed version to MEMORY.md under ## Recent Sessions
-      const memoryPath = join(this.workspacePath, MEMORY_FILE);
-      const memoryContent = existsSync(memoryPath)
-        ? readFileSync(memoryPath, 'utf-8')
-        : '';
-
-      const sessionLine = `\n### ${dateStr} ${timeStr} ET\n${extracted.split('\n').slice(0, 5).join('\n')}\n`;
-
-      if (memoryContent.includes('## Recent Sessions')) {
-        // Insert after the ## Recent Sessions header
-        const updated = memoryContent.replace(
-          '## Recent Sessions',
-          `## Recent Sessions\n${sessionLine}`,
-        );
-        writeFileSync(memoryPath, updated, 'utf-8');
-      } else {
-        // Append new section
-        appendFileSync(memoryPath, `\n## Recent Sessions\n${sessionLine}`, 'utf-8');
+      if (lines.length === 0) {
+        // Fallback: write raw extraction to daily file (backwards compat)
+        const dateStr = new Date().toISOString().split('T')[0]!;
+        const timeStr = new Date().toLocaleTimeString('en-US', {
+          timeZone: 'America/New_York',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const dailyPath = join(this.memoryDir, `${dateStr}.md`);
+        const dailyEntry = `\n## Session ${timeStr} ET — chat:${chatId}\n\n${extracted}\n`;
+        appendFileSync(dailyPath, dailyEntry, 'utf-8');
+        return;
       }
 
-      console.log(`[memory] Extracted and saved session memory for ${chatId} (${dateStr})`);
+      // Create MemoryObjects from parsed lines
+      try {
+        const { MemoryObjectStore } = await import('./memory-objects.js');
+        const brainDir = join(this.workspacePath, '..', 'brain');
+        const store = new MemoryObjectStore(brainDir);
+
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line) as {
+              type: string; title: string; statement: string; domain: string;
+              before: string; after: string; why: string;
+              trigger_keywords: string; applies_to: string; priority: string;
+            };
+
+            // Find or create thread
+            const threads = store.getOpenThreads();
+            let thread = threads.find(t =>
+              t.context_boundaries.applies_to.some(a =>
+                parsed.applies_to.split(',').map(s => s.trim()).includes(a)
+              )
+            );
+
+            if (!thread) {
+              thread = store.createThread({
+                title: `${parsed.domain} — ${parsed.title}`,
+                question: `What should be known about ${parsed.title}?`,
+                objective: parsed.statement.slice(0, 100),
+                level: 'immediate',
+                status: 'open',
+                priority: parsed.priority === 'high' ? 'high' : 'medium',
+                owner: 'extraction',
+                child_threads: [],
+                current_state_summary: parsed.statement,
+                success_criteria: [],
+                related_threads: [],
+                context_boundaries: {
+                  applies_to: parsed.applies_to.split(',').map(s => s.trim()),
+                  does_not_apply_to: [],
+                },
+              });
+            }
+
+            const deltaClass = parsed.type === 'correction' ? 'belief_change'
+              : parsed.type === 'uncertainty_item' ? 'uncertainty_change'
+              : parsed.type === 'procedure' ? 'action_change'
+              : 'belief_change';
+
+            store.createObject({
+              type: parsed.type as any,
+              thread_id: thread.thread_id,
+              session_id: chatId,
+              lifecycle_layer: 'working',
+              status: 'candidate',
+              title: parsed.title,
+              statement: parsed.statement,
+              actor: 'extraction',
+              provenance: {
+                source_refs: [],
+                session_refs: [chatId],
+                generation_method: 'conversation',
+              },
+              evidence: {
+                evidence_links: [],
+                grounding_strength: 'medium',
+                grounding_note: 'Extracted from conversation by Haiku',
+              },
+              confidence: {
+                score: 0.75,
+                basis: 'Conversation extraction',
+              },
+              state_delta: {
+                delta_class: deltaClass,
+                before: { state: parsed.before || '(unknown prior state)' },
+                after: { state: parsed.after },
+                why: parsed.why,
+              },
+              triggers: parsed.trigger_keywords.split(',').map(kw => ({
+                trigger_type: 'keyword',
+                condition: kw.trim(),
+              })).filter(t => t.condition),
+              scope: {
+                applies_to: parsed.applies_to.split(',').map(s => s.trim()),
+                excludes: [],
+              },
+              review_state: 'unreviewed',
+              staleness_policy: {
+                review_after_days: 30,
+              },
+            });
+
+            console.log(`[memory] Extracted MemoryObject: "${parsed.title}" (${parsed.type})`);
+          } catch (parseErr) {
+            // Skip malformed lines
+            console.warn('[memory] Failed to parse extraction line:', line.slice(0, 80));
+          }
+        }
+      } catch (storeErr) {
+        console.warn('[memory] Failed to create MemoryObjects from extraction:', storeErr);
+      }
+
+      console.log(`[memory] Extracted and saved session memory for ${chatId}`);
     } catch (err) {
       // Never crash — memory extraction is best-effort
       console.warn('[memory] extractAndSave failed:', err instanceof Error ? err.message : err);
@@ -268,66 +350,4 @@ export class MemoryManager {
     }
   }
 
-  // ── C) Semantic Recall ───────────────────────────────────
-
-  /**
-   * Search memory for relevant context before an agent turn.
-   * Hard 500ms timeout — returns null silently on timeout or error.
-   */
-  async semanticRecall(query: string): Promise<string | null> {
-    if (!query.trim()) return null;
-    if (!existsSync(this.searchScript)) return null;
-
-    return new Promise(resolve => {
-      const timer = setTimeout(() => {
-        resolve(null);
-      }, SEMANTIC_TIMEOUT_MS);
-
-      // Sanitize query for shell — strip quotes and newlines
-      const safeQuery = query.replace(/['"]/g, ' ').replace(/\n/g, ' ').slice(0, 200);
-
-      execFile(
-        'python3',
-        [this.searchScript, safeQuery, '--top', '3', '--min-score', '0.50', '--json'],
-        { timeout: SEMANTIC_TIMEOUT_MS },
-        (err, stdout, _stderr) => {
-          clearTimeout(timer);
-
-          if (err || !stdout.trim()) {
-            resolve(null);
-            return;
-          }
-
-          try {
-            // Find JSON array in output
-            const jsonStart = stdout.indexOf('[');
-            const jsonEnd = stdout.lastIndexOf(']');
-            if (jsonStart < 0 || jsonEnd < 0) {
-              resolve(null);
-              return;
-            }
-
-            const results = JSON.parse(stdout.slice(jsonStart, jsonEnd + 1)) as SearchResult[];
-
-            if (!results.length) {
-              resolve(null);
-              return;
-            }
-
-            const formatted = results
-              .map(r => `**${r.source_file}** (score: ${r.score.toFixed(2)})\n${r.preview}`)
-              .join('\n\n');
-
-            const truncated = formatted.length > MAX_RECALL_CHARS
-              ? formatted.slice(0, MAX_RECALL_CHARS) + '\n...'
-              : formatted;
-
-            resolve(`## Memory Recall\n*Relevant context from past sessions*\n\n${truncated}\n\n---`);
-          } catch {
-            resolve(null);
-          }
-        },
-      );
-    });
-  }
 }
