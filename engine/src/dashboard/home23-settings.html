@@ -27,6 +27,7 @@
     <button class="h23s-tab" data-stab="agents">Agents</button>
     <button class="h23s-tab" data-stab="models">Models</button>
     <button class="h23s-tab" data-stab="feeder">Feeder</button>
+    <button class="h23s-tab" data-stab="vibe">Vibe</button>
     <button class="h23s-tab" data-stab="system">System</button>
   </nav>
 
@@ -214,6 +215,31 @@
       </div>
 
       <div class="h23s-section">
+        <h3 class="h23s-section-title">Engine Roles</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">Override which model each cognitive role uses. Leave on "Use Default" to follow the default model above.</p>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>Thought</label>
+            <select id="engine-role-thought"></select>
+          </div>
+          <div class="h23s-field">
+            <label>Consolidation</label>
+            <select id="engine-role-consolidation"></select>
+          </div>
+        </div>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>Dreaming</label>
+            <select id="engine-role-dreaming"></select>
+          </div>
+          <div class="h23s-field">
+            <label>Query</label>
+            <select id="engine-role-query"></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="h23s-section">
         <h3 class="h23s-section-title">Available Models per Provider</h3>
         <p class="h23s-panel-desc" style="margin-top:0;">These are the models shown in evobrew's dropdown. Add or remove to control what's available.</p>
         <div id="provider-models-list"></div>
@@ -252,9 +278,10 @@
         <div class="h23s-field-row" id="feeder-live-status">
           <div class="h23s-field"><label>Started</label><div id="fd-live-started">—</div></div>
           <div class="h23s-field"><label>Watchers</label><div id="fd-live-watchers">—</div></div>
-          <div class="h23s-field"><label>Files</label><div id="fd-live-files">—</div></div>
-          <div class="h23s-field"><label>Compiled</label><div id="fd-live-compiled">—</div></div>
-          <div class="h23s-field"><label>Pending</label><div id="fd-live-pending">—</div></div>
+          <div class="h23s-field"><label>Files</label><div id="fd-live-files" title="Files tracked in the ingestion manifest">—</div></div>
+          <div class="h23s-field"><label>Compiled</label><div id="fd-live-compiled" title="Files passed through the LLM compiler">—</div></div>
+          <div class="h23s-field"><label>Quarantined</label><div id="fd-live-quarantined" title="Files the feeder tried to ingest but rejected (conversion failure, truncation, unsupported format)">—</div></div>
+          <div class="h23s-field"><label>Pending</label><div id="fd-live-pending" title="Files currently queued for flush to the brain (live from the engine)">—</div></div>
           <div class="h23s-field"><label>Converter</label><div id="fd-live-converter">—</div></div>
         </div>
         <div class="h23s-action-row" style="margin-top:8px;">
@@ -387,6 +414,59 @@
         <div id="fd-upload-progress"></div>
       </div>
 
+    </div>
+
+    <!-- Vibe Panel -->
+    <div class="h23s-panel" id="panel-vibe">
+      <h2 class="h23s-panel-title">Vibe</h2>
+      <p class="h23s-panel-desc">Controls the dashboard Vibe tile — CHAOS MODE image generation, archive rotation, and optional dream augmentation that pulls symbolic motifs from the agent's most recent dreams.</p>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Generation &amp; Rotation</h3>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label><input type="checkbox" id="vibe-autogen"> Auto-generate</label>
+          </div>
+          <div class="h23s-field">
+            <label>Generation Interval (hours)</label>
+            <input type="number" id="vibe-gen-hours" min="1" step="1" value="12">
+          </div>
+          <div class="h23s-field">
+            <label>Rotation Interval (seconds)</label>
+            <input type="number" id="vibe-rot-seconds" min="15" step="5" value="45">
+          </div>
+          <div class="h23s-field">
+            <label>Gallery Limit</label>
+            <input type="number" id="vibe-gallery-limit" min="1" step="1" value="60">
+          </div>
+        </div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Dream Augmentation</h3>
+        <p class="h23s-panel-desc">When enabled, the vibe service reads the N most recent dreams from the agent's brain and extracts symbolic motifs. Motifs are woven into CHAOS MODE prompts as texture and atmosphere, never as the literal subject.</p>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label><input type="checkbox" id="vibe-dreams-enabled"> Enable dream augmentation</label>
+          </div>
+          <div class="h23s-field">
+            <label>Dream Lookback</label>
+            <input type="number" id="vibe-dreams-lookback" min="1" max="10" step="1" value="3">
+          </div>
+          <div class="h23s-field">
+            <label>Extraction Method</label>
+            <select id="vibe-dreams-extraction">
+              <option value="heuristic">Heuristic (phrase mining)</option>
+              <option value="llm" disabled>LLM pre-pass (coming soon)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="h23s-section">
+        <button class="h23s-btn-primary" id="vibe-save">Save Vibe Settings</button>
+        <span id="vibe-save-status" class="h23s-status"></span>
+      </div>
     </div>
 
     <!-- System Panel -->

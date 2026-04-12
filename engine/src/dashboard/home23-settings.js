@@ -516,6 +516,27 @@ function renderModels(data) {
   provSelect.addEventListener('change', fillModelSelect);
   fillModelSelect();
 
+  // Engine role dropdowns — collect ALL models across ALL providers
+  const allModels = [];
+  for (const [provName, prov] of Object.entries(data.providers || {})) {
+    for (const m of (prov.defaultModels || [])) {
+      allModels.push({ model: m, provider: provName });
+    }
+  }
+  const roleKeys = ['thought', 'consolidation', 'dreaming', 'query'];
+  for (const role of roleKeys) {
+    const sel = document.getElementById(`engine-role-${role}`);
+    if (!sel) continue;
+    sel.innerHTML = '<option value="">Use Default</option>';
+    for (const { model, provider } of allModels) {
+      const opt = document.createElement('option');
+      opt.value = model;
+      opt.textContent = `${model}  (${PROVIDER_DISPLAY[provider] || provider})`;
+      if (data.engineRoles?.[role] === model) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+
   // Per-provider model lists
   const pmList = document.getElementById('provider-models-list');
   const providerOrder = ['ollama-cloud', 'anthropic', 'openai', 'openai-codex', 'xai'];
@@ -597,6 +618,12 @@ async function saveModels() {
     }
   });
 
+  const engineRoles = {};
+  for (const role of ['thought', 'consolidation', 'dreaming', 'query']) {
+    const val = document.getElementById(`engine-role-${role}`)?.value;
+    if (val) engineRoles[role] = val;
+  }
+
   const body = {
     chat: {
       defaultProvider: document.getElementById('models-default-provider').value,
@@ -604,6 +631,7 @@ async function saveModels() {
     },
     aliases,
     providerModels: collectProviderModels(),
+    engineRoles,
   };
 
   const statusEl = document.getElementById('models-status');
@@ -1151,6 +1179,11 @@ async function loadFeederLiveStatus() {
     ]);
 
     let started = '—', watchers = '—', converter = '—';
+    // The live flush queue is the only honest source for "Pending" — the
+    // summary aggregator computes `files_on_disk - manifest.length` which
+    // permanently inflates by files the feeder will never ingest (binary
+    // archives, managed artifacts, broken-converter PDFs, etc.).
+    let livePending = null;
     if (liveRes && liveRes.ok) {
       const live = await liveRes.json();
       if (live.ok && live.status) {
@@ -1158,6 +1191,9 @@ async function loadFeederLiveStatus() {
         watchers = String(live.status.watching?.length ?? 0);
         const cv = live.status.converter;
         converter = cv?.available ? `✓ ${cv.visionModel || ''}` : '✗ unavailable';
+        if (Number.isFinite(live.status.manifest?.pendingCount)) {
+          livePending = live.status.manifest.pendingCount;
+        }
       }
     } else {
       started = 'engine unreachable';
@@ -1170,10 +1206,14 @@ async function loadFeederLiveStatus() {
     if (summaryRes && summaryRes.ok) {
       const summary = await summaryRes.json();
       const first = (summary.feeders || [])[0] || {};
-      document.getElementById('fd-live-files').textContent = `${first.processedFiles ?? 0} / ${first.totalFiles ?? 0}`;
+      document.getElementById('fd-live-files').textContent = String(first.processedFiles ?? 0);
       document.getElementById('fd-live-compiled').textContent = String(first.compiledCount ?? 0);
-      document.getElementById('fd-live-pending').textContent = String(first.pendingCount ?? 0);
+      const qEl = document.getElementById('fd-live-quarantined');
+      if (qEl) qEl.textContent = String(first.quarantinedCount ?? 0);
     }
+
+    // Prefer the engine's live flush-queue count; fall back to 0 when unreachable.
+    document.getElementById('fd-live-pending').textContent = String(livePending ?? 0);
   } catch (err) {
     console.warn('feeder status load failed:', err.message);
   }
@@ -1267,6 +1307,57 @@ async function restartEngine() {
   }
 }
 
+// ── Vibe ──
+
+async function loadVibe() {
+  try {
+    const res = await fetch('/home23/api/settings/vibe');
+    const data = await res.json();
+    const v = data.vibe || {};
+    const d = v.dreams || {};
+    document.getElementById('vibe-autogen').checked = v.autoGenerate !== false;
+    document.getElementById('vibe-gen-hours').value = v.generationIntervalHours ?? 12;
+    document.getElementById('vibe-rot-seconds').value = v.rotationIntervalSeconds ?? 45;
+    document.getElementById('vibe-gallery-limit').value = v.galleryLimit ?? 60;
+    document.getElementById('vibe-dreams-enabled').checked = d.enabled !== false;
+    document.getElementById('vibe-dreams-lookback').value = d.lookback ?? 3;
+    document.getElementById('vibe-dreams-extraction').value = d.extraction === 'llm' ? 'llm' : 'heuristic';
+  } catch (err) {
+    console.error('[vibe] load failed', err);
+  }
+}
+
+async function saveVibe() {
+  const statusEl = document.getElementById('vibe-save-status');
+  statusEl.textContent = 'Saving...';
+  const body = {
+    vibe: {
+      autoGenerate: document.getElementById('vibe-autogen').checked,
+      generationIntervalHours: Number(document.getElementById('vibe-gen-hours').value),
+      rotationIntervalSeconds: Number(document.getElementById('vibe-rot-seconds').value),
+      galleryLimit: Number(document.getElementById('vibe-gallery-limit').value),
+      dreams: {
+        enabled: document.getElementById('vibe-dreams-enabled').checked,
+        lookback: Number(document.getElementById('vibe-dreams-lookback').value),
+        extraction: document.getElementById('vibe-dreams-extraction').value,
+      },
+    },
+  };
+  try {
+    const res = await fetch('/home23/api/settings/vibe', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'save failed');
+    statusEl.textContent = 'Saved · hot-applied';
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+}
+
 function setupFeederHandlers() {
   document.getElementById('btn-save-feeder')?.addEventListener('click', saveFeeder);
   document.getElementById('btn-feeder-refresh')?.addEventListener('click', loadFeederLiveStatus);
@@ -1296,6 +1387,7 @@ async function init() {
   loadAgents();
   loadSystem();
   loadFeeder();
+  loadVibe();
   loadOAuthStatus();
 
   document.getElementById('btn-save-providers').addEventListener('click', saveProviders);
@@ -1305,6 +1397,7 @@ async function init() {
   document.getElementById('btn-install-deps').addEventListener('click', installDeps);
   document.getElementById('btn-build-ts').addEventListener('click', buildTS);
   setupFeederHandlers();
+  document.getElementById('vibe-save')?.addEventListener('click', saveVibe);
   setupOAuthHandlers();
 
   setupWizard();

@@ -486,17 +486,26 @@ function createSettingsRouter(home23Root) {
 
   router.get('/models', (req, res) => {
     const homeConfig = loadYaml(path.join(home23Root, 'config', 'home.yaml'));
+    const primary = getPrimaryAgent();
+    let engineRoles = {};
+    if (primary) {
+      try {
+        const agentConfig = loadYaml(path.join(home23Root, 'instances', primary, 'config.yaml'));
+        engineRoles = agentConfig.engine || {};
+      } catch { /* ok */ }
+    }
     res.json({
       chat: homeConfig.chat || {},
       aliases: homeConfig.models?.aliases || {},
       providers: Object.fromEntries(
         Object.entries(homeConfig.providers || {}).map(([name, cfg]) => [name, { defaultModels: cfg.defaultModels || [] }])
       ),
+      engineRoles,
     });
   });
 
   router.put('/models', (req, res) => {
-    const { chat, aliases, providerModels } = req.body;
+    const { chat, aliases, providerModels, engineRoles } = req.body;
     const configPath = path.join(home23Root, 'config', 'home.yaml');
     const homeConfig = loadYaml(configPath);
 
@@ -509,7 +518,6 @@ function createSettingsRouter(home23Root) {
       if (!homeConfig.models) homeConfig.models = {};
       homeConfig.models.aliases = aliases;
     }
-    // Update defaultModels per provider
     if (providerModels) {
       if (!homeConfig.providers) homeConfig.providers = {};
       for (const [provName, models] of Object.entries(providerModels)) {
@@ -521,23 +529,27 @@ function createSettingsRouter(home23Root) {
     saveYaml(configPath, homeConfig);
     regenerateEvobrewConfig();
 
-    // Propagate default model change to all agents' engine roles + restart
-    if (chat?.defaultModel) {
+    // Propagate engine role models to all agents + restart
+    const roleModels = engineRoles || {};
+    const defaultModel = chat?.defaultModel;
+    const needsRestart = defaultModel || Object.keys(roleModels).length > 0;
+
+    if (needsRestart) {
       const agentNames = discoverAgents();
       for (const name of agentNames) {
         try {
           const agentConfigPath = path.join(home23Root, 'instances', name, 'config.yaml');
           const agentConfig = loadYaml(agentConfigPath);
           if (!agentConfig.engine) agentConfig.engine = {};
-          agentConfig.engine.thought = chat.defaultModel;
-          agentConfig.engine.consolidation = chat.defaultModel;
-          agentConfig.engine.dreaming = chat.defaultModel;
-          agentConfig.engine.query = chat.defaultModel;
+          // Per-role overrides take precedence, default model fills the rest
+          agentConfig.engine.thought = roleModels.thought || defaultModel || agentConfig.engine.thought;
+          agentConfig.engine.consolidation = roleModels.consolidation || defaultModel || agentConfig.engine.consolidation;
+          agentConfig.engine.dreaming = roleModels.dreaming || defaultModel || agentConfig.engine.dreaming;
+          agentConfig.engine.query = roleModels.query || defaultModel || agentConfig.engine.query;
           saveYaml(agentConfigPath, agentConfig);
           const { execSync } = require('child_process');
           execSync(`pm2 restart home23-${name}`, { stdio: 'pipe', timeout: 10000 });
         } catch (err) { console.error(`[Settings] Failed to propagate model to ${name}:`, err.message); }
-      }
     }
 
     res.json({ ok: true });
