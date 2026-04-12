@@ -15,6 +15,7 @@ import { generateImageTool, ttsTool } from './media.js';
 import { cronScheduleTool, cronListTool, cronDeleteTool } from './cron.js';
 import { selfUpdateTool, selfReadTool } from './identity.js';
 import { spawnAgentTool } from './subagent.js';
+import { promoteToMemoryTool } from './promote.js';
 import {
   listBrainsTool,
   queryBrainTool,
@@ -118,6 +119,7 @@ export function createToolRegistry(): ToolRegistry {
   registry.register(getBrainGraphTool);
   registry.register(compileBrainTool);
   registry.register(compileSectionTool);
+  registry.register(promoteToMemoryTool);
 
   return registry;
 }
