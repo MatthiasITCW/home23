@@ -195,7 +195,14 @@ export interface WebhookMapping {
 
 export interface SessionsConfig {
   threadBindings: { enabled: boolean; idleHours: number };
-  messageQueue: { mode: string; debounceMs: number; cap: number; overflowStrategy: string };
+  messageQueue: {
+    mode: string;
+    debounceMs: number;
+    cap: number;
+    overflowStrategy: string;
+    adaptiveDebounce?: boolean;
+    queueDuringRun?: boolean;
+  };
 }
 
 export interface SchedulerConfig {
