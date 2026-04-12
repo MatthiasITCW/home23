@@ -550,6 +550,7 @@ function createSettingsRouter(home23Root) {
           const { execSync } = require('child_process');
           execSync(`pm2 restart home23-${name}`, { stdio: 'pipe', timeout: 10000 });
         } catch (err) { console.error(`[Settings] Failed to propagate model to ${name}:`, err.message); }
+      }
     }
 
     res.json({ ok: true });
