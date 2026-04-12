@@ -108,6 +108,89 @@ async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<Recor
   }
 }
 
+type OpenAIFunctionTool = {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+  };
+};
+
+type XaiResponseTool =
+  | { type: 'function'; name: string; description: string | null; parameters: unknown }
+  | { type: 'web_search' }
+  | { type: 'x_search' }
+  | { type: 'code_interpreter' };
+
+const XAI_SERVER_TOOLS: XaiResponseTool[] = [
+  { type: 'web_search' },
+  { type: 'x_search' },
+  { type: 'code_interpreter' },
+];
+
+function buildXaiResponseTools(registry: ToolRegistry): XaiResponseTool[] {
+  const localTools = (registry.getOpenAITools() as OpenAIFunctionTool[])
+    // Avoid a name collision with xAI's native web_search tool.
+    .filter((tool) => tool.function.name !== 'web_search')
+    .map((tool) => ({
+      type: 'function' as const,
+      name: tool.function.name,
+      description: tool.function.description ?? null,
+      parameters: tool.function.parameters ?? null,
+    }));
+
+  return [...XAI_SERVER_TOOLS, ...localTools];
+}
+
+function getXaiServerToolName(itemType: string | undefined): string | null {
+  if (itemType === 'web_search_call') return 'web_search';
+  if (itemType === 'x_search_call') return 'x_search';
+  if (itemType === 'code_interpreter_call') return 'code_execution';
+  return null;
+}
+
+function getXaiServerToolArgs(item: Record<string, unknown>): unknown {
+  if (typeof item.arguments === 'string' && item.arguments.trim()) {
+    try {
+      return JSON.parse(item.arguments);
+    } catch {
+      return item.arguments;
+    }
+  }
+  if (typeof item.input === 'string' && item.input.trim()) {
+    try {
+      return JSON.parse(item.input);
+    } catch {
+      return item.input;
+    }
+  }
+  if (typeof item.query === 'string' && item.query.trim()) {
+    return { query: item.query };
+  }
+  return {};
+}
+
+function summarizeXaiServerToolResult(toolName: string, item: Record<string, unknown>): string {
+  const query = typeof item.query === 'string' ? item.query.trim() : '';
+  const args = typeof item.arguments === 'string' ? item.arguments.trim() : '';
+  const input = typeof item.input === 'string' ? item.input.trim() : '';
+  const details = query || args || input || (typeof item.id === 'string' ? `id=${item.id}` : 'handled by xAI server');
+  return `${toolName} completed via xAI server: ${details}`.slice(0, 300);
+}
+
+function getXaiServerToolNameFromItem(item: Record<string, unknown> | undefined): string | null {
+  const directType = getXaiServerToolName(item?.type as string | undefined);
+  if (directType) return directType;
+
+  const name = typeof item?.name === 'string' ? item.name : '';
+  if (name === 'code_execution') return 'code_execution';
+  if (name === 'web_search' || name === 'web_search_with_snippets' || name === 'browse_page') return 'web_search';
+  if (name.startsWith('x_')) return 'x_search';
+
+  return null;
+}
+
 export class AgentLoop {
   private client: Anthropic;
   private model: string;
@@ -768,9 +851,8 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
             turnMessages.push({ role: 'assistant', content: capText });
             this.history.append(chatId, turnMessages);
             return { text: capText, media: allMedia.length > 0 ? allMedia : undefined, model: this.model, toolCallCount, durationMs: Date.now() - startMs };
-          } else if (this.provider === 'xai' && this.model.includes('multi-agent')) {
-            // ── xAI Responses API path (grok-4.20 multi-agent) ──
-            // Only multi-agent requires Responses API; reasoning/non-reasoning work with Chat Completions too
+          } else if (this.provider === 'xai' || this.model.includes('grok')) {
+            // ── xAI Responses API path (all Grok models) ──
             const xaiKey = process.env.XAI_API_KEY;
             if (!xaiKey) throw new Error('XAI_API_KEY not set');
 
@@ -794,21 +876,16 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
               }
             }
 
-            type OAITool = { type: string; function: { name: string; description?: string; parameters?: unknown } };
-            const xaiTools = (this.registry.getOpenAITools() as OAITool[]).map(t => ({
-              type: 'function',
-              name: t.function.name,
-              description: t.function.description ?? null,
-              parameters: t.function.parameters ?? null,
-            }));
+            const xaiTools = buildXaiResponseTools(this.registry);
 
-            const apiMessages: Array<Record<string, unknown>> = [
-              { role: 'system', content: sysText },
+            const initialInput: Array<Record<string, unknown>> = [
+              ...(sysText ? [{ role: 'system', content: sysText }] : []),
               ...chatMsgs,
             ];
 
             type ToolCallObj = { id?: string; type?: string; function: { name: string; arguments: string | Record<string, unknown> } };
-            type ResponseMessage = { role: string; content?: string | null; tool_calls?: ToolCallObj[] };
+            let previousResponseId: string | null = null;
+            let nextInputItems: Array<Record<string, unknown>> | null = null;
 
             for (let i = 0; i < MAX_ITERATIONS; i++) {
               if (ac.signal.aborted) {
@@ -818,35 +895,20 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
                 return { text: interruptText, media: allMedia.length > 0 ? allMedia : undefined, model: this.model, toolCallCount, durationMs: Date.now() - startMs };
               }
 
-              // Build Responses API input from apiMessages
-              const instructions = (apiMessages[0]?.content as string) ?? '';
-              const inputItems: Array<Record<string, unknown>> = [];
-              for (const msg of apiMessages.slice(1)) {
-                const role = msg.role as string;
-                const content = msg.content as string | null | undefined;
-                const msgToolCalls = msg.tool_calls as ToolCallObj[] | undefined;
-                if (role === 'user') {
-                  inputItems.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: content ?? '' }] });
-                } else if (role === 'assistant') {
-                  if (content) inputItems.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] });
-                  if (msgToolCalls?.length) {
-                    for (const tc of msgToolCalls) {
-                      inputItems.push({ type: 'function_call', call_id: tc.id, name: tc.function.name, arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments) });
-                    }
-                  }
-                } else if (role === 'tool') {
-                  inputItems.push({ type: 'function_call_output', call_id: msg.tool_call_id as string, output: (msg.content as string) ?? '' });
-                }
-              }
+              const inputItems = nextInputItems ?? initialInput;
 
               const xaiBody = {
                 model: this.model,
-                instructions,
                 input: inputItems,
                 tools: xaiTools.length > 0 ? xaiTools : undefined,
                 tool_choice: xaiTools.length > 0 ? 'auto' : undefined,
+                parallel_tool_calls: true,
+                truncation: 'auto',
+                max_output_tokens: this.maxTokens,
+                temperature: this.temperature,
+                tool_stream: true,
                 stream: true,
-                store: false,
+                ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
               };
 
               const xaiTimeout = 120_000;
@@ -869,39 +931,70 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
 
               // Parse SSE stream
               let textContent = '';
+              let reasoningSummary = '';
+              let streamedAnswer = false;
               type FunctionCallItem = { call_id: string; name: string; arguments: string };
               const functionCallItems: FunctionCallItem[] = [];
+              const serverToolNames: string[] = [];
+              let responseId: string | null = null;
 
               for await (const event of parseSSE(res.body)) {
                 const evType = event.type as string | undefined;
+                const maybeResponse = event.response as Record<string, unknown> | undefined;
+                if (typeof maybeResponse?.id === 'string') {
+                  responseId = maybeResponse.id;
+                } else if (typeof event.id === 'string') {
+                  responseId = event.id as string;
+                }
                 if (evType === 'response.output_text.delta') {
                   textContent += (event.delta as string) ?? '';
+                  if (onEvent && event.delta) {
+                    streamedAnswer = true;
+                    onEvent({ type: 'response_chunk', chunk: event.delta as string });
+                  }
                 } else if (evType === 'response.output_text.done') {
                   textContent = (event.text as string) ?? textContent;
                 } else if (evType === 'response.output_item.done') {
                   const item = event.item as Record<string, unknown> | undefined;
                   if (item?.type === 'function_call') {
                     functionCallItems.push({ call_id: item.call_id as string, name: item.name as string, arguments: (item.arguments as string) ?? '{}' });
+                  } else {
+                    const toolName = getXaiServerToolNameFromItem(item);
+                    if (toolName) {
+                      toolCallCount++;
+                      serverToolNames.push(toolName);
+                      const args = item ? getXaiServerToolArgs(item) : {};
+                      if (onEvent) {
+                        onEvent({ type: 'tool_start', tool: toolName, args });
+                        onEvent({ type: 'tool_result', tool: toolName, result: summarizeXaiServerToolResult(toolName, item ?? {}), success: true });
+                      }
+                    }
                   }
                 } else if (evType === 'response.reasoning_summary_text.delta') {
+                  reasoningSummary += (event.delta as string) ?? '';
                   if (onEvent) onEvent({ type: 'thinking', content: (event.delta as string) ?? '' });
+                } else if (evType === 'response.reasoning_summary_text.done') {
+                  reasoningSummary = (event.text as string) ?? reasoningSummary;
                 }
               }
 
-              const respMsg: ResponseMessage = {
-                role: 'assistant',
-                content: textContent || null,
-                tool_calls: functionCallItems.length > 0
-                  ? functionCallItems.map(fc => ({ id: fc.call_id, type: 'function' as const, function: { name: fc.name, arguments: fc.arguments } }))
-                  : undefined,
-              };
+              const answerText = (textContent || reasoningSummary || '').trim();
+              const toolCalls: ToolCallObj[] = functionCallItems.map(fc => ({
+                id: fc.call_id,
+                type: 'function' as const,
+                function: { name: fc.name, arguments: fc.arguments },
+              }));
 
-              console.log(`[agent] xai responses: content=${(respMsg.content || '').length} chars, tool_calls=${respMsg.tool_calls?.length ?? 0}, tools_sent=${xaiTools.length}, model=${this.model}`);
+              console.log(`[agent] xai responses: content=${answerText.length} chars, tool_calls=${toolCalls.length}, tools_sent=${xaiTools.length}, model=${this.model}`);
 
-              const toolCalls = respMsg.tool_calls;
-              if (!toolCalls || toolCalls.length === 0) {
-                const answer = (respMsg.content || '').trim() || '(no response)';
-                if (onEvent && answer) onEvent({ type: 'response_chunk', chunk: answer });
+              if (toolCalls.length === 0) {
+                const answer = answerText || '(no response)';
+                if (onEvent && answer && !streamedAnswer) {
+                  onEvent({ type: 'response_chunk', chunk: answer });
+                }
+                if (serverToolNames.length > 0) {
+                  turnMessages.push({ role: 'assistant', content: `[Used tools: ${serverToolNames.join(', ')}]` });
+                }
                 turnMessages.push({ role: 'assistant', content: answer });
                 this.history.append(chatId, turnMessages);
                 if (messages.length > 10) {
@@ -910,11 +1003,15 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
                 return { text: answer, media: allMedia.length > 0 ? allMedia : undefined, model: this.model, toolCallCount, durationMs: Date.now() - startMs };
               }
 
-              // Execute tool calls
-              apiMessages.push({ role: 'assistant', content: respMsg.content || null, tool_calls: toolCalls });
+              if (!responseId) {
+                throw new Error('xai responses missing response id for tool continuation');
+              }
+
+              previousResponseId = responseId;
+              nextInputItems = [];
               for (const tc of toolCalls) {
                 if (ac.signal.aborted) {
-                  apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: 'Interrupted by /stop' });
+                  nextInputItems.push({ type: 'function_call_output', call_id: tc.id, output: 'Interrupted by /stop' });
                   continue;
                 }
                 toolCallCount++;
@@ -925,15 +1022,15 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
                 try {
                   const result = await this.registry.get(tc.function.name)!.execute(input, runContext);
                   if (result.media?.length) { allMedia.push(...result.media); if (onEvent) for (const m of result.media) onEvent({ type: 'media', mediaType: m.type || 'image', path: m.path, caption: m.caption }); }
-                  apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: result.content.slice(0, 50_000) });
+                  nextInputItems.push({ type: 'function_call_output', call_id: tc.id, output: result.content.slice(0, 50_000) });
                   if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: result.content.slice(0, 300), success: true });
                 } catch (toolErr) {
                   const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
-                  apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: `Error: ${errMsg}` });
+                  nextInputItems.push({ type: 'function_call_output', call_id: tc.id, output: `Error: ${errMsg}` });
                   if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: errMsg, success: false });
                 }
               }
-              const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
+              const toolNames = [...serverToolNames, ...toolCalls.map(tc => tc.function.name)].join(', ');
               turnMessages.push({ role: 'assistant', content: `[Used tools: ${toolNames}]` });
             }
 
@@ -945,13 +1042,12 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
           } else {
           // ── Non-Claude tool-use loop ──
           // Ollama Cloud: native /api/chat (proper tool support, configurable num_ctx)
-          // OpenAI / xAI (non-4.20): /v1/chat/completions (standard OpenAI format)
+          // OpenAI: /v1/chat/completions (standard OpenAI format)
 
           const isOllamaCloud = this.provider === 'ollama-cloud';
 
           const providerConfig: Record<string, { keyEnv: string; timeout: number }> = {
             'openai': { keyEnv: 'OPENAI_API_KEY', timeout: 60_000 },
-            'xai': { keyEnv: 'XAI_API_KEY', timeout: 60_000 },
             'ollama-cloud': { keyEnv: 'OLLAMA_CLOUD_API_KEY', timeout: 120_000 },
           };
           const pconf = providerConfig[this.provider];
@@ -1047,117 +1143,6 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
               }
               const data = await res.json() as { message?: ResponseMessage };
               respMsg = data.message ?? { role: 'assistant', content: '(no response)' };
-            } else if (this.provider === 'xai' || this.model.includes('grok')) {
-              const normalizedModel = String(this.model || '').toLowerCase().trim();
-              const isXaiResponsesModel =
-                normalizedModel.includes('multi-agent') ||
-                normalizedModel.includes('moe') ||
-                normalizedModel === 'grok-agent' ||
-                normalizedModel === 'grok-4.20-multi-agent-0309' ||
-                normalizedModel === 'grok-4.20-multi-agent';
-              console.log(`[xai] provider=${this.provider} model=${this.model} normalized=${normalizedModel} responses=${isXaiResponsesModel}`);
-
-              if (isXaiResponsesModel) {
-                const instructions = typeof apiMessages[0]?.content === 'string' ? apiMessages[0].content : '';
-                const inputItems: Array<Record<string, unknown>> = [];
-                for (const msg of apiMessages.slice(1) as Array<Record<string, unknown>>) {
-                  const role = String(msg.role ?? 'user');
-                  const content = msg.content;
-                  const toolCalls = msg.tool_calls as Array<{ id?: string; function: { name: string; arguments: string | Record<string, unknown> } }> | undefined;
-                  if (role === 'user') {
-                    inputItems.push({
-                      type: 'message',
-                      role: 'user',
-                      content: [{ type: 'input_text', text: String(content ?? '') }],
-                    });
-                  } else if (role === 'assistant') {
-                    if (content) {
-                      inputItems.push({
-                        type: 'message',
-                        role: 'assistant',
-                        content: [{ type: 'output_text', text: String(content) }],
-                      });
-                    }
-                    if (toolCalls?.length) {
-                      for (const tc of toolCalls) {
-                        inputItems.push({
-                          type: 'function_call',
-                          call_id: tc.id,
-                          name: tc.function.name,
-                          arguments: typeof tc.function.arguments === 'string'
-                            ? tc.function.arguments
-                            : JSON.stringify(tc.function.arguments),
-                        });
-                      }
-                    }
-                  } else if (role === 'tool') {
-                    inputItems.push({
-                      type: 'function_call_output',
-                      call_id: (msg as { tool_call_id?: string }).tool_call_id,
-                      output: String(content ?? ''),
-                    });
-                  }
-                }
-
-                console.log(`[xai] POST https://api.x.ai/v1/responses model=${this.model} items=${inputItems.length}`);
-                const res = await fetch('https://api.x.ai/v1/responses', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                  body: JSON.stringify({
-                    model: this.model,
-                    instructions,
-                    input: inputItems,
-                    store: false,
-                  }),
-                  signal: AbortSignal.timeout(pconf.timeout),
-                });
-                if (!res.ok) {
-                  const errText = await res.text().catch(() => '');
-                  throw new Error(`xai HTTP ${res.status}: ${errText.slice(0, 300)}`);
-                }
-                const data = await res.json() as {
-                  output_text?: string;
-                  output?: Array<{
-                    type?: string;
-                    content?: Array<{ type?: string; text?: string }>;
-                    name?: string;
-                    arguments?: string;
-                    call_id?: string;
-                  }>;
-                };
-                const text = data.output_text
-                  ?? data.output?.flatMap(o => o.content ?? []).map(c => c.text ?? '').join('')
-                  ?? '';
-                respMsg = { role: 'assistant', content: text || '(no response)' };
-              } else {
-                const forcedResponses = normalizedModel.includes('multi-agent');
-                if (forcedResponses) {
-                  throw new Error(`xai routing error: multi-agent model ${this.model} must use /v1/responses`);
-                }
-                const baseUrl = 'https://api.x.ai/v1';
-                console.log(`[xai] POST ${baseUrl}/chat/completions model=${this.model}`);
-                const isGpt5Plus = this.model.includes('gpt-5') || this.model.includes('gpt5');
-                const tokenParam = isGpt5Plus ? { max_completion_tokens: this.maxTokens } : { max_tokens: this.maxTokens };
-
-                const res = await fetch(`${baseUrl}/chat/completions`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                  body: JSON.stringify({
-                    model: this.model,
-                    messages: apiMessages,
-                    tools: oaiTools.length > 0 ? oaiTools : undefined,
-                    ...tokenParam,
-                    temperature: this.temperature,
-                  }),
-                  signal: AbortSignal.timeout(pconf.timeout),
-                });
-                if (!res.ok) {
-                  const errText = await res.text().catch(() => '');
-                  throw new Error(`xai HTTP ${res.status}: ${errText.slice(0, 300)}`);
-                }
-                const data = await res.json() as { choices?: Array<{ message: ResponseMessage }> };
-                respMsg = data.choices?.[0]?.message ?? { role: 'assistant', content: '(no response)' };
-              }
             } else {
               // OpenAI — standard /v1/chat/completions
               const baseUrl = 'https://api.openai.com/v1';
