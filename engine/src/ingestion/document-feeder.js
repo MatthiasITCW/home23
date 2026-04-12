@@ -274,9 +274,13 @@ class DocumentFeeder {
       ...userPatterns,
     ];
 
+    // ignoreInitial: false — fire 'add' for every pre-existing file on
+    // startup so files that predate the watcher get a one-time scan. The
+    // downstream _processFile() hash-staleness gate means already-manifested
+    // files are a cheap no-op, so this does not re-compile the whole corpus.
     const watcher = chokidar.watch(watchPath, {
       persistent: true,
-      ignoreInitial: true,
+      ignoreInitial: false,
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
       depth: 99,
       ignored
@@ -347,7 +351,10 @@ class DocumentFeeder {
         format = path.extname(filePath).slice(1) || 'txt';
       }
 
-      if (!text || text.trim().length === 0) return;
+      if (!text || text.trim().length === 0) {
+        this.logger?.debug?.('Skipping empty file', { filePath });
+        return;
+      }
 
       // Compile — LLM synthesizes the document in context of existing knowledge
       let textForChunking = text;

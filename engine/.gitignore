@@ -142,3 +142,6 @@ Dataset_Data/
 data/images/*.png
 data/images/*.jpg
 data/images/*.jpeg
+
+# Bundled Python venv for MarkItDown (document ingestion — created by `node cli/home23.js init`)
+.venv-markitdown/

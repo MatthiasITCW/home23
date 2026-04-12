@@ -34,11 +34,30 @@ const CONVERTIBLE_EXTS = new Set([
 
 const CONVERT_SCRIPT = path.join(__dirname, 'convert-file.py');
 
+// Home23 bundles its MarkItDown + PDF deps inside a dedicated venv at
+// engine/.venv-markitdown so the converter doesn't depend on the host
+// system python picking up `markitdown[pdf]` via `--break-system-packages`.
+// cli/home23.js init creates this venv; convert-file.py is still a normal
+// script that works with any python that has the deps available.
+const BUNDLED_VENV_PYTHON = path.join(__dirname, '..', '..', '.venv-markitdown', 'bin', 'python3');
+
+function resolvePythonPath(explicitPath) {
+  // Explicit override from config always wins.
+  if (explicitPath && explicitPath !== 'python3') return explicitPath;
+  // Prefer the bundled venv if it exists — gives us markitdown[pdf] + openai
+  // pinned to a known-good install that survives `brew upgrade python`.
+  try {
+    if (fs.existsSync(BUNDLED_VENV_PYTHON)) return BUNDLED_VENV_PYTHON;
+  } catch { /* ignore */ }
+  // Last resort: system python3 (user may have installed markitdown globally).
+  return 'python3';
+}
+
 class DocumentConverter {
   constructor({ logger = null, visionModel = 'gpt-4o-mini', pythonPath = 'python3' }) {
     this.logger = logger;
     this.visionModel = visionModel;
-    this.pythonPath = pythonPath;
+    this.pythonPath = resolvePythonPath(pythonPath);
     this._available = null; // lazy-checked
     this._availabilityWarned = false;
   }

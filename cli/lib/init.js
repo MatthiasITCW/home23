@@ -148,6 +148,33 @@ ${agentsSection}`;
     console.error('  Check build errors with: npx tsc --noEmit');
   }
 
+  // Bundled Python venv for document ingestion (MarkItDown + PDF extras).
+  // The engine reads this via engine/.venv-markitdown/bin/python3 — see
+  // engine/src/ingestion/document-converter.js resolvePythonPath(). Keeping
+  // deps inside a venv insulates them from host Python upgrades and avoids
+  // the `pip install --break-system-packages` footgun.
+  console.log('');
+  process.stdout.write('Setting up document ingestion venv (MarkItDown + PDF)...');
+  try {
+    const venvDir = join(home23Root, 'engine', '.venv-markitdown');
+    const venvPython = join(venvDir, 'bin', 'python3');
+    if (!existsSync(venvPython)) {
+      execSync(`python3 -m venv "${venvDir}"`, { stdio: 'pipe', timeout: 60000 });
+    }
+    execSync(`"${venvPython}" -m pip install --quiet --upgrade pip "markitdown[pdf]" openai`, {
+      stdio: 'pipe',
+      timeout: 300000,
+    });
+    console.log(' done');
+  } catch (err) {
+    console.log(' FAILED');
+    console.error(`  ${err.message?.split('\n')[0] || 'unknown error'}`);
+    console.error('  Binary document ingestion (PDF/DOCX/etc.) will be unavailable until this is fixed.');
+    console.error('  You can re-run this step manually:');
+    console.error('    python3 -m venv engine/.venv-markitdown');
+    console.error('    engine/.venv-markitdown/bin/pip install "markitdown[pdf]" openai');
+  }
+
   console.log('');
   console.log('Home23 is ready. Create your first agent:');
   console.log('  node cli/home23.js agent create <name>');
