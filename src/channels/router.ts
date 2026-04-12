@@ -17,6 +17,32 @@ import { appendFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } fr
 import { join } from 'node:path';
 import type { SessionsConfig, SessionRecord, ContentBlock, MediaAttachment } from '../types.js';
 
+/**
+ * Compute adaptive debounce delay based on message content.
+ * Short fragments get longer waits (user likely typing more).
+ * Long complete sentences get shorter waits (likely a full turn).
+ * Commands bypass debounce entirely.
+ */
+function computeAdaptiveDelay(text: string, fallbackMs: number): number {
+  const trimmed = text.trim();
+
+  // Commands bypass debounce
+  if (trimmed.startsWith('/')) return 0;
+
+  const len = trimmed.length;
+  const lastChar = trimmed.slice(-1);
+  const hasTerminalPunctuation = lastChar === '.' || lastChar === '?' || lastChar === '!';
+
+  if (len > 80) return 1500;
+
+  if (len >= 15) {
+    return hasTerminalPunctuation ? 2000 : 4000;
+  }
+
+  // Short message (< 15 chars)
+  return hasTerminalPunctuation ? 2500 : 6000;
+}
+
 // ─── Types ───────────────────────────────────────────────────
 
 export interface IncomingMessage {
@@ -210,7 +236,9 @@ export class SessionRouter {
       this.flushQueue(key).catch(err => {
         console.error(`[router] Queue flush error for ${key}:`, err);
       });
-    }, this.config.messageQueue.debounceMs);
+    }, this.config.messageQueue.adaptiveDebounce !== false
+        ? computeAdaptiveDelay(message.text, this.config.messageQueue.debounceMs)
+        : this.config.messageQueue.debounceMs);
 
     this.debounceTimers.set(key, timer);
   }
