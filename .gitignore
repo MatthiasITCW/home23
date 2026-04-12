@@ -87,3 +87,21 @@ cosmo23/.worktrees/
 # IDE
 .vscode/
 .idea/
+
+# Scratch files (conversation dumps, brain analysis, temp notes)
+brainthoughts.md
+jerry2.md
+thoughts.md
+todocosmo23.md
+step20review.md
+query-*.md
+server.pid
+
+# Screenshots (session artifacts)
+*.png
+
+# Published docs (runtime, served separately)
+published/
+
+# Playwright CLI
+.playwright-cli/
