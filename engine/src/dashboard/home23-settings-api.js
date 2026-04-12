@@ -279,12 +279,12 @@ function createSettingsRouter(home23Root) {
         defaultModel: model || 'kimi-k2.5',
         maxTokens: 4096, temperature: 0.7, historyDepth: 20, historyBudget: 400000, sessionGapMs: 1800000,
         memorySearch: { enabled: false, timeoutMs: 10000, topK: 5 },
-        identityFiles: ['SOUL.md', 'MISSION.md', 'HEARTBEAT.md', 'MEMORY.md', 'LEARNINGS.md'],
+        identityFiles: ['SOUL.md', 'MISSION.md', 'HEARTBEAT.md', 'LEARNINGS.md', 'COSMO_RESEARCH.md'],
         heartbeatRefreshMs: 60000,
       },
       sessions: {
         threadBindings: { enabled: true, idleHours: 24 },
-        messageQueue: { mode: 'collect', debounceMs: 3000, cap: 10, overflowStrategy: 'summarize' },
+        messageQueue: { mode: 'collect', debounceMs: 3000, adaptiveDebounce: true, cap: 10, overflowStrategy: 'summarize', queueDuringRun: true },
       },
       scheduler: { timezone: timezone || 'America/New_York', jobsFile: 'cron-jobs.json', runsDir: 'cron-runs' },
       sibling: { enabled: false, name: '', remoteUrl: '', token: '', rateLimits: { maxPerMinute: 5, retries: 2, dedupWindowSeconds: 300 }, ackMode: false, bridgeChat: { enabled: false, dbPath: '', telegramBotToken: '', telegramTargetId: '' } },
@@ -306,11 +306,30 @@ function createSettingsRouter(home23Root) {
 
     const dName = displayName || name.charAt(0).toUpperCase() + name.slice(1);
     const templateVars = { displayName: dName, name, ownerName: ownerName || 'owner' };
-    for (const file of ['SOUL.md', 'MISSION.md', 'HEARTBEAT.md', 'MEMORY.md', 'LEARNINGS.md']) {
+    for (const file of ['SOUL.md', 'MISSION.md', 'HEARTBEAT.md', 'LEARNINGS.md', 'COSMO_RESEARCH.md']) {
       const template = loadTemplate(file);
       const content = renderTemplate(template, templateVars);
       fs.writeFileSync(path.join(instanceDir, 'workspace', file), content, 'utf8');
     }
+
+    // Seed domain surfaces for Situational Awareness Engine (Step 20)
+    const today = new Date().toISOString().split('T')[0];
+    const surfaces = {
+      'TOPOLOGY.md': `# House Topology\n\n_No services registered yet. The curator cycle will populate this as the agent learns about the house._\n\n_Last verified: ${today}. Source: initial setup._\n`,
+      'PROJECTS.md': `# Active Projects\n\n_No projects tracked yet. Use promote_to_memory or conversation extraction to add projects._\n\n_Curator-maintained. Last updated: ${today}._\n`,
+      'PERSONAL.md': `# Personal Context — ${ownerName || 'owner'}\n\n## Profile\n- Owner: ${ownerName || 'owner'}\n\n_Personal memory. Surface only on direct relevance. Curator-maintained._\n`,
+      'DOCTRINE.md': `# Doctrine — How We Work\n\n## Conventions\n- Engine is JS. Harness is TS. Two languages, one system.\n- NEVER pm2 delete/stop all — scope commands to specific process names.\n\n_Curator-maintained. Includes boundaries and operating constraints._\n`,
+      'RECENT.md': `# Recent Activity (Last 48 Hours)\n\n## ${today}\n\n### Agent created\n- ${dName} initialized with Home23\n- Situational awareness engine active\n\n_Auto-generated. Entries older than 48h drop from assembly loading._\n`,
+    };
+
+    for (const [file, content] of Object.entries(surfaces)) {
+      fs.writeFileSync(path.join(instanceDir, 'workspace', file), content, 'utf8');
+    }
+
+    // Seed empty brain data files for Step 20
+    fs.writeFileSync(path.join(instanceDir, 'brain', 'memory-objects.json'), JSON.stringify({ objects: [] }, null, 2));
+    fs.writeFileSync(path.join(instanceDir, 'brain', 'problem-threads.json'), JSON.stringify({ threads: [] }, null, 2));
+    fs.writeFileSync(path.join(instanceDir, 'brain', 'trigger-index.json'), JSON.stringify({ triggers: [] }, null, 2));
 
     // Save bot token to secrets if provided
     if (botToken) {
