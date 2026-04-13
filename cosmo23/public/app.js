@@ -138,6 +138,8 @@ class CosmoStandaloneApp {
       launch: {},
       local: {}
     };
+    this.managedByHome23 = false;
+    this.home23DashboardPort = '5002';
     this.activeContext = null;
     this.ws = null;
     this.wsUrl = null;
@@ -404,8 +406,19 @@ class CosmoStandaloneApp {
 
   async loadSetupStatus() {
     try {
-      const [setupStatus, providerStatus, oauthStatus, codexOAuthStatus] = await Promise.all([
-        this.api('/api/setup/status'),
+      const setupStatus = await this.api('/api/setup/status');
+
+      // Managed by Home23 — skip per-provider polling, render read-only view
+      if (setupStatus.managed_by_home23) {
+        this.managedByHome23 = true;
+        this.home23DashboardPort = setupStatus.home23_dashboard_port || '5002';
+        document.getElementById('hero-setup-status').textContent = 'Home23';
+        document.getElementById('hero-setup-status').classList.add('managed');
+        this.renderManagedMode(setupStatus);
+        return;
+      }
+
+      const [providerStatus, oauthStatus, codexOAuthStatus] = await Promise.all([
         this.api('/api/providers/status').catch(() => ({ providers: [] })),
         this.api('/api/oauth/anthropic/status').catch(() => ({ oauth: { configured: false } })),
         this.api('/api/oauth/openai-codex/status').catch(() => ({ oauth: { configured: false } }))
@@ -442,6 +455,89 @@ class CosmoStandaloneApp {
     } catch (error) {
       this.showToast(`Setup status failed: ${error.message}`, 'error');
     }
+  }
+
+  renderManagedMode(setupStatus) {
+    const setup = setupStatus.setup;
+    const providers = setup.providers || {};
+    const settingsUrl = `${window.location.protocol}//${window.location.hostname}:${this.home23DashboardPort}/home23/settings`;
+
+    // Build provider status dots for the summary bar
+    const allProviders = [
+      { id: 'anthropic', label: 'Anthropic' },
+      { id: 'openai', label: 'OpenAI' },
+      { id: 'openai-codex', label: 'Codex' },
+      { id: 'xai', label: 'xAI' },
+      { id: 'ollama', label: 'Ollama' },
+      { id: 'ollama-cloud', label: 'Cloud' }
+    ];
+    const bar = document.getElementById('setup-summary');
+    bar.innerHTML = '';
+    allProviders.forEach(p => {
+      const isConfigured = !!providers[p.id]?.configured;
+      const state = isConfigured ? 'connected' : 'disabled';
+      const dot = document.createElement('span');
+      dot.className = 'provider-status-dot';
+      dot.dataset.state = state;
+      dot.innerHTML = `<span class="dot"></span><span>${escapeHtml(p.label)}</span>`;
+      bar.appendChild(dot);
+    });
+
+    // Update the panel header for managed mode
+    const setupPanel = document.querySelector('#view-launch .launch-layout > aside.panel');
+    if (setupPanel) {
+      const eyebrow = setupPanel.querySelector('.panel-head .eyebrow');
+      const heading = setupPanel.querySelector('.panel-head h2');
+      if (eyebrow) eyebrow.textContent = 'Home23';
+      if (heading) heading.textContent = 'Providers And Models';
+    }
+
+    // Replace the setup form content with managed mode view
+    const form = document.getElementById('setup-form');
+    if (!form) return;
+
+    // Detach Model Catalog and Brain Directories details elements (preserve live DOM nodes)
+    const modelCatalogDetails = form.querySelector('details.section-disclosure:has(#catalog-openai-models)');
+    const brainDirsDetails = form.querySelector('details.section-disclosure:has(#brain-directories)');
+    if (modelCatalogDetails) modelCatalogDetails.remove();
+    if (brainDirsDetails) brainDirsDetails.remove();
+
+    // Build provider grid for the managed view
+    const providerGridHtml = allProviders.map(p => {
+      const isConfigured = !!providers[p.id]?.configured;
+      const state = isConfigured ? 'connected' : 'disabled';
+      const stateLabel = isConfigured ? 'Connected' : 'Not configured';
+      return `<div class="managed-provider-row">
+        <span class="provider-status-dot" data-state="${state}">
+          <span class="dot"></span>
+          <span>${escapeHtml(p.label)}</span>
+        </span>
+        <span class="managed-provider-state ${state}">${stateLabel}</span>
+      </div>`;
+    }).join('');
+
+    form.innerHTML = `
+      <div class="managed-mode-banner">
+        <div class="managed-mode-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 1L2 5v5c0 4.42 3.42 8.15 8 9 4.58-.85 8-4.58 8-9V5l-8-4z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <path d="M7 10l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="managed-mode-text">
+          <strong>Managed by Home23</strong>
+          <span>Providers are configured in <a href="${escapeHtml(settingsUrl)}" target="_top" class="managed-link">Home23 Settings</a></span>
+        </div>
+      </div>
+
+      <div class="managed-provider-grid">
+        ${providerGridHtml}
+      </div>
+    `;
+
+    // Re-append preserved DOM nodes (retains live textarea values and event listeners)
+    if (modelCatalogDetails) form.appendChild(modelCatalogDetails);
+    if (brainDirsDetails) form.appendChild(brainDirsDetails);
   }
 
   renderProviderStatusBar(setup, providerStatus, oauthStatus, codexOAuthStatus) {
@@ -527,6 +623,7 @@ class CosmoStandaloneApp {
   }
 
   async saveSetup() {
+    if (this.managedByHome23) return;
     try {
       const payload = {
         enableAnthropic: this.getSetupValue('enableAnthropic', false),

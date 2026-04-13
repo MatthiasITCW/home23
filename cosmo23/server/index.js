@@ -742,6 +742,7 @@ app.get('/api/setup/status', async (_req, res) => {
     return res.json({
       success: true,
       managed_by_home23: true,
+      home23_dashboard_port: process.env.HOME23_DASHBOARD_PORT || '5002',
       setup: { configured: true, providers, setup_complete: true },
     });
   }

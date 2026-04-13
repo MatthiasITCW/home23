@@ -163,6 +163,8 @@ export function generateEcosystem(home23Root) {
   lines.push(`    },`);
 
   // Cosmo23 — shared process (one per installation)
+  // Derive the primary agent's dashboard port for the Home23 Settings link
+  const primaryDashPort = agents[0]?.config.ports?.dashboard || 5002;
   lines.push(``);
   lines.push(`    // ── cosmo23 (shared) ──`);
   lines.push(`    {`);
@@ -184,6 +186,7 @@ export function generateEcosystem(home23Root) {
   lines.push(`        COSMO_RUNTIME_DIR: path.join(HOME23, 'cosmo23', 'runs'),`);
   lines.push(`        COSMO_REFERENCE_RUNS_PATHS: homeConfig.cosmo23?.source ? homeConfig.cosmo23.source + '/runs' : '',`);
   lines.push(`        HOME23_MANAGED: 'true',`);
+  lines.push(`        HOME23_DASHBOARD_PORT: '${primaryDashPort}',`);
   lines.push(`        NODE_ENV: 'production',`);
   lines.push(`      },`);
   lines.push(`    },`);
