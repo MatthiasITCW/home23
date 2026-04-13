@@ -4433,10 +4433,31 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Build provider status from env vars when managed by Home23
+// (keys flow via PM2, not config file)
+function buildHome23ManagedStatus() {
+  const s = (label, envKey) => {
+    const configured = Boolean(process.env[envKey]);
+    return { configured, status: configured ? 'Configured' : 'Not configured', label };
+  };
+  return {
+    anthropic: s('Anthropic', 'ANTHROPIC_AUTH_TOKEN'),
+    openaiApi: s('OpenAI API', 'OPENAI_API_KEY'),
+    openaiCodex: { configured: false, status: 'Via Home23 OAuth', label: 'OpenAI Codex' },
+    xai: s('xAI', 'XAI_API_KEY'),
+    ollamaCloud: s('Ollama Cloud', 'OLLAMA_CLOUD_API_KEY'),
+    ollama: { configured: true, status: 'Available', label: 'Ollama' },
+    openclaw: { configured: false, status: 'Not configured', label: 'OpenClaw' },
+    brains: { configured: BRAINS_ENABLED, status: BRAINS_ENABLED ? 'Enabled' : 'Disabled', label: 'Brains' },
+  };
+}
+
 app.get('/api/setup/status', async (req, res) => {
   try {
+    const isManaged = Boolean(home23Config?._home23 || process.env.HOME23_MANAGED === 'true');
     const { getConfigStatus } = require('../lib/setup-wizard');
-    const configStatus = await getConfigStatus(serverConfig);
+    // When managed by Home23, build status from env vars (keys don't live in config file)
+    const configStatus = isManaged ? buildHome23ManagedStatus() : await getConfigStatus(serverConfig);
     const providers = serverConfig?.providers || {};
     const brainsDirectories = Array.isArray(brainsConfig?.directories)
       ? brainsConfig.directories.map((entry) => String(entry || '').trim()).filter(Boolean)
@@ -4447,37 +4468,37 @@ app.get('/api/setup/status', async (req, res) => {
     res.json({
       success: true,
       app: {
-        config_source: configSource,
+        config_source: isManaged ? 'home23' : configSource,
         security_profile: securityConfig.securityProfile,
         http_port: Number(PORT),
         https_port: Number(HTTPS_PORT),
         https_enabled: httpsEnabled,
         terminal_enabled: terminalSessionManager.isEnabled(),
         ui_refresh_enabled: process.env.UI_REFRESH_V1 !== 'false',
-        managed_by_home23: Boolean(home23Config?._home23 || process.env.HOME23_MANAGED === 'true'),
-        home23_settings_url: (home23Config?._home23 || process.env.HOME23_MANAGED === 'true') ? `/home23/settings` : null
+        managed_by_home23: isManaged,
+        home23_settings_url: isManaged ? `/home23/settings` : null
       },
       status: configStatus,
       details: {
         anthropic: {
-          enabled: providers.anthropic?.enabled === true,
-          auth_mode: providers.anthropic?.oauth ? 'oauth' : (providers.anthropic?.api_key ? 'api_key' : 'not_configured')
+          enabled: isManaged ? Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) : providers.anthropic?.enabled === true,
+          auth_mode: isManaged ? (process.env.ANTHROPIC_AUTH_TOKEN ? 'oauth' : 'not_configured') : (providers.anthropic?.oauth ? 'oauth' : (providers.anthropic?.api_key ? 'api_key' : 'not_configured'))
         },
         openai_api: {
-          enabled: providers.openai?.enabled === true,
-          has_api_key: Boolean(providers.openai?.api_key)
+          enabled: isManaged ? Boolean(process.env.OPENAI_API_KEY) : providers.openai?.enabled === true,
+          has_api_key: isManaged ? Boolean(process.env.OPENAI_API_KEY) : Boolean(providers.openai?.api_key)
         },
         openai_codex: {
           enabled: providers['openai-codex']?.enabled === true,
           auth_mode: providers['openai-codex']?.enabled ? 'oauth' : 'not_configured'
         },
         xai: {
-          enabled: providers.xai?.enabled === true,
-          has_api_key: Boolean(providers.xai?.api_key)
+          enabled: isManaged ? Boolean(process.env.XAI_API_KEY) : providers.xai?.enabled === true,
+          has_api_key: isManaged ? Boolean(process.env.XAI_API_KEY) : Boolean(providers.xai?.api_key)
         },
         ollama_cloud: {
-          enabled: providers['ollama-cloud']?.enabled === true,
-          has_api_key: Boolean(providers['ollama-cloud']?.api_key)
+          enabled: isManaged ? Boolean(process.env.OLLAMA_CLOUD_API_KEY) : providers['ollama-cloud']?.enabled === true,
+          has_api_key: isManaged ? Boolean(process.env.OLLAMA_CLOUD_API_KEY) : Boolean(providers['ollama-cloud']?.api_key)
         },
         ollama: {
           enabled: providers.ollama?.enabled !== false,
@@ -4487,7 +4508,7 @@ app.get('/api/setup/status', async (req, res) => {
         brains: {
           enabled: BRAINS_ENABLED,
           directory_count: brainsDirectories.length,
-          semantic_search: Boolean(serverConfig?.embeddings?.api_key)
+          semantic_search: Boolean(serverConfig?.embeddings?.api_key || process.env.OPENAI_API_KEY)
         },
         openclaw: {
           enabled: serverConfig?.openclaw?.enabled === true,
