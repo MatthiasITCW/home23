@@ -10,7 +10,7 @@ Home23 takes the proven COSMO engine (JS, cognitive loops, dreaming, brain) and 
 
 ```bash
 # First time setup
-node cli/home23.js init                    # API keys, deps, build
+node cli/home23.js init                    # Deps, build, encryption key, config seeding
 
 # Create an agent
 node cli/home23.js agent create <name>     # Guided setup
@@ -176,7 +176,7 @@ Config loader merges: `home.yaml` <- `agent config.yaml` <- `secrets.yaml` <- pe
 
 - Do NOT rewrite engine/. It is battle-tested JS. Fix root-cause bugs directly; avoid wholesale rewrites.
 - Do NOT rewrite `engine/src/ingestion/`. It is the ingestion pipeline — the legacy `feeder/` dir is gone.
-- Do NOT edit `cosmo23/` without reading `docs/design/COSMO23-VENDORED-PATCHES.md` first. Three surgical patches must survive every upstream resync.
+- Do NOT edit `cosmo23/` without reading `docs/design/COSMO23-VENDORED-PATCHES.md` first. Five vendored patches must survive every upstream resync.
 - ecosystem.config.cjs is auto-generated — do not edit manually.
 
 ## Key Documents

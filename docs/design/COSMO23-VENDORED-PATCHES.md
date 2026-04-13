@@ -4,8 +4,8 @@ This document tracks **surgical patches** applied to the bundled `cosmo23/` sour
 in the Home23 repo. These fix structural integration bugs that surface only when
 cosmo23 runs as an embedded sub-system instead of standalone.
 
-**Rule of thumb:** Any time `cli/home23.js cosmo23 update` pulls fresh upstream,
-re-apply (or re-verify) every patch in this file before restarting `home23-cosmo23`.
+**Note:** cosmo23 is now fully bundled — it updates with `home23 update`, not separately.
+These patches are tracked here for reference when pulling upstream changes into the bundle.
 
 All patches are marked in-source with a `HOME23 PATCH` comment for greppability:
 

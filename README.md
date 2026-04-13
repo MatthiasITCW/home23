@@ -40,14 +40,14 @@ node cli/home23.js start
 
 Then open **`http://localhost:5002/home23`** in your browser.
 
-**First-run flow:**
+**First-run flow** — a guided onboarding wizard walks you through setup:
 1. **Welcome screen** — click "Get Started"
-2. **Settings → Providers** — configure your LLM providers (API keys or OAuth sign-in)
-3. **Settings → Agents** — click "+ Create Agent" to create your first agent through the guided wizard (name, owner, model, Telegram token if you want it)
-4. **Start the agent** from the Agents tab — the dashboard launches all processes
-5. **You're live** — the dashboard switches to the home screen with real-time thoughts, chat, and full system access
+2. **Providers** — sign in with OAuth (recommended for Anthropic and OpenAI Codex) or enter API keys. At least one provider required to continue.
+3. **Create Agent** — name, owner, model selection (shows only models from your configured providers), optional Telegram token
+4. **Launch** — starts the agent and takes you to the dashboard home screen
+5. **You're live** — real-time thoughts, chat, intelligence synthesis, and full system access
 
-The web dashboard is the primary interface for everything — agent creation, provider configuration, model selection, feeder settings, and day-to-day use. The CLI exists for init and process management but the onboarding is web-based.
+The web dashboard is the primary interface for everything — provider configuration, agent creation, model selection, feeder settings, and day-to-day use. The CLI handles init, start/stop, and updates.
 
 **What you see:**
 - **Dashboard:** `http://localhost:5002/home23` — OS home screen
@@ -84,7 +84,7 @@ This runs entirely on your machine with no API key needed. The default config (`
 
 ## LLM Providers
 
-Unlike embeddings, you can switch LLM providers freely. Configure any combination in `config/secrets.yaml`, or use OAuth for Anthropic and OpenAI Codex (recommended — see next section):
+Unlike embeddings, you can switch LLM providers freely. Configure providers from the dashboard at **Settings → Providers** (API keys or OAuth sign-in):
 
 | Provider | What you need | Models |
 |---|---|---|
@@ -166,7 +166,7 @@ The document feeder runs **inside** the cognitive engine process (no separate PM
 | File | Purpose |
 |---|---|
 | `config/home.yaml` | Provider URLs, model aliases, embedding config, defaults |
-| `config/secrets.yaml` | API keys and bot tokens (create from `secrets.yaml.example`) |
+| `config/secrets.yaml` | API keys and bot tokens (managed by dashboard Settings, gitignored) |
 | `instances/<name>/config.yaml` | Per-agent: ports, owner, channels, model, scheduler |
 | `configs/base-engine.yaml` | Cognitive loop timing and behavior (shared) |
 
