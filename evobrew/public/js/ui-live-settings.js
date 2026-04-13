@@ -218,6 +218,10 @@
         <button class="btn" type="button" data-live-settings-action="refresh-status">Refresh Status</button>
       </div>
     `;
+
+    // Hide Local Agents section — agents are auto-configured by Home23
+    const localAgentsSection = document.getElementById('local-agents-settings');
+    if (localAgentsSection) localAgentsSection.style.display = 'none';
   }
 
   function renderStatus(data) {
