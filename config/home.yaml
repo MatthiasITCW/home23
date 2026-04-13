@@ -1,7 +1,7 @@
 home:
   name: home23-dev
   version: 0.1.0
-  primaryAgent: jerry
+  primaryAgent: ''
 evobrew:
   port: 3415
 cosmo23:
