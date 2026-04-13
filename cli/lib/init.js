@@ -191,6 +191,30 @@ ${agentsSection}`;
       execSync('npm install', { cwd: cosmo23EngineDir, stdio: 'inherit' });
     }
     execSync('npx prisma generate', { cwd: cosmo23Dir, stdio: 'inherit' });
+
+    // Create the Prisma SQLite database (required for OAuth token storage)
+    console.log('Creating COSMO 2.3 database...');
+    try {
+      const dbPath = join(cosmo23Dir, 'prisma', 'dev.db');
+      if (!existsSync(dbPath)) {
+        execSync(`DATABASE_URL="file:${dbPath}" npx prisma db push`, {
+          cwd: cosmo23Dir, stdio: 'pipe', timeout: 30000,
+        });
+        console.log('  done');
+      } else {
+        console.log('  already exists');
+      }
+    } catch (err) {
+      console.log('  FAILED (OAuth sign-in will not work until this is fixed)');
+      console.error(`  Fix manually: cd cosmo23 && DATABASE_URL="file:./prisma/dev.db" npx prisma db push`);
+    }
+
+    // Create config directory for cosmo23
+    const cosmo23ConfigDir = join(cosmo23Dir, '.cosmo23-config');
+    if (!existsSync(cosmo23ConfigDir)) {
+      const { mkdirSync } = await import('node:fs');
+      mkdirSync(cosmo23ConfigDir, { recursive: true });
+    }
   }
 
   // Build TypeScript
