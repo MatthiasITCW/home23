@@ -28,7 +28,7 @@ cd home23
 node cli/home23.js init
 ```
 
-Init checks prerequisites (Node 20+, PM2, Python 3, Ollama), prompts for API keys, installs dependencies, and builds the TypeScript harness.
+Init checks prerequisites (Node 20+, PM2, Python 3, Ollama), installs dependencies, sets up encryption and the OAuth database, and builds the TypeScript harness. No API keys needed at this step — provider setup happens in the web dashboard.
 
 ## Setup — Web Dashboard
 

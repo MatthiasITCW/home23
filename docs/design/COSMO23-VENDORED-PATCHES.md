@@ -307,6 +307,25 @@ every 30 minutes in the background refresh poller to catch token rotations.
 
 ---
 
+### Patch 5: HOME23_MANAGED Provider Suppression (2026-04-13)
+
+**File:** `server/index.js`
+**Location:** `/api/setup/status` endpoint (~line 734)
+
+When `HOME23_MANAGED=true` env var is set, the setup status endpoint reports
+all env-var-configured providers as ready. This prevents cosmo23's own setup
+UI from showing provider configuration when running under Home23.
+
+**Verification after update:**
+```bash
+curl -s http://localhost:43210/api/setup/status | python3 -m json.tool | grep managed
+# Expected: "managed_by_home23": true
+```
+
+**Effect under standalone COSMO:** unchanged — env var is never set outside Home23.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -315,3 +334,5 @@ every 30 minutes in the background refresh poller to catch token rotations.
 - **2026-04-10** — Patch 4 added during Step 18 (OAuth in Settings UI).
   Home23 now uses cosmo23 as an OAuth broker; the raw-token endpoints
   are how the two systems stay in sync.
+- **2026-04-13** — Patch 5 added during Step 21 (Provider Authority).
+  Suppresses cosmo23 setup UI when running under Home23.
