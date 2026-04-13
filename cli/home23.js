@@ -25,16 +25,14 @@ async function main() {
 Home23 — Installable AI operating system
 
 Commands:
-  init                    Set up API keys, install dependencies, build
-  agent create <name>     Create a new agent instance
+  init                    First-time setup (deps, build, plumbing)
   start [name]            Start agent(s) via PM2
   stop [name]             Stop agent(s) via PM2
+  update                  Update to latest release
+  update --check          Check for updates
+  agent create <name>     Create a new agent instance
   status                  Show running processes
   logs [name]             Tail PM2 logs
-  update                  Update Home23 to latest release
-  update --check          Check for updates without applying
-  update                  Update to latest release
-  update --check          Check if an update is available
   help                    Show this help
 `);
     process.exit(0);
