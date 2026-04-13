@@ -230,7 +230,7 @@ export class CommandHandler {
     }
 
     // Render each provider
-    const providerOrder = ['anthropic', 'openai', 'xai', 'ollama-cloud'];
+    const providerOrder = ['anthropic', 'minimax', 'openai', 'xai', 'ollama-cloud'];
     for (const p of providerOrder) {
       const entries = byProvider[p];
       if (!entries) continue;
@@ -586,7 +586,7 @@ export class CommandHandler {
       (byProvider[val.provider] ??= []).push({ provider: val.provider, model: val.model, alias: val.alias, key });
     }
 
-    const providerOrder = ['anthropic', 'openai-codex', 'openai', 'xai', 'ollama-cloud'];
+    const providerOrder = ['anthropic', 'minimax', 'openai-codex', 'openai', 'xai', 'ollama-cloud'];
     const rows: Array<Array<{ text: string; callback_data: string }>> = [];
 
     for (const p of providerOrder) {

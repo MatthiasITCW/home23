@@ -75,20 +75,31 @@ class AnthropicAdapter extends ProviderAdapter {
   constructor(config = {}) {
     super(config);
 
-    this._useOAuthService = config.useOAuthService !== false && anthropicOAuth !== null;
-    this._isOAuth = true; // Always OAuth — API key path removed
+    this._providerId = String(config.providerId || 'anthropic');
+    this._providerName = String(config.name || (this._providerId === 'minimax' ? 'MiniMax' : 'Anthropic'));
+    this._seedModels = Array.isArray(config.seedModels) && config.seedModels.length > 0
+      ? config.seedModels.slice()
+      : listCatalogModels(loadModelCatalogSync(), {
+          providers: [this._providerId],
+          kind: 'chat'
+        }).map(model => model.id);
+    this._useOAuthService = this._providerId === 'anthropic' && config.useOAuthService !== false && anthropicOAuth !== null;
+    this._isOAuth = Boolean(config.authToken && isOAuthToken(config.authToken));
 
     if (config.authToken) {
       this.config.authToken = config.authToken;
     }
+    if (config.apiKey) {
+      this.config.apiKey = config.apiKey;
+    }
   }
 
   get id() {
-    return 'anthropic';
+    return this._providerId;
   }
 
   get name() {
-    return 'Anthropic';
+    return this._providerName;
   }
 
   get capabilities() {
@@ -104,10 +115,7 @@ class AnthropicAdapter extends ProviderAdapter {
   }
 
   getAvailableModels() {
-    return listCatalogModels(loadModelCatalogSync(), {
-      providers: ['anthropic'],
-      kind: 'chat'
-    }).map(model => model.id);
+    return this._seedModels.slice();
   }
 
   /**
@@ -120,6 +128,7 @@ class AnthropicAdapter extends ProviderAdapter {
         const credentials = await anthropicOAuth.getAnthropicApiKey();
         if (credentials?.authToken) {
           this.config.authToken = credentials.authToken;
+          this._isOAuth = isOAuthToken(credentials.authToken);
         }
       } catch (e) {
         console.warn('[AnthropicAdapter] Failed to get credentials from OAuth service:', e.message);
@@ -130,16 +139,25 @@ class AnthropicAdapter extends ProviderAdapter {
   }
 
   _initClient() {
-    const options = {
-      apiKey: null,
-      authToken: this.config.authToken,
-      defaultHeaders: getStealthHeaders(),
-      dangerouslyAllowBrowser: true
-    };
-    console.log('[ANTHROPIC] Using OAuth stealth mode');
+    const options = {};
+
+    if (this._isOAuth && this.config.authToken) {
+      options.apiKey = null;
+      options.authToken = this.config.authToken;
+      options.defaultHeaders = getStealthHeaders();
+      options.dangerouslyAllowBrowser = true;
+      console.log(`[${this.id.toUpperCase()}] Using OAuth stealth mode`);
+    } else if (this.config.apiKey) {
+      options.apiKey = this.config.apiKey;
+      console.log(`[${this.id.toUpperCase()}] Using API key mode`);
+    } else {
+      throw new Error(`${this.name} provider missing credentials`);
+    }
 
     if (this.config.baseUrl) {
       options.baseURL = this.config.baseUrl;
+    } else if (this.config.baseURL) {
+      options.baseURL = this.config.baseURL;
     }
 
     this._client = new Anthropic(options);

@@ -218,6 +218,7 @@ export class AgentLoop {
 
   constructor(opts: {
     apiKey: string;
+    baseURL?: string;
     model: string;
     provider?: string;
     maxTokens?: number;
@@ -236,10 +237,14 @@ export class AgentLoop {
     this.client = this.isOAuth
       ? new Anthropic({
           authToken: opts.apiKey,
+          ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
           defaultHeaders: getStealthHeaders(),
           dangerouslyAllowBrowser: true,
         })
-      : new Anthropic({ apiKey: opts.apiKey });
+      : new Anthropic({
+          apiKey: opts.apiKey,
+          ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
+        });
     this.model = opts.model;
     this.provider = opts.provider ?? (opts.model.includes('claude') ? 'anthropic' : 'unknown');
     this.maxTokens = opts.maxTokens ?? 8192;
@@ -614,7 +619,7 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
       const turnMessages: HistoryRecord[] = [userMsg];
 
       // Non-Claude model — chat-only, no tools
-      const isClaudeModel = this.provider === 'anthropic';
+      const isClaudeModel = this.provider === 'anthropic' || this.provider === 'minimax';
 
       if (!isClaudeModel) {
         try {

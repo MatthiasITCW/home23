@@ -201,15 +201,23 @@ async function main(): Promise<void> {
 
   // ── Auth tokens ──
   function resolveApiKey(provider: string): string {
-    const providers = config.providers as Record<string, { apiKey?: string }> | undefined;
+    const providers = config.providers as Record<string, { apiKey?: string; baseUrl?: string }> | undefined;
     if (provider === 'anthropic') return providers?.anthropic?.apiKey ?? process.env.ANTHROPIC_AUTH_TOKEN ?? process.env.ANTHROPIC_API_KEY ?? '';
+    if (provider === 'minimax') return providers?.minimax?.apiKey ?? process.env.MINIMAX_API_KEY ?? '';
     if (provider === 'openai') return providers?.openai?.apiKey ?? process.env.OPENAI_API_KEY ?? '';
     if (provider === 'xai') return providers?.xai?.apiKey ?? process.env.XAI_API_KEY ?? '';
     if (provider === 'ollama-cloud') return providers?.['ollama-cloud']?.apiKey ?? process.env.OLLAMA_CLOUD_API_KEY ?? '';
     return '';
   }
+  function resolveBaseUrl(provider: string): string | undefined {
+    const providers = config.providers as Record<string, { baseUrl?: string }> | undefined;
+    return providers?.[provider]?.baseUrl;
+  }
   const authToken = resolveApiKey(startupProvider);
   const anthropicToken = resolveApiKey('anthropic');
+  const startupBaseURL = resolveBaseUrl(startupProvider);
+  const compactionToken = anthropicToken || (startupProvider === 'minimax' ? authToken : '');
+  const compactionBaseURL = !anthropicToken && startupProvider === 'minimax' ? startupBaseURL : undefined;
   console.log(`[home] Provider: ${startupProvider}, auth: ${authToken ? authToken.slice(0, 15) + '...' : 'MISSING'}`);
 
   // ── Agent Loop ──
@@ -217,14 +225,18 @@ async function main(): Promise<void> {
   const isOAuth = anthropicToken.startsWith('sk-ant-oat');
   const anthropicClient = isOAuth
     ? new (await import('@anthropic-ai/sdk')).default({
-        authToken: anthropicToken,
+        authToken: compactionToken,
+        ...(compactionBaseURL ? { baseURL: compactionBaseURL } : {}),
         defaultHeaders: {
           'anthropic-dangerous-direct-browser-access': 'true',
           'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,extended-cache-ttl-2025-04-11',
         },
         dangerouslyAllowBrowser: true,
       })
-    : new (await import('@anthropic-ai/sdk')).default({ apiKey: anthropicToken || 'placeholder' });
+    : new (await import('@anthropic-ai/sdk')).default({
+        apiKey: compactionToken || 'placeholder',
+        ...(compactionBaseURL ? { baseURL: compactionBaseURL } : {}),
+      });
 
   // ── Compaction Manager ──
   const compaction = new CompactionManager({
@@ -235,6 +247,7 @@ async function main(): Promise<void> {
 
   const agent = new AgentLoop({
     apiKey: authToken,
+    baseURL: startupBaseURL,
     model: startupModel,
     provider: startupProvider,
     maxTokens: 8192,

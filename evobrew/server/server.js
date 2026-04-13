@@ -429,6 +429,9 @@ function syncProviderEnvFromConfig(config) {
   if (providers.xai?.api_key) process.env.XAI_API_KEY = providers.xai.api_key;
   else delete process.env.XAI_API_KEY;
 
+  if (providers.minimax?.api_key) process.env.MINIMAX_API_KEY = providers.minimax.api_key;
+  else delete process.env.MINIMAX_API_KEY;
+
   if (providers['ollama-cloud']?.api_key) process.env.OLLAMA_CLOUD_API_KEY = providers['ollama-cloud'].api_key;
   else delete process.env.OLLAMA_CLOUD_API_KEY;
 }
@@ -4387,6 +4390,11 @@ app.get('/api/setup/status', async (req, res) => {
     const { getConfigStatus } = require('../lib/setup-wizard');
     const configStatus = await getConfigStatus(serverConfig);
     const providers = serverConfig?.providers || {};
+    const hasAnthropicEnv = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+    const hasOpenAIEnv = Boolean(process.env.OPENAI_API_KEY);
+    const hasXAIEnv = Boolean(process.env.XAI_API_KEY);
+    const hasMiniMaxEnv = Boolean(process.env.MINIMAX_API_KEY);
+    const hasOllamaCloudEnv = Boolean(process.env.OLLAMA_CLOUD_API_KEY);
     const brainsDirectories = Array.isArray(brainsConfig?.directories)
       ? brainsConfig.directories.map((entry) => String(entry || '').trim()).filter(Boolean)
       : [];
@@ -4407,24 +4415,30 @@ app.get('/api/setup/status', async (req, res) => {
       status: configStatus,
       details: {
         anthropic: {
-          enabled: providers.anthropic?.enabled === true,
-          auth_mode: providers.anthropic?.oauth ? 'oauth' : (providers.anthropic?.api_key ? 'api_key' : 'not_configured')
+          enabled: providers.anthropic?.enabled === true || providers.anthropic?.oauth === true || hasAnthropicEnv,
+          auth_mode: providers.anthropic?.oauth
+            ? 'oauth'
+            : (providers.anthropic?.api_key || hasAnthropicEnv ? 'api_key' : 'not_configured')
         },
         openai_api: {
-          enabled: providers.openai?.enabled === true,
-          has_api_key: Boolean(providers.openai?.api_key)
+          enabled: providers.openai?.enabled === true || hasOpenAIEnv,
+          has_api_key: Boolean(providers.openai?.api_key || hasOpenAIEnv)
         },
         openai_codex: {
           enabled: providers['openai-codex']?.enabled === true,
           auth_mode: providers['openai-codex']?.enabled ? 'oauth' : 'not_configured'
         },
         xai: {
-          enabled: providers.xai?.enabled === true,
-          has_api_key: Boolean(providers.xai?.api_key)
+          enabled: providers.xai?.enabled === true || hasXAIEnv,
+          has_api_key: Boolean(providers.xai?.api_key || hasXAIEnv)
+        },
+        minimax: {
+          enabled: providers.minimax?.enabled === true || hasMiniMaxEnv,
+          has_api_key: Boolean(providers.minimax?.api_key || hasMiniMaxEnv)
         },
         ollama_cloud: {
-          enabled: providers['ollama-cloud']?.enabled === true,
-          has_api_key: Boolean(providers['ollama-cloud']?.api_key)
+          enabled: providers['ollama-cloud']?.enabled === true || hasOllamaCloudEnv,
+          has_api_key: Boolean(providers['ollama-cloud']?.api_key || hasOllamaCloudEnv)
         },
         ollama: {
           enabled: providers.ollama?.enabled !== false,

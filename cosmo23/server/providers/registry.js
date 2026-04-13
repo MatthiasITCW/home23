@@ -37,6 +37,27 @@ class ProviderRegistry {
    */
   _registerBuiltinFactories() {
     this.adapterFactories.set('anthropic', (config) => new AnthropicAdapter(config));
+    this.adapterFactories.set('minimax', (config) => {
+      const adapter = new AnthropicAdapter({
+        ...config,
+        providerId: 'minimax',
+        name: 'MiniMax',
+        baseUrl: config.baseUrl || 'https://api.minimax.io/anthropic',
+        seedModels: [
+          'MiniMax-M2.7',
+          'MiniMax-M2.7-highspeed',
+          'MiniMax-M2.5',
+          'MiniMax-M2.5-highspeed',
+          'MiniMax-M2.1',
+          'MiniMax-M2.1-highspeed',
+          'MiniMax-M2'
+        ],
+        useOAuthService: false
+      });
+      Object.defineProperty(adapter, 'id', { value: 'minimax', writable: false });
+      Object.defineProperty(adapter, 'name', { value: 'MiniMax', writable: false });
+      return adapter;
+    });
     this.adapterFactories.set('openai', (config) => new OpenAIAdapter(config));
     this.adapterFactories.set('ollama', (config) => new OllamaAdapter(config));
     // xAI uses OpenAI adapter with different base URL and custom ID
@@ -231,6 +252,9 @@ class ProviderRegistry {
     }
 
     // Heuristics for unprefixed model names
+    if (modelId.startsWith('MiniMax-')) {
+      return 'minimax';
+    }
     if (modelId.startsWith('claude') || modelId.includes('claude')) {
       return 'anthropic';
     }

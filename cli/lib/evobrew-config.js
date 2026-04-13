@@ -80,6 +80,9 @@ export function generateEvobrewConfig(home23Root) {
     providers: {
       // No API keys — PM2 injects ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
       anthropic: { oauth: false },
+      minimax: {
+        url: providers.minimax?.baseUrl || 'https://api.minimax.io/anthropic',
+      },
       openai: {},
       xai: {},
       ollama: {

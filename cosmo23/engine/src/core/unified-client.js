@@ -33,6 +33,7 @@ class UnifiedClient extends GPT5Client {
     // Initialize additional providers ONLY if explicitly enabled in config
     this.xai = null;
     this.anthropicClient = null;  // Use AnthropicClient adapter (OAuth-aware)
+    this.minimaxClient = null;  // MiniMax via Anthropic-compatible API
     this.localClient = null; // For local LLM support via Chat Completions API
     this.ollamaCloudClient = null; // For Ollama Cloud (ollama.com/v1)
     this.codexClient = null; // OpenAI Codex (ChatGPT OAuth) — separate SDK instance
@@ -58,6 +59,7 @@ class UnifiedClient extends GPT5Client {
     if (this.config.providers?.anthropic?.enabled || process.env.LLM_BACKEND === 'anthropic') {
       const anthropicConfig = this.config.providers?.anthropic || {};
       this.anthropicClient = new AnthropicClient({
+        providerId: 'anthropic',
         modelMapping: anthropicConfig.modelMapping,
         useExtendedThinking: anthropicConfig.useExtendedThinking !== false,
         defaultMaxTokens: anthropicConfig.defaultMaxTokens || 8000,
@@ -65,6 +67,25 @@ class UnifiedClient extends GPT5Client {
         ...anthropicConfig
       }, this.logger);
       this.logger?.info('✅ Anthropic Claude provider initialized (OAuth-aware)');
+    }
+
+    if (this.config.providers?.minimax?.enabled) {
+      const minimaxConfig = this.config.providers?.minimax || {};
+      const minimaxApiKey = minimaxConfig.apiKey || process.env.MINIMAX_API_KEY;
+      if (minimaxApiKey) {
+        this.minimaxClient = new AnthropicClient({
+          providerId: 'minimax',
+          apiKey: minimaxApiKey,
+          baseURL: minimaxConfig.baseURL || minimaxConfig.baseUrl || 'https://api.minimax.io/anthropic',
+          useOAuthService: false,
+          useExtendedThinking: minimaxConfig.useExtendedThinking !== false,
+          defaultMaxTokens: minimaxConfig.defaultMaxTokens || 8000,
+          temperature: minimaxConfig.temperature || 1
+        }, this.logger);
+        this.logger?.info('✅ MiniMax provider initialized (Anthropic-compatible)');
+      } else {
+        this.logger?.warn('MiniMax enabled in config but no API key found (MINIMAX_API_KEY)');
+      }
     }
 
     // Initialize local LLM client if enabled
@@ -348,6 +369,8 @@ class UnifiedClient extends GPT5Client {
           return await this.generateXAI(assignment, options);
         } else if (assignment.provider === 'anthropic') {
           return await this.generateAnthropic(assignment, options);
+        } else if (assignment.provider === 'minimax') {
+          return await this.generateMiniMax(assignment, options);
         } else if (assignment.provider === 'ollama-cloud') {
           return await this.generateOllamaCloud(assignment, options);
         } else if (assignment.provider === 'local') {
@@ -397,6 +420,8 @@ class UnifiedClient extends GPT5Client {
         return await this.generateCodex(fallbackAssignment, options);
       } else if (fallbackAssignment.provider === 'anthropic') {
         return await this.generateAnthropic(fallbackAssignment, options);
+      } else if (fallbackAssignment.provider === 'minimax') {
+        return await this.generateMiniMax(fallbackAssignment, options);
       } else if (fallbackAssignment.provider === 'ollama-cloud') {
         return await this.generateOllamaCloud(fallbackAssignment, options);
       } else if (fallbackAssignment.provider === 'local') {
@@ -767,6 +792,34 @@ class UnifiedClient extends GPT5Client {
     }
   }
 
+  async generateMiniMax(assignment, options) {
+    if (!this.minimaxClient) {
+      throw new Error('MiniMax provider not initialized. Enable providers.minimax in config or set MINIMAX_API_KEY.');
+    }
+
+    const modelToUse = assignment.model || 'MiniMax-M2.7';
+
+    try {
+      this.logger?.info(`[UnifiedClient] Using MiniMax provider with model ${modelToUse}`);
+      return await this.minimaxClient.generateWithRetry({
+        ...options,
+        model: modelToUse
+      }, 3);
+    } catch (error) {
+      this.logger?.error('[UnifiedClient] MiniMax generation failed:', error.message);
+
+      if (assignment.fallback) {
+        this.logger?.info('[UnifiedClient] Falling back after MiniMax failure');
+        return await super.generate({
+          ...options,
+          model: assignment.fallback.model
+        });
+      }
+
+      throw error;
+    }
+  }
+
   /**
    * Generate with local LLM using Chat Completions API
    * Delegates to ChatCompletionsClient which handles format translation
@@ -977,6 +1030,13 @@ class UnifiedClient extends GPT5Client {
       return await this.anthropicClient.generateWithWebSearch(options);
     }
 
+    if (assignment.provider === 'minimax') {
+      if (!this.minimaxClient) {
+        throw new Error('MiniMax provider not initialized but assignment routes to MiniMax. Check config.');
+      }
+      return await this.minimaxClient.generateWithWebSearch(options);
+    }
+
     // Unknown provider - throw instead of silently falling back
     throw new Error(`Web search not supported by provider: ${assignment.provider}`);
   }
@@ -1022,6 +1082,13 @@ class UnifiedClient extends GPT5Client {
     if (assignment.provider === 'anthropic') {
       this.logger?.info('Anthropic does not support separate reasoning, using standard generation');
       return await this.generate(options);
+    }
+
+    if (assignment.provider === 'minimax') {
+      return await this.generate({
+        ...options,
+        reasoningEffort: 'high'
+      });
     }
 
     // Local LLMs don't have separate reasoning -> use standard generation with more tokens
@@ -1079,6 +1146,14 @@ class UnifiedClient extends GPT5Client {
 
     // If openai-codex -> use Codex with fast settings
     if (assignment.provider === 'openai-codex') {
+      return await this.generate({
+        ...options,
+        maxTokens: options.maxTokens || 1000,
+        reasoningEffort: 'low'
+      });
+    }
+
+    if (assignment.provider === 'minimax') {
       return await this.generate({
         ...options,
         maxTokens: options.maxTokens || 1000,
@@ -1286,4 +1361,3 @@ class UnifiedClient extends GPT5Client {
 }
 
 module.exports = { UnifiedClient };
-

@@ -184,6 +184,16 @@ async function createRegistry(options = {}) {
     });
     console.log('[Providers] ✅ xAI (Grok) registered');
   }
+  const minimaxKey = process.env.MINIMAX_API_KEY || cosmoConfig?.providers?.minimax?.api_key;
+  if (minimaxKey) {
+    registry.initializeProvider('minimax', {
+      apiKey: minimaxKey,
+      baseUrl: cosmoConfig?.providers?.minimax?.base_url || 'https://api.minimax.io/anthropic'
+    });
+    console.log('[Providers] ✅ MiniMax registered');
+  } else {
+    console.log('[Providers] ℹ️ MiniMax not configured (set MINIMAX_API_KEY or providers.minimax.api_key in config)');
+  }
   // Initialize Ollama Cloud
   const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY
     || cosmoConfig?.providers?.['ollama-cloud']?.api_key;

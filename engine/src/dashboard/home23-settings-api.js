@@ -17,6 +17,18 @@ function createSettingsRouter(home23Root) {
     fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: 120 }), 'utf8');
   }
 
+  function seedCosmo23Config() {
+    try {
+      const { execSync } = require('child_process');
+      execSync(`node --input-type=module -e "
+        import { seedCosmo23Config } from './cli/lib/cosmo23-config.js';
+        seedCosmo23Config('.');
+      "`, { cwd: home23Root, stdio: 'pipe', timeout: 10000 });
+    } catch (err) {
+      console.warn('[Settings] cosmo23 config seed error:', err.message);
+    }
+  }
+
   function discoverAgents() {
     const instancesDir = path.join(home23Root, 'instances');
     if (!fs.existsSync(instancesDir)) return [];
@@ -94,39 +106,96 @@ function createSettingsRouter(home23Root) {
     }
 
     saveYaml(secretsPath, secrets);
-    res.json({ ok: true });
+    regenerateEcosystem();
+    regenerateEvobrewConfig();
+    seedCosmo23Config();
+
+    try {
+      const { execSync } = require('child_process');
+      const ecosystemPath = path.join(home23Root, 'ecosystem.config.cjs');
+      const jlist = JSON.parse(execSync('pm2 jlist', { encoding: 'utf8', stdio: 'pipe' }));
+      const online = new Set(
+        jlist
+          .filter(p => p.pm2_env?.status === 'online')
+          .map(p => p.name)
+      );
+      const targets = [
+        ...discoverAgents().flatMap(name => [`home23-${name}`, `home23-${name}-harness`]),
+        'home23-evobrew',
+        'home23-cosmo23',
+      ].filter(name => online.has(name));
+
+      for (const name of targets) {
+        try { execSync(`pm2 delete ${name}`, { stdio: 'pipe', timeout: 15000 }); } catch { /* best-effort */ }
+      }
+      if (targets.length > 0) {
+        execSync(`pm2 start ${ecosystemPath} --only ${targets.join(',')}`, {
+          cwd: home23Root,
+          stdio: 'pipe',
+          timeout: 45000,
+        });
+      }
+      res.json({ ok: true, restarted: targets.length > 0, targets });
+    } catch (err) {
+      res.json({ ok: true, restarted: false, warn: err.message });
+    }
   });
 
   router.post('/providers/:name/test', async (req, res) => {
     const secrets = loadSecrets();
     const providerName = req.params.name;
-    const apiKey = secrets.providers?.[providerName]?.apiKey;
+    const apiKey = String(req.body?.apiKey || '').trim() || secrets.providers?.[providerName]?.apiKey;
 
     if (!apiKey) {
       return res.json({ ok: false, error: 'No API key configured' });
     }
 
-    const urls = {
-      'ollama-cloud': 'https://ollama.com/v1/models',
-      'anthropic': 'https://api.anthropic.com/v1/models',
-      'openai': 'https://api.openai.com/v1/models',
-      'xai': 'https://api.x.ai/v1/models',
+    const tests = {
+      'ollama-cloud': {
+        url: 'https://ollama.com/v1/models',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      },
+      'anthropic': {
+        url: 'https://api.anthropic.com/v1/models',
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      },
+      'minimax': {
+        url: 'https://api.minimax.io/anthropic/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'MiniMax-M2.7',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
+        }),
+      },
+      'openai': {
+        url: 'https://api.openai.com/v1/models',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      },
+      'xai': {
+        url: 'https://api.x.ai/v1/models',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      },
     };
-    const testUrl = urls[providerName];
-    if (!testUrl) {
+    const testConfig = tests[providerName];
+    if (!testConfig) {
       return res.json({ ok: false, error: 'Unknown provider' });
     }
 
     try {
-      const headers = { 'Authorization': `Bearer ${apiKey}` };
-      if (providerName === 'anthropic') {
-        delete headers['Authorization'];
-        headers['x-api-key'] = apiKey;
-        headers['anthropic-version'] = '2023-06-01';
-      }
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(testUrl, { headers, signal: controller.signal });
+      const response = await fetch(testConfig.url, {
+        method: testConfig.method || 'GET',
+        headers: testConfig.headers,
+        body: testConfig.body,
+        signal: controller.signal,
+      });
       clearTimeout(timeout);
       res.json({ ok: response.ok, status: response.status });
     } catch (err) {

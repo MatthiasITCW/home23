@@ -31,10 +31,14 @@ function setupSubTabs() {
 
 const PROVIDER_DISPLAY = {
   'ollama-cloud': 'Ollama Cloud',
+  'minimax': 'MiniMax',
   'anthropic': 'Anthropic',
   'openai': 'OpenAI',
   'xai': 'xAI',
 };
+const PROVIDERS_WITH_API_KEYS = ['ollama-cloud', 'minimax', 'anthropic', 'openai', 'xai'];
+const SETTINGS_PROVIDER_ORDER = ['ollama-cloud', 'minimax', 'anthropic', 'openai', 'xai'];
+const MODEL_PROVIDER_ORDER = ['ollama-cloud', 'minimax', 'anthropic', 'openai', 'openai-codex', 'xai'];
 
 async function loadProviders() {
   try {
@@ -48,7 +52,7 @@ async function loadProviders() {
 
 function renderProviders(providers) {
   const list = document.getElementById('provider-list');
-  const order = ['ollama-cloud', 'anthropic', 'openai', 'xai'];
+  const order = SETTINGS_PROVIDER_ORDER;
   // Count models per provider from modelsData
   const modelCounts = {};
   if (modelsData?.providers) {
@@ -98,9 +102,14 @@ function toggleKeyVisibility(name) {
 
 async function testProvider(name) {
   const statusEl = document.getElementById(`prov-status-${name}`);
+  const keyInput = document.getElementById(`prov-key-${name}`);
   statusEl.innerHTML = '<span class="h23s-status-dot"></span> <span>Testing...</span>';
   try {
-    const res = await fetch(`${API}/providers/${name}/test`, { method: 'POST' });
+    const res = await fetch(`${API}/providers/${name}/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: keyInput?.value?.trim?.() || '' }),
+    });
     const data = await res.json();
     if (data.ok) {
       statusEl.innerHTML = '<span class="h23s-status-dot ok"></span> <span>Connected</span>';
@@ -114,7 +123,7 @@ async function testProvider(name) {
 
 async function saveProviders() {
   const providers = {};
-  for (const name of ['ollama-cloud', 'anthropic', 'openai', 'xai']) {
+  for (const name of PROVIDERS_WITH_API_KEYS) {
     const input = document.getElementById(`prov-key-${name}`);
     if (input && input.value.trim()) {
       providers[name] = { apiKey: input.value.trim() };
@@ -438,7 +447,13 @@ function populateWizardModels() {
       select.appendChild(opt);
     }
   } else {
-    const fallback = { 'ollama-cloud': ['kimi-k2.5', 'minimax-m2.7'], 'anthropic': ['claude-sonnet-4-6'], 'openai': ['gpt-5.4'], 'xai': ['grok-4-0709'] };
+    const fallback = {
+      'ollama-cloud': ['kimi-k2.5', 'minimax-m2.7'],
+      'minimax': ['MiniMax-M2.7'],
+      'anthropic': ['claude-sonnet-4-6'],
+      'openai': ['gpt-5.4'],
+      'xai': ['grok-4-0709'],
+    };
     for (const m of (fallback[provider] || ['default'])) {
       const opt = document.createElement('option');
       opt.value = m;
@@ -547,7 +562,7 @@ function renderModels(data) {
 
   // Per-provider model lists
   const pmList = document.getElementById('provider-models-list');
-  const providerOrder = ['ollama-cloud', 'anthropic', 'openai', 'openai-codex', 'xai'];
+  const providerOrder = MODEL_PROVIDER_ORDER;
   pmList.innerHTML = providerOrder.map(name => {
     const models = data.providers?.[name]?.defaultModels || [];
     return `
@@ -608,7 +623,7 @@ function addProviderModel(provName) {
 
 function collectProviderModels() {
   const result = {};
-  for (const name of ['ollama-cloud', 'anthropic', 'openai', 'openai-codex', 'xai']) {
+  for (const name of MODEL_PROVIDER_ORDER) {
     const entries = document.querySelectorAll(`[data-pm-entry="${name}"] [data-pm-model]`);
     result[name] = Array.from(entries).map(el => el.value.trim()).filter(Boolean);
   }
@@ -2325,7 +2340,7 @@ function populateOnboardingProviders() {
   if (codexCard) oauthHost.appendChild(codexCard);
 
   // Build API key inputs for onboarding
-  const order = ['ollama-cloud', 'anthropic', 'openai', 'xai'];
+  const order = SETTINGS_PROVIDER_ORDER;
   apikeysHost.innerHTML = order.map(name => `
     <div class="h23s-provider-card" style="padding:12px 16px;margin-bottom:8px;">
       <div class="h23s-provider-header" style="margin-bottom:8px;">
@@ -2463,7 +2478,11 @@ async function obTestProvider(name) {
   statusEl.innerHTML = '<span class="h23s-status-dot"></span> <span>Testing...</span>';
 
   try {
-    const res = await fetch(`${API}/providers/${name}/test`, { method: 'POST' });
+    const res = await fetch(`${API}/providers/${name}/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: key }),
+    });
     const data = await res.json();
     if (data.ok) {
       statusEl.innerHTML = '<span class="h23s-status-dot ok"></span> <span>Connected</span>';
@@ -2477,7 +2496,7 @@ async function obTestProvider(name) {
 
 async function obSaveKeys() {
   const providers = {};
-  for (const name of ['ollama-cloud', 'anthropic', 'openai', 'xai']) {
+  for (const name of PROVIDERS_WITH_API_KEYS) {
     const input = document.getElementById(`ob-prov-key-${name}`);
     if (input && input.value.trim()) {
       providers[name] = { apiKey: input.value.trim() };

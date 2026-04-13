@@ -230,6 +230,9 @@ providers:
   openai:
     enabled: true
 
+  minimax:
+    enabled: true
+
   # Local LLM provider (Ollama)
   local:
     enabled: false

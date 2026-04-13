@@ -48,6 +48,18 @@ const BUILTIN_MODEL_CATALOG = {
         { id: 'claude-opus-4-5', label: 'Claude Opus 4.5', kind: 'chat' }
       ]
     },
+    minimax: {
+      label: 'MiniMax',
+      models: [
+        { id: 'MiniMax-M2.7', label: 'MiniMax M2.7', kind: 'chat' },
+        { id: 'MiniMax-M2.7-highspeed', label: 'MiniMax M2.7 Highspeed', kind: 'chat' },
+        { id: 'MiniMax-M2.5', label: 'MiniMax M2.5', kind: 'chat' },
+        { id: 'MiniMax-M2.5-highspeed', label: 'MiniMax M2.5 Highspeed', kind: 'chat' },
+        { id: 'MiniMax-M2.1', label: 'MiniMax M2.1', kind: 'chat' },
+        { id: 'MiniMax-M2.1-highspeed', label: 'MiniMax M2.1 Highspeed', kind: 'chat' },
+        { id: 'MiniMax-M2', label: 'MiniMax M2', kind: 'chat' }
+      ]
+    },
     xai: {
       label: 'xAI',
       models: [
@@ -334,6 +346,7 @@ function inferProviderFromModel(modelId, catalog = null) {
 
   const lowered = normalized.toLowerCase();
   if (lowered.startsWith('claude')) return 'anthropic';
+  if (normalized.startsWith('MiniMax-')) return 'minimax';
   if (lowered.startsWith('grok')) return 'xai';
   if (lowered.startsWith('gpt') || lowered.startsWith('o1') || lowered.startsWith('o3') || lowered.startsWith('o4')) {
     return 'openai';

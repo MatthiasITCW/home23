@@ -13,7 +13,7 @@
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
-const { getAnthropicApiKey, prepareSystemPrompt, isOAuthToken } = require('../services/anthropic-oauth-engine');
+const { getAnthropicApiKey, prepareSystemPrompt, isOAuthToken, getStealthHeaders } = require('../services/anthropic-oauth-engine');
 
 class AnthropicClient {
   /**
@@ -25,7 +25,9 @@ class AnthropicClient {
     this.logger = logger;
     this.config = config;
     this.anthropic = null;  // Lazy initialization
-    this.isOAuth = false;
+    this.providerId = String(config.providerId || 'anthropic');
+    this.useOAuthService = this.providerId === 'anthropic' && config.useOAuthService !== false;
+    this.isOAuth = Boolean(config.authToken && isOAuthToken(config.authToken));
     this._credentialsFetchedAt = 0;  // Track when credentials were obtained
     this._refreshPromise = null;    // Lock to prevent concurrent refresh
 
@@ -87,18 +89,40 @@ class AnthropicClient {
     }
 
     try {
-      // Get credentials from OAuth system (auto-refreshes expired tokens)
-      const credentials = await getAnthropicApiKey();
-      this.isOAuth = credentials.isOAuth;
-      this._credentialsFetchedAt = Date.now();
+      if (this.useOAuthService) {
+        // Get credentials from OAuth system (auto-refreshes expired tokens)
+        const credentials = await getAnthropicApiKey();
+        this.isOAuth = credentials.isOAuth;
+        this._credentialsFetchedAt = Date.now();
 
-      this.logger?.info?.('[AnthropicClient] Initializing with OAuth token (stealth mode)');
-      this.isOAuth = true;
-      this.anthropic = new Anthropic({
-        authToken: credentials.authToken,
-        defaultHeaders: credentials.defaultHeaders,
-        dangerouslyAllowBrowser: credentials.dangerouslyAllowBrowser
-      });
+        this.logger?.info?.('[AnthropicClient] Initializing with OAuth token (stealth mode)');
+        this.anthropic = new Anthropic({
+          authToken: credentials.authToken,
+          defaultHeaders: credentials.defaultHeaders,
+          dangerouslyAllowBrowser: credentials.dangerouslyAllowBrowser
+        });
+      } else {
+        this._credentialsFetchedAt = Date.now();
+        const options = {};
+        if (this.config.baseURL || this.config.baseUrl) {
+          options.baseURL = this.config.baseURL || this.config.baseUrl;
+        }
+        if (this.config.authToken) {
+          this.isOAuth = isOAuthToken(this.config.authToken);
+          options.authToken = this.config.authToken;
+          if (this.isOAuth) {
+            options.defaultHeaders = getStealthHeaders();
+            options.dangerouslyAllowBrowser = true;
+          }
+        } else if (this.config.apiKey) {
+          this.isOAuth = false;
+          options.apiKey = this.config.apiKey;
+        } else {
+          throw new Error('No Anthropic-compatible credentials configured');
+        }
+        this.logger?.info?.(`[AnthropicClient] Initializing ${this.providerId} with ${this.isOAuth ? 'OAuth' : 'API key'} credentials`);
+        this.anthropic = new Anthropic(options);
+      }
     } catch (error) {
       if (isRefresh) {
         // Restore old client — stale credentials are better than no credentials

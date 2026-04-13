@@ -440,6 +440,7 @@ class CosmoStandaloneApp {
       this.setSetupValue('enableAnthropic', !!setup.providers.anthropic.enabled);
       this.setSetupValue('enableOpenAI', !!setup.providers.openai.enabled);
       this.setSetupValue('enableOpenAICodex', !!setup.providers['openai-codex']?.enabled);
+      this.setSetupValue('enableMiniMax', !!setup.providers.minimax?.enabled);
       this.setSetupValue('enableXAI', !!setup.providers.xai.enabled);
       this.setSetupValue('enableOllama', !!setup.providers.ollama.enabled);
       this.setSetupValue('enableOllamaCloud', !!setup.providers['ollama-cloud']?.enabled);
@@ -465,6 +466,7 @@ class CosmoStandaloneApp {
     // Build provider status dots for the summary bar
     const allProviders = [
       { id: 'anthropic', label: 'Anthropic' },
+      { id: 'minimax', label: 'MiniMax' },
       { id: 'openai', label: 'OpenAI' },
       { id: 'openai-codex', label: 'Codex' },
       { id: 'xai', label: 'xAI' },
@@ -548,6 +550,7 @@ class CosmoStandaloneApp {
 
     const providers = [
       { id: 'anthropic', label: 'Anthropic', state: this.getProviderState(setup.providers.anthropic, healthMap.anthropic, oauthStatus.oauth) },
+      { id: 'minimax', label: 'MiniMax', state: this.getProviderState(setup.providers.minimax, healthMap.minimax) },
       { id: 'openai', label: 'OpenAI', state: this.getProviderState(setup.providers.openai, healthMap.openai) },
       { id: 'openai-codex', label: 'Codex', state: this.getProviderState(setup.providers['openai-codex'], healthMap['openai-codex'], codexOAuthStatus.oauth) },
       { id: 'xai', label: 'xAI', state: this.getProviderState(setup.providers.xai, healthMap.xai) },

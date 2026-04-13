@@ -55,6 +55,7 @@ export function seedCosmo23Config(home23Root) {
   const openaiKey = secrets.providers?.openai?.apiKey || '';
   const xaiKey = secrets.providers?.xai?.apiKey || '';
   const ollamaCloudKey = secrets.providers?.['ollama-cloud']?.apiKey || '';
+  const minimaxKey = secrets.providers?.minimax?.apiKey || '';
   const anthropicKey = secrets.providers?.anthropic?.apiKey || '';
 
   if (openaiKey) {
@@ -65,6 +66,14 @@ export function seedCosmo23Config(home23Root) {
   }
   if (ollamaCloudKey) {
     config.providers['ollama-cloud'] = { ...config.providers['ollama-cloud'], enabled: true, api_key: ollamaCloudKey };
+  }
+  if (minimaxKey) {
+    config.providers.minimax = {
+      ...config.providers.minimax,
+      enabled: true,
+      api_key: minimaxKey,
+      base_url: homeConfig.providers?.minimax?.baseUrl || 'https://api.minimax.io/anthropic'
+    };
   }
   if (anthropicKey) {
     // COSMO anthropic is OAuth-only — we still record enabled=true so UI shows provider as available

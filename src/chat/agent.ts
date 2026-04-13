@@ -18,7 +18,7 @@ import type { IdentityLayerConfig } from '../types.js';
 // ─── Types ───────────────────────────────────────────────────
 
 export interface ChatConfig {
-  provider: 'anthropic' | 'openai';
+  provider: string;
   model: string;
   maxTokens: number;
   temperature: number;

@@ -93,6 +93,16 @@ providers:
   openai-codex:
     defaultModels:
       - gpt-5.4
+  minimax:
+    baseUrl: https://api.minimax.io/anthropic
+    defaultModels:
+      - MiniMax-M2.7
+      - MiniMax-M2.7-highspeed
+      - MiniMax-M2.5
+      - MiniMax-M2.5-highspeed
+      - MiniMax-M2.1
+      - MiniMax-M2.1-highspeed
+      - MiniMax-M2
   xai:
     baseUrl: https://api.x.ai/v1
     defaultModels:
@@ -158,8 +168,8 @@ models:
       provider: ollama-cloud
       model: deepseek-v3.2
     minimax:
-      provider: ollama-cloud
-      model: minimax-m2.7
+      provider: minimax
+      model: MiniMax-M2.7
     nemotron:
       provider: ollama-cloud
       model: nemotron-3-super

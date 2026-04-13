@@ -53,6 +53,27 @@ class ProviderRegistry {
       ...config,
       providerId: 'anthropic'
     }));
+    this.adapterFactories.set('minimax', (config) => {
+      const adapter = new AnthropicAdapter({
+        ...config,
+        providerId: 'minimax',
+        baseUrl: config.baseUrl || 'https://api.minimax.io/anthropic',
+        seedModels: [
+          'MiniMax-M2.7',
+          'MiniMax-M2.7-highspeed',
+          'MiniMax-M2.5',
+          'MiniMax-M2.5-highspeed',
+          'MiniMax-M2.1',
+          'MiniMax-M2.1-highspeed',
+          'MiniMax-M2'
+        ],
+        discoveryEnabled: false,
+        useOAuthService: false
+      });
+      Object.defineProperty(adapter, 'id', { value: 'minimax', writable: false });
+      Object.defineProperty(adapter, 'name', { value: 'MiniMax', writable: false });
+      return adapter;
+    });
     this.adapterFactories.set('openai', (config) => new OpenAIAdapter({
       ...config,
       providerId: 'openai'
@@ -389,6 +410,9 @@ class ProviderRegistry {
     }
 
     // Heuristics for unprefixed model names
+    if (modelId.startsWith('MiniMax-')) {
+      return 'minimax';
+    }
     if (modelId.startsWith('claude') || modelId.includes('claude')) {
       return 'anthropic';
     }

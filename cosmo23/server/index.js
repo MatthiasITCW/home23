@@ -207,6 +207,11 @@ function summarizeSetup(config) {
         configured: !!config.providers?.xai?.api_key,
         maskedKey: maskSecret(config.providers?.xai?.api_key || '')
       },
+      minimax: {
+        enabled: !!config.providers?.minimax?.enabled,
+        configured: !!config.providers?.minimax?.api_key,
+        maskedKey: maskSecret(config.providers?.minimax?.api_key || '')
+      },
       ollama: {
         enabled: config.providers?.ollama?.enabled !== false,
         baseUrl: normalizeOllamaNativeUrl(config.providers?.ollama?.base_url || 'http://localhost:11434')
@@ -448,6 +453,7 @@ function serializeLaunchSettings(payload, setupConfig) {
   const usesOllamaCloud = assignments.some(item => item.provider === 'ollama-cloud');
   const usesLocal = assignments.some(item => item.provider === 'local') || parseBoolean(payload.enableLocalLlm, false);
   const usesAnthropic = assignments.some(item => item.provider === 'anthropic') || parseBoolean(payload.enableAnthropic, false);
+  const usesMiniMax = assignments.some(item => item.provider === 'minimax');
   const usesXai = assignments.some(item => item.provider === 'xai');
   const usesOpenAI = assignments.some(item => item.provider === 'openai');
   const usesCodex = assignments.some(item => item.provider === 'openai-codex');
@@ -506,11 +512,13 @@ function serializeLaunchSettings(payload, setupConfig) {
     strategic_model: selectedModels.strategic,
     enable_local_llm: usesLocal,
     enable_ollama_cloud: usesOllamaCloud,
+    enable_minimax: usesMiniMax,
     // HOME23 PATCH: prefer env var over config file. Under Home23, PM2 injects
     // OLLAMA_CLOUD_API_KEY from secrets.yaml; under standalone, config file wins
     // only when the stored value is plaintext (never ship encrypted strings into
     // the per-run config.yaml — the engine would send them as bearer tokens).
     ollama_cloud_api_key: resolveProviderKey('ollama-cloud', setupConfig, 'OLLAMA_CLOUD_API_KEY'),
+    minimax_api_key: resolveProviderKey('minimax', setupConfig, 'MINIMAX_API_KEY'),
     local_llm_base_url: payload.localLlmBaseUrl || ollamaBaseUrl,
     local_llm_default_model: localPrimaryModel,
     local_llm_fast_model: localFastModel,
@@ -738,6 +746,7 @@ app.get('/api/setup/status', async (_req, res) => {
     if (process.env.ANTHROPIC_AUTH_TOKEN) providers.anthropic = { configured: true, status: 'configured', auth_mode: 'oauth' };
     if (process.env.OPENAI_API_KEY) providers.openai = { configured: true, status: 'configured' };
     if (process.env.XAI_API_KEY) providers.xai = { configured: true, status: 'configured' };
+    if (process.env.MINIMAX_API_KEY) providers.minimax = { configured: true, status: 'configured' };
     if (process.env.OLLAMA_CLOUD_API_KEY) providers['ollama-cloud'] = { configured: true, status: 'configured' };
     return res.json({
       success: true,
@@ -782,6 +791,14 @@ app.post('/api/setup/bootstrap', async (req, res) => {
     nextConfig.providers.xai.enabled = true;
   }
 
+  if (!nextConfig.providers.minimax) { nextConfig.providers.minimax = {}; }
+  nextConfig.providers.minimax.enabled = parseBoolean(req.body.enableMiniMax, nextConfig.providers.minimax.enabled || false);
+  nextConfig.providers.minimax.api_key = mergeSecret(nextConfig.providers.minimax.api_key, req.body.minimaxApiKey);
+  nextConfig.providers.minimax.base_url = req.body.minimaxBaseUrl || nextConfig.providers.minimax.base_url || 'https://api.minimax.io/anthropic';
+  if (nextConfig.providers.minimax.api_key) {
+    nextConfig.providers.minimax.enabled = true;
+  }
+
   if (!nextConfig.providers['ollama-cloud']) { nextConfig.providers['ollama-cloud'] = {}; }
   nextConfig.providers['ollama-cloud'].enabled = parseBoolean(req.body.enableOllamaCloud, nextConfig.providers['ollama-cloud'].enabled || false);
   nextConfig.providers['ollama-cloud'].api_key = mergeSecret(nextConfig.providers['ollama-cloud'].api_key, req.body.ollamaCloudApiKey);
@@ -819,6 +836,7 @@ app.post('/api/setup/bootstrap', async (req, res) => {
   };
   safeAssignEnv('OPENAI_API_KEY', nextConfig.providers.openai.api_key);
   safeAssignEnv('XAI_API_KEY', nextConfig.providers.xai.api_key);
+  safeAssignEnv('MINIMAX_API_KEY', nextConfig.providers.minimax?.api_key);
   safeAssignEnv('OLLAMA_CLOUD_API_KEY', nextConfig.providers['ollama-cloud']?.api_key);
   await applyStoredConfig();
 

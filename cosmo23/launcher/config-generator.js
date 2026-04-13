@@ -107,6 +107,8 @@ class ConfigGenerator {
       enable_anthropic = false,
       anthropic_default_model = 'claude-sonnet-4-6',
       anthropic_strategic_model = 'claude-opus-4-6',
+      enable_minimax = false,
+      minimax_api_key = '',
       enable_openai = true,
       enable_xai = false,
       xai_default_model = 'grok-4-1-fast-reasoning',
@@ -176,6 +178,7 @@ class ConfigGenerator {
     const selectedProviders = [selectedPrimaryProvider, selectedFastProvider, selectedStrategicProvider];
     const usesLocalModels = selectedProviders.includes('local') || enable_local_llm;
     const usesAnthropicModels = selectedProviders.includes('anthropic') || enable_anthropic;
+    const usesMiniMax = selectedProviders.includes('minimax') || enable_minimax;
     const usesXaiModels = selectedProviders.includes('xai') || enable_xai;
     const usesOpenAIModels = selectedProviders.includes('openai') || enable_openai;
     const usesOllamaCloud = selectedProviders.includes('ollama-cloud') || enable_ollama_cloud;
@@ -209,6 +212,14 @@ class ConfigGenerator {
         '    useExtendedThinking: true',
         '    defaultMaxTokens: 8000',
         '    temperature: 0.1'
+      ].join('\n') : null,
+      usesMiniMax ? [
+        '  minimax:',
+        '    enabled: true',
+        '    baseURL: "https://api.minimax.io/anthropic"',
+        `    apiKey: "${minimax_api_key}"`,
+        '    supportsTools: true',
+        '    supportsStreaming: true'
       ].join('\n') : null,
       usesXaiModels ? [
         '  xai:',

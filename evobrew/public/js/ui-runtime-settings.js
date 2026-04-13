@@ -422,6 +422,7 @@
   function formatProviderTitle(providerId) {
     const provider = String(providerId || '').trim();
     if (provider === 'anthropic') return 'Anthropic';
+    if (provider === 'minimax') return 'MiniMax';
     if (provider === 'openai-codex') return 'OpenAI Codex';
     if (provider === 'openai') return 'OpenAI API';
     if (provider === 'ollama-cloud') return 'Ollama Cloud';
@@ -431,7 +432,7 @@
   }
 
   function compareProviderOrder(left, right) {
-    const order = ['anthropic', 'openai-codex', 'xai', 'ollama-cloud', 'openclaw', 'openai', 'ollama', 'lmstudio'];
+    const order = ['anthropic', 'minimax', 'openai-codex', 'xai', 'ollama-cloud', 'openclaw', 'openai', 'ollama', 'lmstudio'];
     const leftIndex = order.indexOf(left);
     const rightIndex = order.indexOf(right);
     if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
@@ -538,6 +539,10 @@
 
       if (provider === 'anthropic') {
         return isAlias || /4-6|haiku-4-5/i.test(id);
+      }
+
+      if (provider === 'minimax') {
+        return true;
       }
 
       if (provider === 'xai') {

@@ -31,6 +31,7 @@ class UnifiedClient extends GPT5Client {
     // Initialize additional providers ONLY if explicitly enabled in config
     this.xai = null;
     this.anthropic = null;
+    this.minimax = null;
     this.localClient = null; // For local LLM support via Chat Completions API
     this.groqClient = null;  // Groq free tier (OpenAI-compatible)
     this.hfClient = null;    // HuggingFace Inference (OpenAI-compatible)
@@ -71,6 +72,24 @@ class UnifiedClient extends GPT5Client {
         }
       } else {
         this.logger?.warn('Anthropic enabled in config but no API key found (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN)');
+      }
+    }
+
+    if (this.config.providers?.minimax?.enabled) {
+      const apiKey = process.env.MINIMAX_API_KEY || this.config.providers.minimax.apiKey;
+      if (apiKey) {
+        try {
+          this.AnthropicSDK = this.AnthropicSDK || require('@anthropic-ai/sdk');
+          this.minimax = new this.AnthropicSDK({
+            apiKey,
+            baseURL: this.config.providers.minimax.baseUrl || 'https://api.minimax.io/anthropic'
+          });
+          this.logger?.info('✅ MiniMax provider initialized (Anthropic-compatible)');
+        } catch (error) {
+          this.logger?.warn(`MiniMax enabled in config but failed to initialize: ${error.message}`);
+        }
+      } else {
+        this.logger?.warn('MiniMax enabled in config but no API key found (MINIMAX_API_KEY)');
       }
     }
 
@@ -464,6 +483,8 @@ class UnifiedClient extends GPT5Client {
           return await this.generateXAI(fb, options);
         } else if (fb.provider === 'anthropic') {
           return await this.generateAnthropic(fb, options);
+        } else if (fb.provider === 'minimax') {
+          return await this.generateMiniMax(fb, options);
         } else if (fb.provider === 'local') {
           return await this.generateLocal(fb, options);
         } else if (fb.provider === 'groq') {
@@ -524,6 +545,8 @@ class UnifiedClient extends GPT5Client {
           return await this.generateXAI(assignment, options);
         } else if (assignment.provider === 'anthropic') {
           return await this.generateAnthropic(assignment, options);
+        } else if (assignment.provider === 'minimax') {
+          return await this.generateMiniMax(assignment, options);
         } else if (assignment.provider === 'local') {
           return await this.generateLocal(assignment, options);
         } else if (assignment.provider === 'groq') {
@@ -740,6 +763,17 @@ class UnifiedClient extends GPT5Client {
     if (!this.anthropic) {
       throw new Error('Anthropic provider not initialized');
     }
+    return await this.generateAnthropicCompatible(this.anthropic, 'Anthropic', assignment, options);
+  }
+
+  async generateMiniMax(assignment, options) {
+    if (!this.minimax) {
+      throw new Error('MiniMax provider not initialized');
+    }
+    return await this.generateAnthropicCompatible(this.minimax, 'MiniMax', assignment, options);
+  }
+
+  async generateAnthropicCompatible(client, providerName, assignment, options) {
     
     const {
       instructions = '',
@@ -768,6 +802,7 @@ class UnifiedClient extends GPT5Client {
     }
     
     this.logger?.debug('Calling Anthropic Claude', {
+      provider: providerName,
       model: assignment.model,
       maxTokens: finalMaxTokens,
       hasSystem: Boolean(payload.system),
@@ -775,7 +810,7 @@ class UnifiedClient extends GPT5Client {
     });
     
     // Call Anthropic
-    const response = await this.anthropic.messages.create(payload);
+    const response = await client.messages.create(payload);
     
     // Extract content from content array
     const content = response.content
@@ -783,7 +818,7 @@ class UnifiedClient extends GPT5Client {
       .map(block => block.text)
       .join('\n');
     
-    this.logger?.debug('Anthropic response received', {
+    this.logger?.debug(`${providerName} response received`, {
       model: response.model,
       stopReason: response.stop_reason,
       contentLength: content.length
@@ -985,7 +1020,7 @@ class UnifiedClient extends GPT5Client {
     }
     
     // Anthropic doesn't have separate reasoning -> regular call
-    if (assignment.provider === 'anthropic') {
+    if (assignment.provider === 'anthropic' || assignment.provider === 'minimax') {
       this.logger?.info('Anthropic does not support separate reasoning, using standard generation');
       return await this.generate(options);
     }
@@ -1073,4 +1108,3 @@ class UnifiedClient extends GPT5Client {
 }
 
 module.exports = { UnifiedClient };
-

@@ -162,6 +162,10 @@ function buildModelAliases(providerId, models = []) {
       addAlias('latest-4-20', 'Latest 4.20', (model) => /4[._-]?20/i.test(model) && !/(multi-agent|reason)/i.test(model));
       addAlias('latest-4-20-moe', 'Latest 4.20 MoE', (model) => /4[._-]?20/i.test(model) && /(multi-agent|moe)/i.test(model));
       break;
+    case 'minimax':
+      addAlias('latest-highspeed', 'Latest Highspeed', (model) => /highspeed/i.test(model));
+      addAlias('latest-standard', 'Latest Standard', (model) => !/highspeed/i.test(model));
+      break;
     case 'ollama-cloud':
       addAlias('latest-coder', 'Latest Coder', (model) => /coder/i.test(model));
       addAlias('latest-kimi', 'Latest Kimi', (model) => /kimi/i.test(model));

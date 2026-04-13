@@ -177,6 +177,17 @@ async function createRegistry(options = {}) {
     registry.registerModel('grok-4.20-multi-agent-latest', 'xai');
     console.log('[Providers] ✅ xAI (Grok) registered');
   }
+
+  const minimaxKey = process.env.MINIMAX_API_KEY || evobrewConfig?.providers?.minimax?.api_key;
+  if (minimaxKey) {
+    registry.initializeProvider('minimax', {
+      apiKey: minimaxKey,
+      baseUrl: evobrewConfig?.providers?.minimax?.url || 'https://api.minimax.io/anthropic'
+    });
+    console.log('[Providers] ✅ MiniMax registered');
+  } else {
+    console.log('[Providers] ℹ️ MiniMax not configured');
+  }
   // Initialize Ollama Cloud
   const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY
     || evobrewConfig?.providers?.['ollama-cloud']?.api_key;
