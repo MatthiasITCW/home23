@@ -1080,6 +1080,71 @@ class DashboardServer {
       console.warn('[COSMO watchdog] setup failed:', err.message);
     }
 
+    // ── Home23 update check ──
+    // Poll GitHub for new version tags. Initial check after 30s, then every 6 hours.
+    try {
+      const home23RootForUpdate = this.getHome23Root();
+      let _updateStatus = { updateAvailable: false, currentVersion: '', latestVersion: '', checkedAt: null };
+
+      const checkForUpdate = () => {
+        try {
+          const fsSync = require('fs');
+          const pkgPath = path.join(home23RootForUpdate, 'package.json');
+          if (!fsSync.existsSync(pkgPath)) return;
+          const pkg = JSON.parse(fsSync.readFileSync(pkgPath, 'utf8'));
+          const currentVersion = pkg.version || '0.0.0';
+
+          const { execSync } = require('child_process');
+          try {
+            execSync('git fetch origin --tags --quiet', {
+              cwd: home23RootForUpdate, stdio: 'pipe', timeout: 30_000,
+            });
+          } catch { /* fetch failed — compare with local tags only */ }
+
+          let latestTag = '';
+          try {
+            latestTag = execSync('git tag -l "v*" --sort=-version:refname', {
+              cwd: home23RootForUpdate, encoding: 'utf8', stdio: 'pipe', timeout: 5_000,
+            }).trim().split('\n')[0] || '';
+          } catch { /* no tags */ }
+
+          const latestVersion = latestTag.replace(/^v/, '');
+          if (!latestVersion) {
+            _updateStatus = { updateAvailable: false, currentVersion, latestVersion: currentVersion, checkedAt: new Date().toISOString() };
+            return;
+          }
+
+          const cParts = currentVersion.split('.').map(Number);
+          const lParts = latestVersion.split('.').map(Number);
+          let updateAvailable = false;
+          for (let i = 0; i < Math.max(cParts.length, lParts.length); i++) {
+            const c = cParts[i] || 0;
+            const l = lParts[i] || 0;
+            if (l > c) { updateAvailable = true; break; }
+            if (l < c) break;
+          }
+
+          _updateStatus = { updateAvailable, currentVersion, latestVersion, checkedAt: new Date().toISOString() };
+          if (updateAvailable) {
+            console.log(`[Update check] v${latestVersion} available (current: v${currentVersion})`);
+          }
+        } catch (err) {
+          console.warn('[Update check] error:', err.message);
+        }
+      };
+
+      setTimeout(() => {
+        checkForUpdate();
+        setInterval(checkForUpdate, 6 * 60 * 60 * 1000); // every 6 hours
+      }, 30_000);
+
+      this.app.get('/home23/api/settings/update-status', (req, res) => {
+        res.json(_updateStatus);
+      });
+    } catch (err) {
+      console.warn('[Update check] setup failed:', err.message);
+    }
+
     // Chat History API
     // Helper: parse JSONL conversation file into messages
     const parseConversationFile = (filePath, limit) => {

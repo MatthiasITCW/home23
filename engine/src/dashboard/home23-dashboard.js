@@ -58,6 +58,9 @@ async function init() {
 
   // Update pulse "ago" timer every second
   setInterval(updatePulseAgo, 1000);
+
+  // Check for Home23 updates
+  checkUpdateNotification();
 }
 
 // ── Engine Pulse (Live Activity Indicator) ──
@@ -1978,6 +1981,29 @@ function setupIntelSynthButton() {
       btn.textContent = 'Run Synthesis';
     }
   });
+}
+
+// ── Update Notification ──
+
+async function checkUpdateNotification() {
+  try {
+    const res = await fetch('/home23/api/settings/update-status');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.updateAvailable) return;
+
+    const bar = document.getElementById('update-notification');
+    const text = document.getElementById('update-notification-text');
+    if (!bar || !text) return;
+
+    text.textContent = `Home23 v${data.latestVersion} available \u2014 run home23 update in your terminal`;
+    bar.style.display = 'flex';
+
+    const dismissBtn = document.getElementById('update-dismiss');
+    if (dismissBtn) {
+      dismissBtn.onclick = () => { bar.style.display = 'none'; };
+    }
+  } catch { /* silent */ }
 }
 
 // ── Start ──

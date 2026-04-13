@@ -57,7 +57,7 @@ body::before {
   pointer-events: none;
 }
 
-.h23-header, .h23-pills, .h23-pulse-bar, .h23-tabs, .h23-main {
+.h23-header, .h23-pills, .h23-pulse-bar, .h23-update-bar, .h23-tabs, .h23-main {
   position: relative;
   z-index: 1;
 }
@@ -245,6 +245,21 @@ body::before {
 .h23-pulse-ago {
   color: rgba(255,255,255,0.35);
   font-size: 0.72rem;
+}
+
+/* ── Update Notification Bar ── */
+
+.h23-update-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 24px;
+  background: rgba(79, 70, 229, 0.25);
+  border-bottom: 1px solid rgba(79, 70, 229, 0.4);
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.02em;
 }
 
 /* ── Tab Bar ── */
