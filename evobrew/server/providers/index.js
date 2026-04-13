@@ -82,12 +82,13 @@ async function loadEvobrewConfig() {
     const os = require('os');
     const path = require('path');
     const fs = require('fs');
-    const configPath = path.join(os.homedir(), '.evobrew', 'config.json');
-    
+    const configDir = process.env.EVOBREW_CONFIG_DIR || path.join(os.homedir(), '.evobrew');
+    const configPath = path.join(configDir, 'config.json');
+
     if (!fs.existsSync(configPath)) {
       return null;
     }
-    
+
     const raw = fs.readFileSync(configPath, 'utf-8');
     return JSON.parse(raw);
   } catch (err) {

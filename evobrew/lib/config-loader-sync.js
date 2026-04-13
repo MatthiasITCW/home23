@@ -134,10 +134,12 @@ const CONFIG_DIR_NAME = '.evobrew';
 const CONFIG_FILE_NAME = 'config.json';
 
 function getConfigDir() {
+  if (process.env.EVOBREW_CONFIG_DIR) return process.env.EVOBREW_CONFIG_DIR;
   return path.join(os.homedir(), CONFIG_DIR_NAME);
 }
 
 function getConfigPath() {
+  if (process.env.EVOBREW_CONFIG_PATH) return process.env.EVOBREW_CONFIG_PATH;
   return path.join(getConfigDir(), CONFIG_FILE_NAME);
 }
 
