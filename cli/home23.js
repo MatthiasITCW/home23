@@ -33,8 +33,8 @@ Commands:
   logs [name]             Tail PM2 logs
   update                  Update Home23 to latest release
   update --check          Check for updates without applying
-  evobrew update          Pull latest evobrew from GitHub
-  cosmo23 update          Sync latest COSMO 2.3 from source
+  update                  Update to latest release
+  update --check          Check if an update is available
   help                    Show this help
 `);
     process.exit(0);
@@ -67,20 +67,9 @@ Commands:
   } else if (command === 'logs') {
     const { runLogs } = await import('./lib/pm2-commands.js');
     await runLogs(args[1]);
-  } else if (command === 'evobrew') {
-    if (args[1] === 'update') {
-      const { runEvobrewUpdate } = await import('./lib/evobrew-update.js');
-      await runEvobrewUpdate(HOME23_ROOT);
-    } else {
-      console.log('Usage: home23 evobrew update');
-    }
-  } else if (command === 'cosmo23') {
-    if (args[1] === 'update') {
-      const { runCosmo23Update } = await import('./lib/cosmo23-update.js');
-      await runCosmo23Update(HOME23_ROOT);
-    } else {
-      console.log('Usage: home23 cosmo23 update');
-    }
+  } else if (command === 'evobrew' || command === 'cosmo23') {
+    console.log(`${command} is now bundled with Home23 and updates automatically.`);
+    console.log('Run "home23 update" to update everything.');
   } else if (command === 'update') {
     const checkOnly = args.includes('--check');
     const { runUpdate } = await import('./lib/update.js');
