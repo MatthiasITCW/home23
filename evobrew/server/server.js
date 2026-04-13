@@ -4454,8 +4454,8 @@ app.get('/api/setup/status', async (req, res) => {
         https_enabled: httpsEnabled,
         terminal_enabled: terminalSessionManager.isEnabled(),
         ui_refresh_enabled: process.env.UI_REFRESH_V1 !== 'false',
-        managed_by_home23: Boolean(home23Config?._home23),
-        home23_settings_url: home23Config?._home23 ? `/home23/settings` : null
+        managed_by_home23: Boolean(home23Config?._home23 || process.env.HOME23_MANAGED === 'true'),
+        home23_settings_url: (home23Config?._home23 || process.env.HOME23_MANAGED === 'true') ? `/home23/settings` : null
       },
       status: configStatus,
       details: {
@@ -4511,7 +4511,7 @@ app.get('/api/setup/status', async (req, res) => {
 // Block provider config changes when managed by Home23
 // PUT/DELETE to provider setup endpoints would overwrite the Home23-managed config
 app.use('/api/setup/providers', (req, res, next) => {
-  if (home23Config?._home23 && (req.method === 'PUT' || req.method === 'DELETE')) {
+  if ((home23Config?._home23 || process.env.HOME23_MANAGED === 'true') && (req.method === 'PUT' || req.method === 'DELETE')) {
     return res.status(403).json({
       success: false,
       error: 'Provider configuration is managed by Home23. Use the Home23 dashboard settings to change providers and API keys.'

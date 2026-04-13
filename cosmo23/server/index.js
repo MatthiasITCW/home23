@@ -732,6 +732,19 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.get('/api/setup/status', async (_req, res) => {
+  // When managed by Home23, report env-var-configured providers as ready
+  if (process.env.HOME23_MANAGED === 'true') {
+    const providers = {};
+    if (process.env.ANTHROPIC_AUTH_TOKEN) providers.anthropic = { configured: true, status: 'configured', auth_mode: 'oauth' };
+    if (process.env.OPENAI_API_KEY) providers.openai = { configured: true, status: 'configured' };
+    if (process.env.XAI_API_KEY) providers.xai = { configured: true, status: 'configured' };
+    if (process.env.OLLAMA_CLOUD_API_KEY) providers['ollama-cloud'] = { configured: true, status: 'configured' };
+    return res.json({
+      success: true,
+      managed_by_home23: true,
+      setup: { configured: true, providers, setup_complete: true },
+    });
+  }
   const config = await readSetupConfig();
   res.json({
     success: true,
