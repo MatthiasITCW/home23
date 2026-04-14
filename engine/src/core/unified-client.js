@@ -4,6 +4,25 @@ const { ChatCompletionsClient } = require('./chat-completions-client');
 const OpenAI = require('openai');
 
 /**
+ * Stealth headers required when authenticating to Anthropic via OAuth tokens
+ * (sk-ant-oat*). Without these, Anthropic rejects the request with
+ * "OAuth authentication is currently not supported."
+ *
+ * This mirrors the header set the TS harness uses at src/agent/loop.ts —
+ * the two must stay in sync. Any change here likely needs a matching change
+ * there.
+ */
+function getAnthropicStealthHeaders() {
+  return {
+    'accept': 'application/json',
+    'anthropic-dangerous-direct-browser-access': 'true',
+    'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,extended-cache-ttl-2025-04-11',
+    'user-agent': 'claude-cli/2.1.32 (external, cli)',
+    'x-app': 'cli',
+  };
+}
+
+/**
  * UnifiedClient - Extends GPT5Client with multi-provider and MCP support
  * 
  * CRITICAL DESIGN PRINCIPLES:
@@ -60,13 +79,22 @@ class UnifiedClient extends GPT5Client {
     if (this.config.providers?.anthropic?.enabled) {
       const authToken = process.env.ANTHROPIC_AUTH_TOKEN || this.config.providers.anthropic.authToken;
       const apiKey = process.env.ANTHROPIC_API_KEY || this.config.providers.anthropic.apiKey;
+      const isOAuth = Boolean(authToken && String(authToken).startsWith('sk-ant-oat'));
       if (authToken || apiKey) {
         try {
-          // Lazy load Anthropic SDK — support both OAuth token and API key
+          // Lazy load Anthropic SDK — support both OAuth token and API key.
+          // OAuth tokens (sk-ant-oat*) require stealth headers that impersonate
+          // Claude Code CLI; the SDK's raw apiKey/authToken path without these
+          // headers gets rejected with "OAuth authentication is currently not
+          // supported." Port the same header set the TS harness uses at
+          // src/agent/loop.ts getStealthHeaders().
           this.AnthropicSDK = require('@anthropic-ai/sdk');
           const opts = authToken ? { authToken } : { apiKey };
+          if (isOAuth) {
+            opts.defaultHeaders = getAnthropicStealthHeaders();
+          }
           this.anthropic = new this.AnthropicSDK(opts);
-          this.logger?.info(`✅ Anthropic Claude provider initialized (${authToken ? 'OAuth' : 'API key'})`);
+          this.logger?.info(`✅ Anthropic Claude provider initialized (${authToken ? (isOAuth ? 'OAuth + stealth headers' : 'OAuth') : 'API key'})`);
         } catch (error) {
           this.logger?.warn('Anthropic SDK not installed. Run: npm install @anthropic-ai/sdk');
         }

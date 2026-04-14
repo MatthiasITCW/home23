@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.4 (2026-04-14)
+
+### Engine-side Anthropic stealth headers for OAuth tokens
+UnifiedClient's Anthropic provider now sends the same stealth headers the
+TS harness already uses (src/agent/loop.ts getStealthHeaders). Without
+these, `sk-ant-oat*` tokens are rejected with "OAuth authentication is
+currently not supported." The engine Anthropic path now mirrors the
+harness exactly — Claude-family models (claude-sonnet-4-6, claude-opus-4-6)
+work as PGS synthesis providers, as compiler models, and anywhere else
+UnifiedClient routes to Anthropic.
+
+Headers added when the auth token starts with `sk-ant-oat`:
+- accept: application/json
+- anthropic-dangerous-direct-browser-access: true
+- anthropic-beta: claude-code-20250219,oauth-2025-04-20,
+  interleaved-thinking-2025-05-14,extended-cache-ttl-2025-04-11
+- user-agent: claude-cli/2.1.32 (external, cli)
+- x-app: cli
+
+The TS harness (src/agent/loop.ts) and engine UnifiedClient must stay in
+sync on this header set. A comment in both files calls this out.
+
 ## 0.5.3 (2026-04-14)
 
 ### PGS works with any model + dual-model sweep/synthesis control
