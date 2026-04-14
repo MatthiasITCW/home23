@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.1 (2026-04-13)
+
+### Redirect cognitive cycles toward jtr's world
+After v0.4.0, personas successfully absorbed loop-closure reframing but then
+got stuck on meta-reflection — every INVESTIGATE was "investigate the enforcer
+mechanism further." System-internals became a local attractor.
+
+- Self-diagnosis moved from prompt OPENING to a terse footer. Still visible
+  for audit but no longer primes reflection.
+- Focus Directive added at top of every role prompt: "Your job is to produce
+  thought that helps jtr — his projects, his interests, his real world.
+  DO NOT reflect on Home23's cognitive architecture."
+- curiosity/analyst/critic/proposal role prompts rewritten to target jtr's
+  world with explicit Forbidden Topics list.
+- First post-fix cycle (1973 curator) immediately shifted focus: "For Home23's
+  user (jtr), the priority should be whether these hypotheses have resolved
+  or need manual grounding."
+
 ## 0.4.0 (2026-04-13)
 
 ### Thoughts → Action (Phase 1 of 2)
