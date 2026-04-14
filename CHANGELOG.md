@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.0 (2026-04-13)
+
+### Cognitive Evidence Schema (Step 23)
+- New `engine/src/core/evidence-receipt.js` — cryptographic run_id/prev_id chain
+- Five stage receipts per cycle: ingest, reflect, memory_write, behavior_use, audit
+- Canonical nonzero fixture guarantees at least one inspectable artifact per cycle
+- Side-by-side audit compares control metadata vs workspace vs registry to catch divergence
+- Full-loop enforcer in orchestrator `finally` block fills any missing stages with
+  `no_change_detected` fallback — guarantees closure even when cycles error or early-return
+- Self-diagnosis block injected into curator/analyst prompts and logged visibly as
+  `COMPLETE — durable learning proven` / `INCOMPLETE`
+- Receipts persisted to `instances/<agent>/brain/evidence-receipts.jsonl`
+
+### Feeder Hardening
+- Concurrency-limited compile queue (default 3 parallel) eliminates 429 rate-limit
+  avalanches on bulk folder ingestion
+- Compiler supports dual SDK — Anthropic messages API for minimax/anthropic providers,
+  OpenAI chat completions for everyone else
+- Reasoning-model content-block handling (MiniMax-M2.7 returns `thinking` + `text` blocks,
+  compiler now extracts the `text` block correctly)
+- Fixed `home.yaml` path resolution for provider lookup
+- `updateModel()` on the running compiler — hot-apply from Settings UI actually takes effect
+
+### Settings UI
+- Compiler Model and Vision Model are now select dropdowns populated from all provider
+  `defaultModels` (previously free-text inputs with no guidance)
+- Hot-apply endpoint calls `compiler.updateModel()` so dashboard changes update the
+  running instance without a restart
+
 ## 0.2.0 (2026-04-13)
 
 ### Provider Authority
