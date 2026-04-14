@@ -2,104 +2,628 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Home23">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#030712">
+  <meta name="format-detection" content="telephone=no">
   <title>Home23 — Chat</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/home23-dashboard.css">
   <link rel="stylesheet" href="/home23-chat.css">
   <style>
-    .standalone-wrap {
+    /* ── Standalone /chat page — mobile-first, scales up ── */
+
+    :root {
+      --sh-safe-top: env(safe-area-inset-top, 0px);
+      --sh-safe-bottom: env(safe-area-inset-bottom, 0px);
+      --sh-safe-left: env(safe-area-inset-left, 0px);
+      --sh-safe-right: env(safe-area-inset-right, 0px);
+      --sh-header-h: 52px;
+      --sh-kbd-offset: 0px;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      overscroll-behavior-y: none;
+    }
+
+    body {
+      background: #030712;
+    }
+
+    #particles-js {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    .sh-shell {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
       display: flex;
       flex-direction: column;
-      height: 100vh;
+      padding-left: var(--sh-safe-left);
+      padding-right: var(--sh-safe-right);
+      /* Using dvh + a keyboard offset computed from visualViewport */
+      height: 100dvh;
     }
-    .standalone-header {
-      display: flex;
-      justify-content: space-between;
+
+    /* Header */
+    .sh-header {
+      flex: 0 0 auto;
+      height: var(--sh-header-h);
+      padding-top: var(--sh-safe-top);
+      box-sizing: content-box;
+      display: grid;
+      grid-template-columns: 40px 1fr 40px;
+      gap: 6px;
       align-items: center;
-      padding: 12px 24px;
+      padding-left: 8px;
+      padding-right: 8px;
       border-bottom: 1px solid var(--glass-border);
       background: var(--glass-primary);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
+      position: relative;
+      z-index: 10;
     }
-    .standalone-header-left {
+
+    .sh-icon-btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sh-icon-btn:active {
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .sh-icon-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .sh-title {
       display: flex;
       align-items: center;
-      gap: 16px;
+      justify-content: center;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 10px;
+      -webkit-tap-highlight-color: transparent;
     }
-    .standalone-logo {
-      font-size: 18px;
+    .sh-title:active {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .sh-title-label {
+      font-size: 17px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-primary);
+      max-width: 70vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .standalone-back {
+    .sh-title-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      max-width: 70vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sh-title-caret {
+      display: inline-block;
+      margin-left: 4px;
+      opacity: 0.55;
+      font-size: 10px;
+      transform: translateY(-1px);
+    }
+
+    /* Messages area */
+    .sh-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .sh-body .h23-chat-messages {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 14px 14px 8px;
+      gap: 12px;
+      background: transparent;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    .sh-body .h23-chat-msg {
+      max-width: 94%;
+      font-size: 17px;
+      line-height: 1.5;
+    }
+    .sh-body .h23-chat-msg.user {
+      padding: 12px 16px;
+      border-radius: 20px 20px 4px 20px;
+    }
+    .sh-body .h23-chat-msg.assistant {
+      padding: 10px 0;
+    }
+    .sh-body .h23-chat-msg.assistant pre {
+      font-size: 14px;
+      padding: 12px 14px;
+    }
+    .sh-body .h23-chat-msg.assistant code {
+      font-size: 14px;
+    }
+    .sh-body .h23-chat-thinking {
+      font-size: 14px;
+    }
+    .sh-body .h23-chat-tool {
+      font-size: 14px;
+    }
+    .sh-body .h23-chat-tool-args,
+    .sh-body .h23-chat-tool-result {
+      font-size: 13px;
+    }
+
+    /* Input bar */
+    .sh-input-bar {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      padding: 10px 12px calc(10px + var(--sh-safe-bottom));
+      border-top: 1px solid var(--glass-border);
+      background: var(--glass-primary);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      /* Lift above the on-screen keyboard (iOS visualViewport handler sets --sh-kbd-offset) */
+      transform: translateY(calc(var(--sh-kbd-offset) * -1));
+      transition: transform 0.12s ease-out;
+    }
+
+    .sh-input {
+      flex: 1 1 auto;
+      min-width: 0;
+      background: var(--glass-secondary);
+      border: 1px solid var(--glass-border);
+      color: var(--text-primary);
+      padding: 12px 16px;
+      border-radius: 20px;
+      font-size: 17px;           /* ≥16px prevents iOS zoom-on-focus */
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      line-height: 1.4;
+      min-height: 48px;
+      max-height: 40dvh;
+      -webkit-appearance: none;
+    }
+    .sh-input:focus {
+      border-color: var(--accent-blue);
+    }
+    .sh-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .sh-send-btn {
+      background: var(--accent-blue);
+      color: #fff;
+      border: none;
+      width: 48px;
+      height: 48px;
+      border-radius: 24px;
+      cursor: pointer;
+      font-size: 20px;
+      flex-basis: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 48px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sh-send-btn:active {
+      transform: scale(0.96);
+    }
+    .sh-send-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* History drawer (slide from left) */
+    .sh-drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease-out;
+      z-index: 20;
+    }
+    .sh-drawer-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sh-drawer {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: min(86vw, 360px);
+      padding-top: var(--sh-safe-top);
+      padding-bottom: var(--sh-safe-bottom);
+      padding-left: var(--sh-safe-left);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        rgba(6, 12, 24, 0.96);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-right: 1px solid var(--glass-border);
+      transform: translateX(-100%);
+      transition: transform 0.22s ease-out;
+      z-index: 21;
+      display: flex;
+      flex-direction: column;
+    }
+    .sh-drawer.open {
+      transform: translateX(0);
+    }
+
+    .sh-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .sh-drawer-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .sh-drawer-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .sh-drawer-list {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .sh-drawer-list .h23-chat-conv-item {
+      padding: 14px 16px;
+    }
+    .sh-drawer-list .h23-chat-conv-preview {
+      font-size: 16px;
+    }
+    .sh-drawer-list .h23-chat-conv-meta {
+      font-size: 13px;
+    }
+
+    /* Bottom sheet (agent + model selectors) */
+    .sh-sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease-out;
+      z-index: 30;
+    }
+    .sh-sheet-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sh-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding-bottom: var(--sh-safe-bottom);
+      padding-left: var(--sh-safe-left);
+      padding-right: var(--sh-safe-right);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        rgba(6, 12, 24, 0.98);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--glass-border);
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      transform: translateY(100%);
+      transition: transform 0.22s ease-out;
+      z-index: 31;
+      max-height: 80dvh;
+      overflow-y: auto;
+    }
+    .sh-sheet.open {
+      transform: translateY(0);
+    }
+    .sh-sheet-grip {
+      width: 42px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 8px auto 0;
+    }
+    .sh-sheet-body {
+      padding: 16px 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .sh-field-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .sh-sheet .h23-chat-agent-select,
+    .sh-sheet .h23-chat-model-select {
+      font-size: 16px;  /* prevent iOS zoom on native picker */
+      padding: 12px 14px;
+      border-radius: 12px;
+      width: 100%;
+      min-height: 48px;
+    }
+    .sh-sheet-action {
+      appearance: none;
+      background: var(--glass-secondary);
+      border: 1px solid var(--glass-border);
+      color: var(--text-primary);
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sh-sheet-action:active {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .sh-sheet-action.destructive {
+      color: var(--accent-red);
+    }
+
+    /* Scale up for tablet/desktop */
+    @media (min-width: 820px) {
+      .sh-shell {
+        max-width: 880px;
+        margin: 0 auto;
+        border-left: 1px solid var(--glass-border);
+        border-right: 1px solid var(--glass-border);
+      }
+      .sh-header {
+        grid-template-columns: 48px 1fr auto;
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+      .sh-body .h23-chat-messages {
+        padding: 20px 24px 12px;
+      }
+      .sh-input-bar {
+        padding: 14px 20px calc(16px + var(--sh-safe-bottom));
+      }
+      .sh-body .h23-chat-msg {
+        max-width: 88%;
+      }
+      .sh-dashboard-link {
+        display: inline-flex;
+      }
+    }
+
+    .sh-dashboard-link {
+      display: none;  /* hidden on mobile — action lives in the sheet */
       color: var(--text-secondary);
       text-decoration: none;
       font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 8px;
     }
-    .standalone-back:hover {
+    .sh-dashboard-link:hover {
       color: var(--text-primary);
-    }
-    .standalone-body {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto;
-      overflow: hidden;
-    }
-    .standalone-body .h23-chat-messages {
-      flex: 1;
-      padding: 20px 24px;
-    }
-    .standalone-body .h23-chat-input-area {
-      padding: 12px 24px 20px;
+      background: rgba(255, 255, 255, 0.04);
     }
   </style>
 </head>
 <body>
   <div id="particles-js"></div>
-  <div class="standalone-wrap" style="position:relative;z-index:1;">
-    <div class="standalone-header">
-      <div class="standalone-header-left">
-        <span class="standalone-logo">&#129504; Home23</span>
+
+  <div class="sh-shell">
+    <header class="sh-header">
+      <button class="sh-icon-btn" id="sh-menu-btn" aria-label="History" title="History">&#9776;</button>
+      <div class="sh-title" id="sh-title" role="button" aria-label="Agent and model" tabindex="0">
+        <span class="sh-title-label" id="sh-title-label">Loading…</span>
+        <span class="sh-title-sub" id="sh-title-sub">tap to change<span class="sh-title-caret">&#9662;</span></span>
+      </div>
+      <button class="sh-icon-btn" id="sh-new-btn" aria-label="New conversation" title="New conversation">+</button>
+      <a href="/home23" class="sh-dashboard-link" style="grid-column: 3;">&larr; Dashboard</a>
+    </header>
+
+    <section class="sh-body">
+      <div class="h23-chat-messages" id="chat-messages">
+        <div class="h23-chat-empty">Loading…</div>
+      </div>
+      <div class="sh-input-bar">
+        <textarea class="sh-input h23-chat-input" id="chat-input" placeholder="Message your agent…" rows="1" autocapitalize="sentences" autocorrect="on" spellcheck="true"></textarea>
+        <button class="sh-send-btn h23-chat-send-btn" id="chat-send-btn" aria-label="Send">&#9654;</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- History drawer -->
+  <div class="sh-drawer-backdrop" id="sh-drawer-backdrop"></div>
+  <aside class="sh-drawer" id="sh-drawer" aria-hidden="true">
+    <div class="sh-drawer-header">
+      <span class="sh-drawer-title">History</span>
+      <div class="sh-drawer-actions">
+        <button class="sh-icon-btn" id="sh-drawer-new" aria-label="New conversation" title="New" style="width:32px;height:32px;font-size:18px;">+</button>
+        <button class="sh-icon-btn" id="sh-drawer-close" aria-label="Close" style="width:32px;height:32px;font-size:16px;">&#10005;</button>
+      </div>
+    </div>
+    <div class="sh-drawer-list h23-chat-conv-list" id="chat-conv-list"></div>
+  </aside>
+
+  <!-- Hidden conv panel to satisfy home23-chat.js lookups (toggleConversationList targets it) -->
+  <div id="chat-conv-panel" style="display:none;"></div>
+
+  <!-- Bottom sheet for agent + model selectors -->
+  <div class="sh-sheet-backdrop" id="sh-sheet-backdrop"></div>
+  <div class="sh-sheet" id="sh-sheet" aria-hidden="true">
+    <div class="sh-sheet-grip"></div>
+    <div class="sh-sheet-body">
+      <div>
+        <div class="sh-field-label">Agent</div>
         <select class="h23-chat-agent-select" id="chat-agent-select">
-          <option>Loading...</option>
+          <option>Loading…</option>
         </select>
+      </div>
+      <div>
+        <div class="sh-field-label">Model</div>
         <select class="h23-chat-model-select" id="chat-model-select">
           <option>model</option>
         </select>
-        <div class="h23-chat-actions" style="margin-left:auto;">
-          <button class="h23-chat-expand-btn" onclick="newConversation()" title="New conversation">+</button>
-          <button class="h23-chat-expand-btn" onclick="toggleConversationList()" title="History">&#9776;</button>
-        </div>
       </div>
-      <a href="/home23" class="standalone-back">&larr; Dashboard</a>
-    </div>
-    <div class="standalone-body" style="position:relative;">
-      <div class="h23-chat-conv-panel" id="chat-conv-panel">
-        <div style="padding:10px 14px;border-bottom:1px solid var(--glass-border);display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">History</span>
-          <button class="h23-chat-expand-btn" onclick="toggleConversationList()" title="Close" style="width:24px;height:24px;font-size:12px;">&#10005;</button>
-        </div>
-        <div class="h23-chat-conv-list" id="chat-conv-list"></div>
-      </div>
-      <div class="h23-chat-messages" id="chat-messages">
-        <div class="h23-chat-empty">Loading...</div>
-      </div>
-      <div class="h23-chat-input-area" id="chat-input-area">
-        <textarea class="h23-chat-input" id="chat-input" placeholder="Message your agent..." rows="1"></textarea>
-        <button class="h23-chat-send-btn" id="chat-send-btn">&#9654;</button>
-      </div>
+      <button class="sh-sheet-action" id="sh-sheet-new">&#43;&nbsp; New conversation</button>
+      <a class="sh-sheet-action" href="/home23" style="text-decoration:none;">&larr;&nbsp; Back to Dashboard</a>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
   <script src="/home23-chat.js"></script>
   <script>
+    // ── iOS keyboard handling ──
+    // visualViewport shrinks when the on-screen keyboard appears. Lift the input bar
+    // by the difference so the textarea stays visible above the keyboard.
+    (function setupKeyboardOffset() {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const root = document.documentElement;
+      const update = () => {
+        const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        root.style.setProperty('--sh-kbd-offset', offset + 'px');
+      };
+      vv.addEventListener('resize', update);
+      vv.addEventListener('scroll', update);
+      update();
+    })();
+
+    // ── Drawer (history) ──
+    function openDrawer() {
+      document.getElementById('sh-drawer').classList.add('open');
+      document.getElementById('sh-drawer-backdrop').classList.add('open');
+      document.getElementById('sh-drawer').setAttribute('aria-hidden', 'false');
+      if (typeof loadConversationList === 'function' && typeof chatAgent !== 'undefined' && chatAgent) {
+        loadConversationList(chatAgent.agentName);
+      }
+    }
+    function closeDrawer() {
+      document.getElementById('sh-drawer').classList.remove('open');
+      document.getElementById('sh-drawer-backdrop').classList.remove('open');
+      document.getElementById('sh-drawer').setAttribute('aria-hidden', 'true');
+    }
+
+    // ── Sheet (agent + model) ──
+    function openSheet() {
+      document.getElementById('sh-sheet').classList.add('open');
+      document.getElementById('sh-sheet-backdrop').classList.add('open');
+      document.getElementById('sh-sheet').setAttribute('aria-hidden', 'false');
+    }
+    function closeSheet() {
+      document.getElementById('sh-sheet').classList.remove('open');
+      document.getElementById('sh-sheet-backdrop').classList.remove('open');
+      document.getElementById('sh-sheet').setAttribute('aria-hidden', 'true');
+    }
+
+    // Keep the header title label in sync with the currently selected agent + model
+    function refreshTitle() {
+      const agentSel = document.getElementById('chat-agent-select');
+      const modelSel = document.getElementById('chat-model-select');
+      const nameEl = document.getElementById('sh-title-label');
+      const subEl = document.getElementById('sh-title-sub');
+      if (!nameEl || !subEl) return;
+      const agentText = agentSel && agentSel.selectedOptions[0]
+        ? agentSel.selectedOptions[0].textContent
+        : '';
+      const modelText = modelSel && modelSel.value ? modelSel.value : '';
+      if (agentText) nameEl.textContent = agentText;
+      subEl.innerHTML = (modelText || 'tap to change') +
+        '<span class="sh-title-caret">&#9662;</span>';
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       initChat('standalone');
+
+      // Header actions
+      document.getElementById('sh-menu-btn').addEventListener('click', openDrawer);
+      document.getElementById('sh-new-btn').addEventListener('click', () => newConversation());
+      document.getElementById('sh-title').addEventListener('click', openSheet);
+      document.getElementById('sh-title').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet(); }
+      });
+
+      // Drawer dismiss
+      document.getElementById('sh-drawer-backdrop').addEventListener('click', closeDrawer);
+      document.getElementById('sh-drawer-close').addEventListener('click', closeDrawer);
+      document.getElementById('sh-drawer-new').addEventListener('click', () => {
+        newConversation();
+        closeDrawer();
+      });
+      // Close drawer when a conversation is tapped (the onclick handler already swaps)
+      document.getElementById('chat-conv-list').addEventListener('click', (e) => {
+        if (e.target.closest('.h23-chat-conv-item')) closeDrawer();
+      });
+
+      // Sheet dismiss
+      document.getElementById('sh-sheet-backdrop').addEventListener('click', closeSheet);
+      document.getElementById('sh-sheet-new').addEventListener('click', () => {
+        newConversation();
+        closeSheet();
+      });
+      // When agent/model change inside the sheet, refresh the header label and close
+      document.getElementById('chat-agent-select').addEventListener('change', () => {
+        refreshTitle();
+        setTimeout(closeSheet, 120);
+      });
+      document.getElementById('chat-model-select').addEventListener('change', () => {
+        refreshTitle();
+      });
+
+      // Poll briefly after init so the header picks up the loaded agent/model
+      const syncTimer = setInterval(refreshTitle, 400);
+      setTimeout(() => clearInterval(syncTimer), 4000);
+
+      // Particles — keep on all sizes per preference
       if (typeof particlesJS !== 'undefined') {
         particlesJS('particles-js', {
           particles: {
