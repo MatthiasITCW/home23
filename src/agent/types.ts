@@ -94,7 +94,8 @@ export type AgentEvent =
   | { type: 'tool_result'; tool: string; result: string; success: boolean }
   | { type: 'response_chunk'; chunk: string }
   | { type: 'media'; mediaType: string; path: string; caption?: string }
-  | { type: 'subagent_result'; task: string; result: string };
+  | { type: 'subagent_result'; task: string; result: string }
+  | { type: 'cache'; read: number; write: number; input: number; output: number };
 
 export type AgentEventCallback = (event: AgentEvent) => void;
 

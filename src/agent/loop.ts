@@ -477,7 +477,11 @@ export class AgentLoop {
       }
 
       // Get system prompt — provider-aware (overlay + voice + core)
-      let rawSystemPrompt = this.contextManager.getSystemPrompt(this.provider);
+      // Static identity portion — stable across calls, cacheable long-term.
+      // Dynamic additions (situational awareness, COSMO state, recovery notes)
+      // are kept separate so the static prefix hits cache on every call.
+      const staticSystemPrompt = this.contextManager.getSystemPrompt(this.provider);
+      let rawSystemPrompt = staticSystemPrompt;
 
       // ── Situational Awareness: Context Assembly (Step 20) ──
       // Replaces: hardcoded evobrew/cosmo checks + semanticRecall
@@ -555,12 +559,41 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
         }
       }
 
-      const systemPrompt = this.isOAuth
-        ? [
-            getClaudeCodeSystemPrompt(),
-            { type: 'text' as const, text: rawSystemPrompt },
-          ]
-        : rawSystemPrompt;
+      // Build system prompt with multi-block caching strategy.
+      //
+      // Goal: maximize cache hits across calls. Cache is prefix-match, so we put
+      // cache_control at the boundary between static (stable across calls) and
+      // dynamic (varies per call) content. Every call that shares the static prefix
+      // gets a cache hit on that prefix even though the dynamic tail differs.
+      //
+      // Block layout (non-OAuth, supported providers):
+      //   [0] static identity (CLAUDE.md, COZ instructions, MCP tools)  ← cache_control
+      //   [1] dynamic tail    (situational awareness, COSMO state, recovery)  no cache_control
+      //
+      // For OAuth (Claude via sk-ant-oat*): keep Claude Code stub + full real prompt
+      // as two blocks (stub already has cache_control via getClaudeCodeSystemPrompt).
+      const supportsCacheControl = this.provider === 'anthropic' || this.provider === 'minimax';
+      const dynamicTail = rawSystemPrompt.length > staticSystemPrompt.length
+        ? rawSystemPrompt.slice(staticSystemPrompt.length)
+        : '';
+      const systemPrompt: string | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> =
+        this.isOAuth
+          ? [
+              getClaudeCodeSystemPrompt(),
+              { type: 'text' as const, text: rawSystemPrompt },
+            ]
+          : (supportsCacheControl && staticSystemPrompt.length >= 1024
+              ? [
+                  {
+                    type: 'text' as const,
+                    text: staticSystemPrompt,
+                    cache_control: { type: 'ephemeral' as const },
+                  },
+                  ...(dynamicTail
+                    ? [{ type: 'text' as const, text: dynamicTail }]
+                    : []),
+                ]
+              : rawSystemPrompt);
 
       // Build messages for Anthropic API
       const messages = truncated.map(m => ({
@@ -1330,7 +1363,11 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
 
         let response: Anthropic.Message;
         try {
-          response = await this.client.messages.create(
+          // Streaming call: emit text/thinking deltas to onEvent as they arrive,
+          // then resolve the full Message at the end for tool-loop processing.
+          // SDK: messages.stream() returns an iterable of server-sent events plus
+          // a finalMessage() method that yields the fully-accumulated Message.
+          const stream = this.client.messages.stream(
             {
               model: this.model,
               max_tokens: this.maxTokens,
@@ -1341,6 +1378,24 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
             },
             { signal: ac.signal },
           );
+
+          for await (const event of stream) {
+            if (event.type === 'content_block_delta' && onEvent) {
+              const delta = event.delta as
+                | { type: 'text_delta'; text: string }
+                | { type: 'thinking_delta'; thinking: string }
+                | { type: 'input_json_delta'; partial_json: string };
+              if (delta.type === 'text_delta') {
+                onEvent({ type: 'response_chunk', chunk: delta.text });
+              } else if (delta.type === 'thinking_delta') {
+                onEvent({ type: 'thinking', content: delta.thinking });
+              }
+              // input_json_delta accumulates tool-call arguments; surface the
+              // completed tool call at content_block_stop via finalMessage below.
+            }
+          }
+
+          response = await stream.finalMessage();
         } catch (err) {
           // If aborted by /stop, exit gracefully instead of throwing
           if (ac.signal.aborted) {
@@ -1439,10 +1494,19 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
           continue;
         }
 
-        // ── No tool_use blocks — extract text response ──
+        // ── Cache activity — known only after stream completes ──
+        // Text/thinking deltas have already been streamed to onEvent above;
+        // this reports token accounting from the final message usage block.
+        const usage = response.usage as { cache_read_input_tokens?: number; cache_creation_input_tokens?: number; input_tokens?: number; output_tokens?: number } | undefined;
+        const cacheRead = usage?.cache_read_input_tokens ?? 0;
+        const cacheWrite = usage?.cache_creation_input_tokens ?? 0;
+        if ((cacheRead > 0 || cacheWrite > 0) && onEvent) {
+          onEvent({ type: 'cache', read: cacheRead, write: cacheWrite, input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 });
+        }
+
+        // ── Assemble final text (already streamed; this is for history storage) ──
         const textBlocks = response.content.filter(b => b.type === 'text');
         const finalText = textBlocks.map(b => (b as { text: string }).text).join('\n');
-        if (onEvent && finalText) onEvent({ type: 'response_chunk', chunk: finalText });
 
         if (response.stop_reason === 'end_turn' || response.stop_reason === 'stop_sequence' || finalText) {
           const assistantMsg: StoredMessage = { role: 'assistant', content: finalText || '(no response)' };

@@ -389,6 +389,11 @@ async function sendMessage(source) {
     const decoder = new TextDecoder();
     let currentResponse = '';
     let responseEl = null;
+    // Streaming thinking accumulator — deltas from the agent arrive as multiple
+    // events, accumulate into a single block until something else (tool or text)
+    // fires and we start a new block.
+    let currentThinking = '';
+    let thinkingEl = null;
     let buffer = '';
 
     while (true) {
@@ -408,6 +413,10 @@ async function sendMessage(source) {
         try { event = JSON.parse(raw); } catch { continue; }
 
         if (event.type === 'text' || event.type === 'response_chunk') {
+          // Starting/continuing a response block — close out any active thinking block
+          thinkingEl = null;
+          currentThinking = '';
+
           currentResponse += event.text || event.chunk || '';
           if (!responseEl) {
             responseEl = appendMessage('assistant', currentResponse, containerId);
@@ -417,9 +426,25 @@ async function sendMessage(source) {
           }
           scrollContainer(containerId);
         } else if (event.type === 'thinking') {
-          appendThinking(event.content || event.message || '', containerId);
+          // Starting/continuing a thinking block — close out any active response
+          responseEl = null;
+          currentResponse = '';
+
+          currentThinking += event.content || event.message || '';
+          if (!thinkingEl) {
+            thinkingEl = appendThinking(currentThinking, containerId);
+          } else {
+            thinkingEl.textContent = currentThinking;
+            scheduleChatPersist();
+          }
           scrollContainer(containerId);
         } else if (event.type === 'tool_start') {
+          // Tool call begins — close any active blocks
+          thinkingEl = null;
+          currentThinking = '';
+          responseEl = null;
+          currentResponse = '';
+
           appendToolCard(event.tool || event.name, event.args, 'running', containerId);
           scrollContainer(containerId);
         } else if (event.type === 'tool_complete' || event.type === 'tool_result') {
@@ -556,12 +581,13 @@ function appendMessage(role, content, containerId) {
 
 function appendThinking(text, containerId) {
   const container = document.getElementById(containerId || 'chat-messages');
-  if (!container) return;
+  if (!container) return null;
   const div = document.createElement('div');
   div.className = 'h23-chat-thinking';
   div.textContent = text;
   container.appendChild(div);
   scheduleChatPersist();
+  return div;
 }
 
 function appendToolCard(name, args, status, containerId) {

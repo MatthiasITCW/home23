@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.1 (2026-04-13)
+
+### MiniMax-M2.7 integration pass
+- Streaming: harness now uses `messages.stream()` instead of `messages.create()`.
+  Text and interleaved thinking deltas arrive in the dashboard chat as MiniMax
+  generates them — TTFT drops from 5–15s to ~500ms. Tool loop semantics
+  preserved via `stream.finalMessage()`.
+- Dashboard chat accumulates thinking deltas into a single rendered block
+  instead of spawning one `<div>` per delta event
+- Cache hit-rate improved by raising engine-side threshold from 1024 → 4096
+  chars. Engine has many small per-call prompts that would write without ever
+  being re-read — writes cost 1.25× base, so net-negative without hits. The
+  harness identity prefix (~11k tokens) still caches aggressively.
+- `AgentEvent` type extended with `cache` variant — dashboard surfaces token
+  read/write economics per turn.
+
 ## 0.3.0 (2026-04-13)
 
 ### Cognitive Evidence Schema (Step 23)

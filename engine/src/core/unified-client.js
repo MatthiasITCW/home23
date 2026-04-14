@@ -774,19 +774,20 @@ class UnifiedClient extends GPT5Client {
   }
 
   async generateAnthropicCompatible(client, providerName, assignment, options) {
-    
+
     const {
       instructions = '',
       messages = [],
       maxTokens = 4096,
       temperature = 1.0,
       topP = 1.0,
-      topK = 5
+      topK = 5,
+      tools = []
     } = options;
-    
+
     // Anthropic requires max_tokens - use default if not provided
     const finalMaxTokens = maxTokens || 4096;
-    
+
     const payload = {
       model: assignment.model,
       messages: messages, // Use messages as-is
@@ -795,38 +796,106 @@ class UnifiedClient extends GPT5Client {
       top_p: topP,
       top_k: topK
     };
-    
-    // CRITICAL: Anthropic needs system prompt as separate parameter
+
+    // System prompt with ephemeral cache breakpoint for large prompts.
+    // MiniMax + Anthropic both support cache_control: ephemeral (5-min TTL,
+    // auto-refreshed on hits). Cached reads cost ~0.1× base, writes cost 1.25×.
+    // Net savings require hit rate > ~11% — so we only cache prompts large
+    // enough that a single hit pays back the write. The engine has many
+    // unique per-call prompts (coordinator phases, scorers, categorizers) that
+    // would write without ever being re-read at a 1024-char threshold.
+    //
+    // 4096 chars (~1000 tokens) covers the few genuinely stable large prompts
+    // (identity-heavy system messages) while skipping per-call noise.
     if (instructions && instructions.trim().length > 0) {
-      payload.system = instructions.trim();
+      const sys = instructions.trim();
+      if (sys.length >= 4096) {
+        payload.system = [{
+          type: 'text',
+          text: sys,
+          cache_control: { type: 'ephemeral' }
+        }];
+      } else {
+        payload.system = sys;
+      }
     }
-    
-    this.logger?.debug('Calling Anthropic Claude', {
+
+    // Tool forwarding — MiniMax-M2.7 and Claude both accept Anthropic-format tools:
+    //   { name, description, input_schema }
+    // Callers may pass OpenAI-format tools: { type: 'function', function: {...} }
+    // Skip built-in tools that don't exist in the Anthropic API (web_search, etc.)
+    const anthropicTools = this._convertToolsToAnthropic(tools);
+    if (anthropicTools.length > 0) {
+      payload.tools = anthropicTools;
+    }
+
+    this.logger?.debug('Calling Anthropic-compatible API', {
       provider: providerName,
       model: assignment.model,
       maxTokens: finalMaxTokens,
       hasSystem: Boolean(payload.system),
+      systemCached: Array.isArray(payload.system),
+      toolCount: anthropicTools.length,
       messageCount: messages.length
     });
-    
-    // Call Anthropic
+
+    // Call the API
     const response = await client.messages.create(payload);
-    
-    // Extract content from content array
-    const content = response.content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('\n');
-    
+
+    // Extract all block types. MiniMax-M2.7 and Claude can interleave:
+    //   - text blocks (normal response content)
+    //   - thinking blocks (interleaved reasoning — M2.7 returns this before tool calls)
+    //   - tool_use blocks (structured function calls)
+    const textParts = [];
+    const thinkingParts = [];
+    const toolCalls = [];
+
+    for (const block of (response.content || [])) {
+      if (block.type === 'text') {
+        textParts.push(block.text);
+      } else if (block.type === 'thinking') {
+        thinkingParts.push(block.thinking);
+      } else if (block.type === 'tool_use') {
+        toolCalls.push({
+          id: block.id,
+          name: block.name,
+          arguments: block.input
+        });
+      }
+    }
+
+    const content = textParts.join('\n');
+    const reasoning = thinkingParts.length > 0 ? thinkingParts.join('\n\n') : null;
+
     this.logger?.debug(`${providerName} response received`, {
       model: response.model,
       stopReason: response.stop_reason,
-      contentLength: content.length
+      contentLength: content.length,
+      reasoningLength: reasoning?.length || 0,
+      toolCallCount: toolCalls.length,
+      cacheRead: response.usage?.cache_read_input_tokens || 0,
+      cacheWrite: response.usage?.cache_creation_input_tokens || 0
     });
-    
+
+    // Surface cache activity at info level — cache hits are operationally
+    // significant (cost savings + shorter TTFB) and cache writes indicate
+    // the breakpoint is working
+    const cacheRead = response.usage?.cache_read_input_tokens || 0;
+    const cacheWrite = response.usage?.cache_creation_input_tokens || 0;
+    if (cacheRead > 0 || cacheWrite > 0) {
+      this.logger?.info?.(`${providerName} cache activity`, {
+        model: response.model,
+        cacheReadTokens: cacheRead,
+        cacheWriteTokens: cacheWrite,
+        inputTokens: response.usage?.input_tokens || 0,
+        outputTokens: response.usage?.output_tokens || 0
+      });
+    }
+
     return {
       content: content,
-      reasoning: null, // Claude doesn't separate reasoning
+      reasoning: reasoning, // Interleaved thinking blocks (M2.7 / Claude extended thinking)
+      toolCalls: toolCalls, // Structured tool_use blocks for agent loops
       responseId: response.id,
       model: response.model,
       usage: response.usage,
@@ -834,9 +903,53 @@ class UnifiedClient extends GPT5Client {
       errorType: null,
       metadata: {
         stopReason: response.stop_reason,
-        stopSequence: response.stop_sequence
+        stopSequence: response.stop_sequence,
+        cacheReadTokens: response.usage?.cache_read_input_tokens || 0,
+        cacheWriteTokens: response.usage?.cache_creation_input_tokens || 0
       }
     };
+  }
+
+  /**
+   * Convert tool definitions to Anthropic's expected shape.
+   * Accepts either Anthropic-format ({name, input_schema}) or
+   * OpenAI-format ({type: 'function', function: {name, parameters}}).
+   * Drops unsupported built-in tools (web_search, file_search, etc.) that
+   * the Anthropic API doesn't accept.
+   */
+  _convertToolsToAnthropic(tools) {
+    if (!Array.isArray(tools) || tools.length === 0) return [];
+    const result = [];
+    for (const tool of tools) {
+      // Skip OpenAI-style built-ins not supported by Anthropic-compatible endpoints
+      if (tool.type === 'web_search' || tool.type === 'file_search' ||
+          tool.type === 'code_interpreter' || tool.type === 'retrieval') {
+        continue;
+      }
+      // Already Anthropic-format
+      if (tool.name && tool.input_schema) {
+        result.push({
+          name: tool.name,
+          description: tool.description || '',
+          input_schema: tool.input_schema
+        });
+        continue;
+      }
+      // OpenAI function-format: { type: 'function', function: {name, description, parameters} }
+      if (tool.type === 'function' && tool.function) {
+        result.push({
+          name: tool.function.name,
+          description: tool.function.description || '',
+          input_schema: tool.function.parameters || { type: 'object', properties: {} }
+        });
+        continue;
+      }
+      // Unknown shape — log and skip
+      this.logger?.warn?.('Skipping tool with unrecognized shape', {
+        keys: Object.keys(tool || {}).join(',')
+      });
+    }
+    return result;
   }
 
   /**
