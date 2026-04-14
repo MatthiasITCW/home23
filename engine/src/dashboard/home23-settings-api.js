@@ -676,6 +676,126 @@ function createSettingsRouter(home23Root) {
     res.json({ ok: true });
   });
 
+  // ── Model Assignments (per-slot cognitive routing) ──
+
+  function resolveTargetAgent() {
+    const primary = getPrimaryAgent();
+    if (primary) return primary;
+    const agents = discoverAgents();
+    return agents[0] || null;
+  }
+
+  router.get('/model-assignments', (req, res) => {
+    const homeConfig = loadYaml(path.join(home23Root, 'config', 'home.yaml'));
+    const baseEnginePath = path.join(home23Root, 'configs', 'base-engine.yaml');
+    const baseEngine = loadYaml(baseEnginePath);
+    const baseAssignments = baseEngine.modelAssignments || {};
+
+    const primary = resolveTargetAgent();
+    let instanceAssignments = {};
+    if (primary) {
+      try {
+        const agentConfig = loadYaml(path.join(home23Root, 'instances', primary, 'config.yaml'));
+        instanceAssignments = agentConfig.modelAssignments || {};
+      } catch { /* ok */ }
+    }
+
+    // Effective assignments = base merged with instance overrides
+    const effective = {};
+    for (const [key, entry] of Object.entries(baseAssignments)) {
+      effective[key] = {
+        provider: entry?.provider || '',
+        model: entry?.model || '',
+        fallback: Array.isArray(entry?.fallback)
+          ? entry.fallback.map(f => ({ provider: f.provider, model: f.model }))
+          : [],
+      };
+    }
+    for (const [key, entry] of Object.entries(instanceAssignments)) {
+      if (!entry || typeof entry !== 'object') continue;
+      if (!effective[key]) effective[key] = { provider: '', model: '', fallback: [] };
+      if (entry.provider) effective[key].provider = entry.provider;
+      if (entry.model) effective[key].model = entry.model;
+      if (Array.isArray(entry.fallback)) {
+        effective[key].fallback = entry.fallback.map(f => ({ provider: f.provider, model: f.model }));
+      }
+    }
+
+    const providers = Object.fromEntries(
+      Object.entries(homeConfig.providers || {}).map(([name, cfg]) => [name, cfg.defaultModels || []])
+    );
+
+    res.json({
+      agent: primary,
+      effective,
+      instanceOverrides: instanceAssignments,
+      base: baseAssignments,
+      providers,
+    });
+  });
+
+  router.put('/model-assignments', (req, res) => {
+    const { assignments, agent } = req.body || {};
+    if (!assignments || typeof assignments !== 'object') {
+      return res.status(400).json({ error: 'assignments object required' });
+    }
+
+    const targetAgent = agent || resolveTargetAgent();
+    if (!targetAgent) {
+      return res.status(400).json({ error: 'No target agent (and no primary configured)' });
+    }
+
+    const configPath = path.join(home23Root, 'instances', targetAgent, 'config.yaml');
+    if (!fs.existsSync(configPath)) {
+      return res.status(404).json({ error: `Agent "${targetAgent}" config not found` });
+    }
+
+    const agentConfig = loadYaml(configPath);
+
+    // Only persist keys that actually differ from base — keeps config clean
+    const baseEngine = loadYaml(path.join(home23Root, 'configs', 'base-engine.yaml'));
+    const base = baseEngine.modelAssignments || {};
+
+    const overrides = {};
+    for (const [key, entry] of Object.entries(assignments)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const provider = (entry.provider || '').trim();
+      const model = (entry.model || '').trim();
+      if (!provider || !model) continue;
+      const fallback = Array.isArray(entry.fallback)
+        ? entry.fallback
+            .filter(f => f && f.provider && f.model)
+            .map(f => ({ provider: String(f.provider).trim(), model: String(f.model).trim() }))
+        : [];
+
+      const baseEntry = base[key];
+      const baseFallback = Array.isArray(baseEntry?.fallback) ? baseEntry.fallback : [];
+      const sameProviderModel = baseEntry && baseEntry.provider === provider && baseEntry.model === model;
+      const sameFallback = baseFallback.length === fallback.length
+        && baseFallback.every((f, i) => f.provider === fallback[i].provider && f.model === fallback[i].model);
+
+      if (sameProviderModel && sameFallback) {
+        // Matches base exactly — do not persist as an override
+        continue;
+      }
+
+      const out = { provider, model };
+      if (fallback.length) out.fallback = fallback;
+      overrides[key] = out;
+    }
+
+    agentConfig.modelAssignments = overrides;
+    saveYaml(configPath, agentConfig);
+
+    // Restart engine so new assignments take effect
+    try {
+      const { execSync } = require('child_process');
+      execSync(`pm2 restart home23-${targetAgent}`, { stdio: 'pipe', timeout: 10000 });
+    } catch { /* not running or pm2 unavailable — non-fatal */ }
+
+    res.json({ ok: true, agent: targetAgent, overrideCount: Object.keys(overrides).length });
+  });
+
   router.get('/system', (req, res) => {
     const homeConfig = loadYaml(path.join(home23Root, 'config', 'home.yaml'));
     res.json({

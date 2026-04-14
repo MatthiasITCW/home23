@@ -94,6 +94,52 @@ class ConfigLoader {
   }
 
   /**
+   * Apply per-slot modelAssignments overrides from the instance config. These
+   * take precedence over the blunt `engine.thought` shortcut and let the user
+   * pick a provider+model+fallback chain for each individual assignment key
+   * (e.g. quantumReasoner.branches, agents.research, coordinator).
+   *
+   * Instance config shape:
+   *   modelAssignments:
+   *     quantumReasoner.branches:
+   *       provider: minimax
+   *       model: MiniMax-M2.7-highspeed
+   *       fallback:
+   *         - provider: ollama-cloud
+   *           model: nemotron-3-nano:30b
+   */
+  applyInstanceModelAssignments(instanceConfig) {
+    const overrides = instanceConfig && instanceConfig.modelAssignments;
+    if (!overrides || typeof overrides !== 'object') return;
+    if (!this.config.modelAssignments || typeof this.config.modelAssignments !== 'object') {
+      this.config.modelAssignments = {};
+    }
+
+    const applied = [];
+    for (const [key, entry] of Object.entries(overrides)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const current = this.config.modelAssignments[key] || {};
+      const merged = {
+        ...current,
+        provider: entry.provider || current.provider,
+        model: entry.model || current.model,
+      };
+      if (Array.isArray(entry.fallback)) {
+        merged.fallback = entry.fallback
+          .filter(f => f && typeof f === 'object' && f.provider && f.model)
+          .map(f => ({ provider: f.provider, model: f.model }));
+      }
+      this.config.modelAssignments[key] = merged;
+      applied.push(`${key} -> ${merged.provider}/${merged.model}${merged.fallback?.length ? ` (+${merged.fallback.length} fallback)` : ''}`);
+    }
+
+    if (applied.length) {
+      const prior = this.config._instanceAssignmentsApplied || [];
+      this.config._instanceAssignmentsApplied = prior.concat(applied);
+    }
+  }
+
+  /**
    * Load configuration from YAML file
    */
   load() {
@@ -109,6 +155,9 @@ class ConfigLoader {
         try {
           const instanceConfig = yaml.load(fs.readFileSync(instancePath, 'utf8')) || {};
           this.applyInstanceEngineOverrides(instanceConfig);
+          // Per-slot overrides run AFTER the blunt `engine.thought` shortcut so
+          // specific assignments win over the sweep.
+          this.applyInstanceModelAssignments(instanceConfig);
         } catch (_instanceErr) {
           // Instance config is best-effort — a malformed file should not break startup.
         }

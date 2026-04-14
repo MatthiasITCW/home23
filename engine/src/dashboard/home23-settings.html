@@ -326,6 +326,17 @@
       </div>
 
       <div class="h23s-section">
+        <h3 class="h23s-section-title">Cognitive Assignments</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">Per-slot control over which model every part of the engine uses. Each row is one place the engine calls out to a model. Set a provider + model, and optionally chain fallbacks that kick in on error or rate-limit. Saves to the primary agent's instance config and restarts its engine.</p>
+        <div id="model-assignments-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+        <div class="h23s-actions" style="border-top:none;padding-top:8px;">
+          <button class="h23s-btn-primary" id="btn-save-assignments">Save Assignments</button>
+          <button class="h23s-btn-secondary" id="btn-reset-assignments" style="margin-left:8px;">Reset All to Base Defaults</button>
+          <span class="h23s-save-status" id="assignments-status"></span>
+        </div>
+      </div>
+
+      <div class="h23s-section">
         <h3 class="h23s-section-title">Available Models per Provider</h3>
         <p class="h23s-panel-desc" style="margin-top:0;">These are the models shown in evobrew's dropdown. Add or remove to control what's available.</p>
         <div id="provider-models-list"></div>

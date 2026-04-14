@@ -2757,12 +2757,334 @@ function setupOnboardingHandlers() {
   document.getElementById('ob-launch')?.addEventListener('click', obLaunchAgent);
 }
 
+// ── Cognitive Assignments (per-slot modelAssignments editor) ──
+
+let assignmentsData = null;
+
+// What each slot actually does, and what to optimize for when picking a model.
+// Keep descriptions short (1 line) and guidance pragmatic.
+const SLOT_META = {
+  'default': {
+    label: 'Default (catch-all)',
+    desc: 'Used by any engine call that does not specify a component/purpose.',
+    pick: 'Safe, cheap, fast. Treat as a last-resort fallback — most real calls should route to a specific slot.',
+  },
+  'quantumReasoner.branches': {
+    label: 'Cognitive cycle branches',
+    desc: 'The parallel LLM calls inside every cognitive cycle — curiosity, analyst, critic, proposal roles run here (5–10 branches at once).',
+    pick: 'High-volume, bursty. Favor FAST + cheap models that handle concurrency without rate-limit errors. This is 60–80% of engine tokens.',
+  },
+  'quantumReasoner.singleReasoning': {
+    label: 'Dreams + single-shot fallback',
+    desc: 'Deep-reasoning path used for dreams and when all parallel branches fail. Lower volume, longer outputs.',
+    pick: 'Favor QUALITY over speed. A strong reasoning model (Opus, GPT-5.4, MiniMax-M2.7) makes dreams worth reading.',
+  },
+  'agents.research': {
+    label: 'Research agent — primary',
+    desc: 'Research sub-agents launched via the research_* tools. Initial investigation pass that produces findings.',
+    pick: 'Favor accuracy + grounding. Models with web search or strong knowledge (grok-4, claude-opus, gpt-5.4).',
+  },
+  'agents.research-synthesis': {
+    label: 'Research synthesis',
+    desc: 'Final synthesis step that turns raw research findings into a coherent brief.',
+    pick: 'Favor long context + writing quality. Claude-opus or GPT-5.4 shine here.',
+  },
+  'agents.research-fallback': {
+    label: 'Research agent — fallback',
+    desc: 'Cheaper fallback when the primary research agent errors or rate-limits.',
+    pick: 'Cheap and reliable. Does not need to be strong — just reachable.',
+  },
+  'agents.analytical': {
+    label: 'Analytical agent',
+    desc: 'Compares, contrasts, and evaluates evidence across brain nodes.',
+    pick: 'Balanced reasoning model. MiniMax-M2.7, nemotron-super, claude-sonnet.',
+  },
+  'agents.discovery': {
+    label: 'Discovery agent',
+    desc: 'Finds unexpected connections or latent patterns across memory nodes.',
+    pick: 'Creative reasoning. Grok, claude-opus, MiniMax-M2.7.',
+  },
+  'agents.clustering': {
+    label: 'Clustering agent',
+    desc: 'Groups memory nodes into semantic clusters. Structural work.',
+    pick: 'Cheap is fine. Small models work.',
+  },
+  'agents.synthesis': {
+    label: 'Synthesis agent',
+    desc: 'Intelligence-tab curated insights + memory consolidation. Writes the long-form summaries you actually read.',
+    pick: 'Favor QUALITY. This is the output you see. Claude-opus / GPT-5.4 / MiniMax-M2.7.',
+  },
+  'agents.quality_assurance': {
+    label: 'QA agent',
+    desc: 'Verifies agent outputs against source material. Catches hallucinations.',
+    pick: 'Cheap + literal. Small fast models are ideal (they just check, not invent).',
+  },
+  'agents': {
+    label: 'Agents — generic',
+    desc: 'Catch-all for any agent call without a specific purpose label.',
+    pick: 'Match to your most common agent workload.',
+  },
+  'coordinator': {
+    label: 'Coordinator',
+    desc: 'Reviews recent cycles every N rounds, provides strategic oversight, decides when the brain should change direction.',
+    pick: 'Favor QUALITY. A weak coordinator produces weak strategy. Claude-opus / GPT-5.4.',
+  },
+  'goalCurator': {
+    label: 'Goal curator',
+    desc: 'Prunes active goals — keeps, defers, or drops them based on progress and relevance.',
+    pick: 'Balanced. Needs judgment but not deep reasoning.',
+  },
+  'intrinsicGoals': {
+    label: 'Intrinsic goal generator',
+    desc: 'Proposes new goals the agent should pursue on its own initiative.',
+    pick: 'Creative reasoning. A dull model here gives a dull agent.',
+  },
+};
+
+function assignmentGroup(key) {
+  if (key.startsWith('quantumReasoner')) return 'Cognition — Quantum Reasoner';
+  if (key.startsWith('agents.')) return 'Agents';
+  if (key === 'agents') return 'Agents';
+  if (key.startsWith('coordinator')) return 'Coordination';
+  if (key === 'goalCurator' || key === 'intrinsicGoals') return 'Goals';
+  if (key === 'default') return 'Default';
+  return 'Other';
+}
+
+function providerModelOptions(providers, selectedProvider, selectedModel) {
+  const provOpts = Object.keys(providers || {})
+    .map(p => `<option value="${p}" ${p === selectedProvider ? 'selected' : ''}>${PROVIDER_DISPLAY[p] || p}</option>`)
+    .join('');
+  const models = providers?.[selectedProvider] || [];
+  const modelOpts = models
+    .map(m => `<option value="${m}" ${m === selectedModel ? 'selected' : ''}>${m}</option>`)
+    .join('');
+  return { provOpts, modelOpts };
+}
+
+function renderFallbackRow(providers, item, rowIdx, fbIdx) {
+  const { provOpts, modelOpts } = providerModelOptions(providers, item.provider, item.model);
+  return `
+    <div class="h23s-assign-fb" data-fb-idx="${fbIdx}" style="display:flex;gap:6px;align-items:center;margin-top:4px;padding-left:20px;">
+      <span style="font-size:11px;color:var(--text-muted);min-width:60px;">Fallback ${fbIdx + 1}</span>
+      <select data-assign-fb-provider style="flex:0 0 140px;font-size:12px;">${provOpts}</select>
+      <select data-assign-fb-model style="flex:1;font-size:12px;">${modelOpts}</select>
+      <button class="h23s-btn-danger" data-assign-fb-remove style="padding:3px 8px;font-size:11px;">x</button>
+    </div>
+  `;
+}
+
+function renderAssignmentRow(key, entry, providers, rowIdx) {
+  const { provOpts, modelOpts } = providerModelOptions(providers, entry.provider, entry.model);
+  const fallbackHtml = (entry.fallback || []).map((f, i) => renderFallbackRow(providers, f, rowIdx, i)).join('');
+  const meta = SLOT_META[key] || { label: key, desc: '', pick: '' };
+  const infoBody = meta.desc || meta.pick
+    ? `
+      <div class="h23s-assign-info" data-assign-info style="display:none;font-size:12px;color:var(--text-secondary);line-height:1.45;padding:8px 10px;margin:6px 0;background:rgba(255,255,255,0.03);border-left:2px solid var(--accent-blue);border-radius:0 6px 6px 0;">
+        ${meta.desc ? `<div style="margin-bottom:4px;">${escapeSlotText(meta.desc)}</div>` : ''}
+        ${meta.pick ? `<div style="color:var(--text-muted);"><strong style="color:var(--text-primary);">Pick:</strong> ${escapeSlotText(meta.pick)}</div>` : ''}
+      </div>`
+    : '';
+  return `
+    <div class="h23s-assign-row" data-assign-key="${key}" data-assign-idx="${rowIdx}" style="background:rgba(255,255,255,0.02);border:1px solid var(--glass-border);border-radius:8px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;color:var(--text-primary);font-weight:600;">${escapeSlotText(meta.label)}</div>
+          <code style="font-size:11px;color:var(--text-muted);font-family:'SF Mono','Fira Code',monospace;">${key}</code>
+        </div>
+        <button type="button" class="h23s-btn-secondary" data-assign-info-toggle style="padding:3px 9px;font-size:11px;" title="What this slot does">?</button>
+      </div>
+      ${infoBody}
+      <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+        <span style="font-size:11px;color:var(--text-muted);min-width:60px;">Primary</span>
+        <select data-assign-provider style="flex:0 0 140px;font-size:12px;">${provOpts}</select>
+        <select data-assign-model style="flex:1;font-size:12px;">${modelOpts}</select>
+      </div>
+      <div data-assign-fb-list>${fallbackHtml}</div>
+      <button class="h23s-btn-secondary" data-assign-add-fb style="padding:3px 10px;font-size:11px;margin-top:6px;margin-left:68px;">+ Add Fallback</button>
+    </div>
+  `;
+}
+
+function escapeSlotText(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function loadAssignments() {
+  try {
+    const res = await fetch(`${API}/model-assignments`);
+    assignmentsData = await res.json();
+    renderAssignments(assignmentsData);
+  } catch (err) {
+    console.error('Failed to load model assignments:', err);
+  }
+}
+
+function renderAssignments(data) {
+  const list = document.getElementById('model-assignments-list');
+  if (!list) return;
+  const providers = data.providers || {};
+  const effective = data.effective || {};
+
+  // Group keys for readability
+  const groups = {};
+  for (const key of Object.keys(effective)) {
+    const g = assignmentGroup(key);
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(key);
+  }
+  const groupOrder = ['Cognition — Quantum Reasoner', 'Agents', 'Coordination', 'Goals', 'Default', 'Other'];
+  let rowIdx = 0;
+  const html = groupOrder
+    .filter(g => groups[g])
+    .map(g => {
+      const rows = groups[g].sort().map(key => {
+        const html = renderAssignmentRow(key, effective[key], providers, rowIdx);
+        rowIdx++;
+        return html;
+      }).join('');
+      return `
+        <div class="h23s-assign-group">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);padding:8px 0 4px;">${g}</div>
+          ${rows}
+        </div>
+      `;
+    })
+    .join('');
+  list.innerHTML = html || '<div style="padding:12px;color:var(--text-muted);font-style:italic;">No assignment slots defined in base-engine.yaml</div>';
+
+  // Wire up per-row interactions
+  list.querySelectorAll('.h23s-assign-row').forEach(row => bindAssignmentRow(row, providers));
+}
+
+function bindAssignmentRow(row, providers) {
+  const provSel = row.querySelector('[data-assign-provider]');
+  const modelSel = row.querySelector('[data-assign-model]');
+
+  provSel.addEventListener('change', () => {
+    repopulateModelSelect(modelSel, providers, provSel.value, '');
+  });
+
+  const infoBtn = row.querySelector('[data-assign-info-toggle]');
+  const infoBody = row.querySelector('[data-assign-info]');
+  if (infoBtn && infoBody) {
+    infoBtn.addEventListener('click', () => {
+      const shown = infoBody.style.display !== 'none';
+      infoBody.style.display = shown ? 'none' : 'block';
+    });
+  }
+
+  row.querySelector('[data-assign-add-fb]').addEventListener('click', () => {
+    const list = row.querySelector('[data-assign-fb-list]');
+    const idx = list.querySelectorAll('.h23s-assign-fb').length;
+    const firstProvider = Object.keys(providers)[0] || '';
+    const tpl = document.createElement('div');
+    tpl.innerHTML = renderFallbackRow(providers, { provider: firstProvider, model: (providers[firstProvider] || [])[0] || '' }, 0, idx);
+    const fbRow = tpl.firstElementChild;
+    list.appendChild(fbRow);
+    bindFallbackRow(fbRow, providers);
+  });
+
+  row.querySelectorAll('.h23s-assign-fb').forEach(fb => bindFallbackRow(fb, providers));
+}
+
+function bindFallbackRow(fb, providers) {
+  const provSel = fb.querySelector('[data-assign-fb-provider]');
+  const modelSel = fb.querySelector('[data-assign-fb-model]');
+  provSel.addEventListener('change', () => {
+    repopulateModelSelect(modelSel, providers, provSel.value, '');
+  });
+  fb.querySelector('[data-assign-fb-remove]').addEventListener('click', () => {
+    fb.remove();
+  });
+}
+
+function repopulateModelSelect(selectEl, providers, provName, preferModel) {
+  const models = providers?.[provName] || [];
+  selectEl.innerHTML = models
+    .map(m => `<option value="${m}" ${m === preferModel ? 'selected' : ''}>${m}</option>`)
+    .join('');
+}
+
+function collectAssignments() {
+  const rows = document.querySelectorAll('.h23s-assign-row');
+  const out = {};
+  rows.forEach(row => {
+    const key = row.dataset.assignKey;
+    const provider = row.querySelector('[data-assign-provider]')?.value;
+    const model = row.querySelector('[data-assign-model]')?.value;
+    if (!key || !provider || !model) return;
+    const fallback = [];
+    row.querySelectorAll('.h23s-assign-fb').forEach(fb => {
+      const p = fb.querySelector('[data-assign-fb-provider]')?.value;
+      const m = fb.querySelector('[data-assign-fb-model]')?.value;
+      if (p && m) fallback.push({ provider: p, model: m });
+    });
+    out[key] = { provider, model, fallback };
+  });
+  return out;
+}
+
+async function saveAssignments() {
+  const statusEl = document.getElementById('assignments-status');
+  statusEl.textContent = 'Saving…';
+  statusEl.style.color = '';
+  const assignments = collectAssignments();
+  try {
+    const res = await fetch(`${API}/model-assignments`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignments }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.textContent = `Saved (${data.overrideCount} override${data.overrideCount === 1 ? '' : 's'}). Engine restarting.`;
+      statusEl.style.color = 'var(--accent-green)';
+      setTimeout(() => loadAssignments(), 1500);
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      statusEl.style.color = 'var(--accent-red)';
+    }
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--accent-red)';
+  }
+}
+
+async function resetAssignments() {
+  if (!confirm('Reset all cognitive assignments to the base-engine.yaml defaults? The primary agent will restart.')) return;
+  const statusEl = document.getElementById('assignments-status');
+  statusEl.textContent = 'Resetting…';
+  statusEl.style.color = '';
+  try {
+    const res = await fetch(`${API}/model-assignments`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignments: {} }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.textContent = 'Reset. Engine restarting.';
+      statusEl.style.color = 'var(--accent-green)';
+      setTimeout(() => loadAssignments(), 1500);
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      statusEl.style.color = 'var(--accent-red)';
+    }
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--accent-red)';
+  }
+}
+
 // ── Init ──
 
 async function init() {
   setupSubTabs();
   // Load models first so provider cards can show model counts
   await loadModels();
+  loadAssignments();
   loadProviders();
   loadAgents();
   loadSystem();
@@ -2774,6 +3096,8 @@ async function init() {
   document.getElementById('btn-save-providers').addEventListener('click', saveProviders);
   document.getElementById('btn-create-agent').addEventListener('click', showWizard);
   document.getElementById('btn-save-models').addEventListener('click', saveModels);
+  document.getElementById('btn-save-assignments')?.addEventListener('click', saveAssignments);
+  document.getElementById('btn-reset-assignments')?.addEventListener('click', resetAssignments);
   document.getElementById('btn-save-system').addEventListener('click', saveSystem);
   document.getElementById('btn-install-deps').addEventListener('click', installDeps);
   document.getElementById('btn-build-ts').addEventListener('click', buildTS);
