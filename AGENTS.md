@@ -31,6 +31,16 @@ No pressing priority. The recent major work is shipped and verified. Ask jtr wha
 
 ### Recent completions (most recent first)
 
+#### Done: Evobrew Brain Picker Expansion (2026-04-14)
+
+Home23-managed Evobrew was only exposing 2 brain roots because generated `evobrew/config.json` replaced the broader standalone Evobrew brain directories. Fixed by merging external brain roots from `~/.evobrew/config.json` and compatible config sources back into the Home23-generated config, then expanding the picker UI with readable location labels plus an `All brains` view.
+
+- `cli/lib/evobrew-config.js` — merge standalone/external brain roots into generated Home23 config
+- `evobrew/server/server.js` — expose better root labels/display names in `/api/brains/locations` and `/api/brains/list`
+- `evobrew/public/index.html` — `All brains` view + clearer location chips/meta in picker
+- Verified live after `pm2 restart home23-evobrew`: 10 locations, 328 brains visible, including `Cosmo_MenloPark`, `cosmos.evobrew.com`, `bertha`, and `cosmo_2.3`
+- Commit: `4f017a2` (`fix: expand evobrew brain picker roots`)
+
 #### Done: Step 17 — Feeder Settings Tab (2026-04-10)
 
 Full configuration surface for the document feeder in the dashboard Settings UI: live status, watch paths, exclusion patterns, chunking, compiler model, converter, drag-and-drop drop zone. Backend split: engine-side admin HTTP on port 5001 (via RealtimeServer), dashboard-side upload via multer + proxies for commands. Hot-apply vs restart-required classification in the save response drives a UI banner.
@@ -92,6 +102,7 @@ jtr is the architect. He doesn't write code — he works through AI agents. He's
 - Dashboard: http://localhost:5002/home23
 - Settings (incl. Feeder tab): http://localhost:5002/home23/settings
 - Evobrew: http://localhost:3415 (managed by Home23, config.json gitignored + auto-generated)
+- Evobrew brain picker inherits standalone/external roots in addition to Home23 roots; verified live at 10 locations / 328 brains on 2026-04-14
 - COSMO 2.3: http://localhost:43210
 - Engine: cognitive loops with config-driven sleep/wake (~90s naps), pulse bar on dashboard
 - Ingestion: engine DocumentFeeder processing thousands of files through LLM compiler (minimax-m2.7 default, configurable in Feeder tab)
