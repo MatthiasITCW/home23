@@ -131,6 +131,7 @@ class PulseRemarks {
     else if (notable.kind === 'goal') parts.push(notable.status, normalizeForHash(notable.description || ''));
     else if (notable.kind === 'notification') parts.push(notable.source, normalizeForHash((notable.message || '').slice(0, 120)));
     else if (notable.kind === 'action_request_rejected') parts.push(notable.action, notable.target || '');
+    else if (notable.kind === 'synthesis_complete') parts.push(notable.generatedAt || '');
     else parts.push(JSON.stringify(notable).slice(0, 120));
     return parts.join('::');
   }
@@ -301,6 +302,19 @@ class PulseRemarks {
     snap.sensors = this._lastSensors?.byKey || {};
     snap.sensorList = this._lastSensors?.list || [];
 
+    // Brain synthesis output (intelligence tab) — high-signal reference
+    // material from the periodic synthesis agent. Includes self-understanding
+    // (who Jerry thinks he is + what he's tracking), consolidated insights,
+    // and a generatedAt timestamp that doubles as a synthesis-completion
+    // trigger.
+    snap.brainState = null;
+    try {
+      const bsPath = path.join(brainDir, 'brain-state.json');
+      if (fs.existsSync(bsPath)) {
+        snap.brainState = JSON.parse(fs.readFileSync(bsPath, 'utf-8'));
+      }
+    } catch { /* ok */ }
+
     // Cycle number — latest from thoughts
     snap.cycle = snap.thoughts.length > 0 ? snap.thoughts[snap.thoughts.length - 1].cycle : null;
 
@@ -396,6 +410,23 @@ class PulseRemarks {
       });
     }
 
+    // Synthesis completion: when brain-state.json's generatedAt is fresh,
+    // treat it as a notable trigger (once per synthesis — hash on generatedAt
+    // is added to remarked signals after the remark fires).
+    const bs = snap.brainState;
+    if (bs?.generatedAt) {
+      const genMs = Date.parse(bs.generatedAt);
+      if (genMs && (now - genMs) < windowMs) {
+        notable.push({
+          kind: 'synthesis_complete',
+          generatedAt: bs.generatedAt,
+          model: bs.model,
+          insightCount: Array.isArray(bs.consolidatedInsights) ? bs.consolidatedInsights.length : 0,
+          ts: bs.generatedAt,
+        });
+      }
+    }
+
     // Sensor deltas — compare current to 15 min ago if we had it (for now, just current vital)
     const sensorSummary = [];
     if (snap.sensors?.weather?.outdoor?.temperature != null) {
@@ -450,6 +481,12 @@ class PulseRemarks {
     // Stats card data for tile rotation
     const stats = this.buildStats(snap, filteredNotable, filteredThoughts);
 
+    // Self-understanding (reference material — never feed as content for
+    // remark, only as backdrop). Pulled straight through from synthesis.
+    const su = snap.brainState?.selfUnderstanding || null;
+    const insights = Array.isArray(snap.brainState?.consolidatedInsights)
+      ? snap.brainState.consolidatedInsights : [];
+
     return {
       cycle: snap.cycle,
       ts: snap.ts,
@@ -464,6 +501,13 @@ class PulseRemarks {
         activeDescriptions: (snap.goals?.active || []).slice(0, 3).map(g => (g.description || '').slice(0, 120)),
       },
       stats,
+      selfUnderstanding: su,
+      insights: insights.map(i => ({
+        title: i.title || '',
+        excerpt: (i.excerpt || '').slice(0, 240),
+      })),
+      synthesisAt: snap.brainState?.generatedAt || null,
+      synthesisModel: snap.brainState?.model || null,
     };
   }
 
@@ -541,6 +585,23 @@ class PulseRemarks {
     }
 
     if (snap.cycle) cards.push({ icon: '🌀', label: 'cycle', value: snap.cycle });
+
+    // Consolidated insights from latest synthesis — high-signal cards that
+    // cycle through the tile between remarks. User sees them naturally.
+    const insights = Array.isArray(snap.brainState?.consolidatedInsights)
+      ? snap.brainState.consolidatedInsights : [];
+    for (const i of insights.slice(0, 5)) {
+      if (i.title) cards.push({ icon: '💡', label: 'insight', value: String(i.title).slice(0, 100) });
+    }
+
+    // Self-understanding obsessions — also cycle as their own card type
+    const obs = snap.brainState?.selfUnderstanding?.currentObsessions;
+    if (Array.isArray(obs)) {
+      for (const o of obs.slice(0, 4)) {
+        cards.push({ icon: '🎯', label: 'watching', value: String(o).slice(0, 100) });
+      }
+    }
+
     return cards;
   }
 
@@ -549,6 +610,32 @@ class PulseRemarks {
   buildPrompt(brief) {
     const systemPrompt = this.getSystemPrompt();
     const parts = [];
+
+    // ── Backdrop: self-understanding from latest synthesis (REFERENCE ONLY) ──
+    if (brief.selfUnderstanding) {
+      parts.push('--- BACKDROP (what you currently understand about jtr — reference only, do NOT paraphrase back) ---');
+      const su = brief.selfUnderstanding;
+      if (su.summary) parts.push(`Summary: ${String(su.summary).slice(0, 600)}`);
+      if (Array.isArray(su.currentObsessions) && su.currentObsessions.length) {
+        parts.push('Currently watching:');
+        for (const o of su.currentObsessions.slice(0, 6)) {
+          parts.push(`  • ${String(o).slice(0, 200)}`);
+        }
+      }
+      if (su.relationship) parts.push(`Relationship: ${String(su.relationship).slice(0, 300)}`);
+      if (brief.synthesisAt) parts.push(`(synthesis from ${brief.synthesisAt})`);
+      parts.push('--- end backdrop. Use this as backdrop, not as content. ---');
+      parts.push('');
+    }
+
+    // ── Reference insights from latest synthesis (also backdrop) ──
+    if (brief.insights && brief.insights.length > 0) {
+      parts.push('Recent consolidated insights (reference only):');
+      for (const i of brief.insights.slice(0, 5)) {
+        parts.push(`  💡 ${i.title}`);
+      }
+      parts.push('');
+    }
 
     parts.push(`Brain state · cycle ${brief.cycle ?? '?'}`);
     parts.push(`Nodes: ${brief.brain?.nodes ?? 0} · edges: ${brief.brain?.edges ?? 0}`);
@@ -589,6 +676,8 @@ class PulseRemarks {
           parts.push(`  - [NOTIFY x${n.count || 1}] ${n.source}: ${n.message}`);
         } else if (n.kind === 'action_request_rejected') {
           parts.push(`  - [REQ REJECTED] ${n.action} → ${n.target || '?'} · ${n.status} · ${n.reason || ''}`);
+        } else if (n.kind === 'synthesis_complete') {
+          parts.push(`  - [SYNTHESIS] new synthesis just landed · ${n.insightCount} insights · ${n.model || 'unknown model'}`);
         }
       }
     }
