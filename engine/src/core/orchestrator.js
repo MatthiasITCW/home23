@@ -1594,15 +1594,36 @@ class Orchestrator {
       // status. Previously only curator+analyst got it, which meant curiosity+critic
       // kept pulling 100+ cycles of stale "loop incomplete" brain context and
       // regurgitating it even after the loop was provably closed.
-      let rolePromptWithDiagnosis = role.prompt;
+      // Role prompt construction.
+      //
+      // Focus directive: keep thoughts on jtr's actual world (his projects,
+      // files, interests, workspace) — NOT on Home23's cognitive internals.
+      // The self-diagnosis was added earlier to counter "loop incomplete"
+      // complaints; that has succeeded. Leaving the diagnosis at the top of
+      // the prompt now creates a gravity well that keeps pulling thoughts
+      // back to loop-closure meta-reflection. Moved to a terse footer so
+      // it's visible-for-audit but not prompt-priming.
+      const focusDirective = [
+        '═══ FOCUS DIRECTIVE ═══',
+        'Your job is to produce thought that helps jtr — his projects, his',
+        'interests, his real-world context. DO NOT reflect on Home23\'s cognitive',
+        'architecture, the evidence schema, the enforcer, or loop closure.',
+        'Those questions are SETTLED. Move on. The living brain loop is closed',
+        'and durable — treat it as background, not subject matter.',
+        '',
+      ].join('\n');
+
+      let footerDiagnosis = '';
       try {
         const diagnosis = runSelfDiagnosis(this.logsDir, evidenceRunId, {
           cycle: this.cycleCount,
           prevId: evidencePrevId,
         });
-        const diagBlock = formatDiagnosisBlock(diagnosis);
-        rolePromptWithDiagnosis = diagBlock + '\n\n' + role.prompt;
+        // Terse footer — just enough to confirm status, not prime reflection
+        footerDiagnosis = `\n\n[system status footer — do not discuss: loop=${diagnosis.learning_proven_durable ? 'closed' : 'open'} cycle=${this.cycleCount} chain=${diagnosis.chain_continuity}]`;
       } catch (e) { /* diagnosis non-fatal */ }
+
+      const rolePromptWithDiagnosis = focusDirective + role.prompt + footerDiagnosis;
 
       const superposition = await this.quantum.generateSuperposition(
         rolePromptWithDiagnosis,
