@@ -29,6 +29,7 @@
     <button class="h23s-tab" data-stab="feeder">Feeder</button>
     <button class="h23s-tab" data-stab="vibe">Vibe</button>
     <button class="h23s-tab" data-stab="tiles">Tiles</button>
+    <button class="h23s-tab" data-stab="agency">Agency</button>
     <button class="h23s-tab" data-stab="system">System</button>
   </nav>
 
@@ -696,6 +697,66 @@
           <button class="h23s-btn-primary" id="btn-save-tile-connections">Save Connections</button>
           <span class="h23s-save-status" id="tile-connections-status"></span>
         </div>
+      </div>
+    </div>
+
+    <!-- Agency Panel -->
+    <div class="h23s-panel" id="panel-agency">
+      <h2 class="h23s-panel-title">Agency — Autonomous Actions</h2>
+      <p class="h23s-panel-desc">Controls which actions the cognitive loop is allowed to execute on its own when a thought emits an <code>ACT:</code> tag. Every execution is receipt-logged. Rejected attempts are written to <code>brain/requested-actions.jsonl</code> for audit.</p>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Global</h3>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>
+              <input type="checkbox" id="agency-global-enabled" />
+              <span>Allow autonomous actions (master switch)</span>
+            </label>
+          </div>
+          <div class="h23s-field">
+            <label>Global max/hour (safety cap)</label>
+            <input type="number" id="agency-global-rate" min="0" step="10" style="width:120px;" />
+          </div>
+        </div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Actions</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">Toggle actions on/off, flip into dry-run (logs intent only, no side effect), adjust per-action rate limits. Changes hot-apply — no restart.</p>
+        <div id="agency-actions-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+        <div class="h23s-actions" style="border-top:none;padding-top:8px;">
+          <button class="h23s-btn-primary" id="btn-save-agency">Save</button>
+          <span class="h23s-save-status" id="agency-status"></span>
+        </div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Integrations</h3>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>
+              <input type="checkbox" id="agency-bridge-enabled" />
+              <span>iOS Shortcut bridge enabled</span>
+            </label>
+          </div>
+          <div class="h23s-field">
+            <label>Shortcut bridge URL</label>
+            <input type="text" id="agency-bridge-url" placeholder="http://localhost:9876/shortcut" />
+          </div>
+        </div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Recent Actions</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">Live audit trail. Intent is logged before the handler runs; outcome after. Refreshes every 5s.</p>
+        <div id="agency-recent-list" style="max-height:420px;overflow-y:auto;border:1px solid var(--glass-border);border-radius:8px;padding:6px;background:rgba(0,0,0,0.15);"></div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Rejected Requests</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">Actions the agent tried but weren't in the allow-list. Worth watching — these are requests for new capabilities.</p>
+        <div id="agency-requested-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--glass-border);border-radius:8px;padding:6px;background:rgba(0,0,0,0.15);"></div>
       </div>
     </div>
 

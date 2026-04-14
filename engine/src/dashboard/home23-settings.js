@@ -3078,6 +3078,226 @@ async function resetAssignments() {
   }
 }
 
+// ── Agency (autonomous actions allow-list editor + live audit trail) ──
+
+let agencyData = null;
+let agencyPollTimer = null;
+
+async function loadAgency() {
+  try {
+    const res = await fetch(`${API}/agency/allowlist`);
+    agencyData = await res.json();
+    renderAgency(agencyData);
+  } catch (err) {
+    console.error('Failed to load agency allowlist:', err);
+  }
+}
+
+function renderAgency(data) {
+  // Global
+  const globalEnabled = document.getElementById('agency-global-enabled');
+  const globalRate = document.getElementById('agency-global-rate');
+  if (globalEnabled) globalEnabled.checked = data?.global?.enabled !== false;
+  if (globalRate) globalRate.value = data?.global?.max_per_hour ?? 500;
+
+  // Integrations (shortcut bridge)
+  const bridgeEnabled = document.getElementById('agency-bridge-enabled');
+  const bridgeUrl = document.getElementById('agency-bridge-url');
+  const bridge = data?.integrations?.shortcut_bridge || {};
+  if (bridgeEnabled) bridgeEnabled.checked = bridge.enabled === true;
+  if (bridgeUrl) bridgeUrl.value = bridge.url || '';
+
+  // Actions
+  const list = document.getElementById('agency-actions-list');
+  if (!list) return;
+  const actions = data?.actions || {};
+  const keys = Object.keys(actions);
+  list.innerHTML = keys.map(key => {
+    const a = actions[key] || {};
+    const targets = Array.isArray(a.allowed_targets) && a.allowed_targets.length
+      ? `<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">targets: ${a.allowed_targets.join(', ')}</span>`
+      : '';
+    return `
+      <div class="h23s-agency-row" data-agency-key="${escapeSlotText(key)}" style="background:rgba(255,255,255,0.02);border:1px solid var(--glass-border);border-radius:8px;padding:10px 12px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+          <code style="font-size:12px;color:var(--accent-blue);font-weight:600;flex:1;">${escapeSlotText(key)}</code>
+          ${targets}
+        </div>
+        <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;">
+            <input type="checkbox" data-agency-enabled ${a.enabled !== false ? 'checked' : ''} /> Enabled
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;">
+            <input type="checkbox" data-agency-dryrun ${a.dry_run === true ? 'checked' : ''} /> Dry-run
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;">
+            Max/hour:
+            <input type="number" data-agency-rate value="${a.max_per_hour ?? 0}" min="0" step="1" style="width:80px;" />
+          </label>
+        </div>
+        ${a.notes ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;margin-top:6px;">${escapeSlotText(a.notes)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+async function saveAgency() {
+  const statusEl = document.getElementById('agency-status');
+  statusEl.textContent = 'Saving…';
+  statusEl.style.color = '';
+
+  const globalEnabled = document.getElementById('agency-global-enabled')?.checked;
+  const globalRate = parseInt(document.getElementById('agency-global-rate')?.value || '500', 10);
+  const bridgeEnabled = document.getElementById('agency-bridge-enabled')?.checked;
+  const bridgeUrl = document.getElementById('agency-bridge-url')?.value || '';
+
+  const actions = {};
+  document.querySelectorAll('.h23s-agency-row').forEach(row => {
+    const key = row.dataset.agencyKey;
+    actions[key] = {
+      enabled: row.querySelector('[data-agency-enabled]')?.checked === true,
+      dry_run: row.querySelector('[data-agency-dryrun]')?.checked === true,
+      max_per_hour: parseInt(row.querySelector('[data-agency-rate]')?.value || '0', 10),
+    };
+  });
+
+  try {
+    const res = await fetch(`${API}/agency/allowlist`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        global: { enabled: globalEnabled, max_per_hour: globalRate },
+        integrations: { shortcut_bridge: { enabled: bridgeEnabled, url: bridgeUrl } },
+        actions,
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.textContent = 'Saved. Hot-applies on next action.';
+      statusEl.style.color = 'var(--accent-green)';
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      statusEl.style.color = 'var(--accent-red)';
+    }
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--accent-red)';
+  }
+}
+
+function renderAgencyRecent(actions) {
+  const list = document.getElementById('agency-recent-list');
+  if (!list) return;
+  if (!actions || actions.length === 0) {
+    list.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-style:italic;font-size:12px;">No actions yet.</div>';
+    return;
+  }
+
+  // Group intent+outcome pairs so we render one row per action
+  const pairs = [];
+  const pending = new Map();
+  for (const ev of actions) {
+    // actions came in reversed (newest first) from server; we want oldest first
+    // for pairing, then reverse again for display
+  }
+  // Server returns reversed (newest first). Walk forward to pair each outcome
+  // with its nearest intent. If unpaired, show the intent alone.
+  const chronological = [...actions].reverse();
+  const rendered = [];
+  const openByKey = new Map(); // key = action+role+cycle+target
+  for (const ev of chronological) {
+    const key = `${ev.action}|${ev.role}|${ev.cycle}|${ev.target || ''}`;
+    if (ev.phase === 'intent') {
+      openByKey.set(key, ev);
+    } else if (ev.phase === 'outcome') {
+      const intent = openByKey.get(key);
+      openByKey.delete(key);
+      rendered.push({ intent, outcome: ev });
+    }
+  }
+  // Any dangling intents (no outcome yet)
+  for (const [, intent] of openByKey) rendered.push({ intent, outcome: null });
+
+  // Newest first
+  rendered.reverse();
+
+  list.innerHTML = rendered.slice(0, 60).map(({ intent, outcome }) => {
+    const statusColor = !outcome
+      ? 'var(--text-muted)'
+      : outcome.status === 'success' ? 'var(--accent-green)'
+      : outcome.status === 'dry_run' ? 'var(--accent-blue)'
+      : 'var(--accent-red)';
+    const statusLabel = outcome ? outcome.status : 'in_flight';
+    const ts = outcome?.ts || intent?.ts;
+    const t = ts ? new Date(ts).toLocaleTimeString() : '';
+    const action = intent?.action || '?';
+    const target = intent?.target ? ` → ${escapeSlotText(intent.target)}` : '';
+    const reason = intent?.reason ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${escapeSlotText(intent.reason)}</div>` : '';
+    const detail = outcome?.detail ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${escapeSlotText(outcome.detail)}</div>` : '';
+    return `
+      <div style="padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:${statusColor};font-weight:600;font-size:11px;text-transform:uppercase;min-width:70px;">${statusLabel}</span>
+          <code style="color:var(--accent-blue);font-size:12px;">${escapeSlotText(action)}</code>
+          <span style="color:var(--text-secondary);">${target}</span>
+          <span style="margin-left:auto;color:var(--text-muted);font-size:11px;">cycle ${intent?.cycle || '?'} · ${intent?.role || '?'} · ${t}</span>
+        </div>
+        ${reason}
+        ${detail}
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadAgencyRecent() {
+  try {
+    const res = await fetch(`${API}/agency/recent?limit=200`);
+    const data = await res.json();
+    renderAgencyRecent(data.actions || []);
+  } catch { /* ok */ }
+}
+
+async function loadAgencyRequested() {
+  const list = document.getElementById('agency-requested-list');
+  if (!list) return;
+  try {
+    const res = await fetch(`${API}/agency/requested?limit=50`);
+    const data = await res.json();
+    const requests = data.requests || [];
+    if (requests.length === 0) {
+      list.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-style:italic;font-size:12px;">No rejected requests.</div>';
+      return;
+    }
+    list.innerHTML = requests.map(r => {
+      const t = r.ts ? new Date(r.ts).toLocaleTimeString() : '';
+      return `
+        <div style="padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:12px;">
+          <div style="display:flex;gap:8px;">
+            <code style="color:var(--accent-red);">${escapeSlotText(r.action || 'unknown')}</code>
+            ${r.target ? `<span style="color:var(--text-secondary);">→ ${escapeSlotText(r.target)}</span>` : ''}
+            <span style="margin-left:auto;color:var(--text-muted);font-size:11px;">cycle ${r.cycle || '?'} · ${r.role || '?'} · ${t}</span>
+          </div>
+          ${r.reason ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${escapeSlotText(r.reason)}</div>` : ''}
+          ${r.status ? `<div style="font-size:11px;color:var(--accent-red);margin-top:2px;">${escapeSlotText(r.status)}${r.detail ? ' · ' + escapeSlotText(r.detail) : ''}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch { /* ok */ }
+}
+
+function startAgencyPoll() {
+  if (agencyPollTimer) return;
+  loadAgencyRecent();
+  loadAgencyRequested();
+  agencyPollTimer = setInterval(() => {
+    const panel = document.getElementById('panel-agency');
+    if (panel && panel.classList.contains('active')) {
+      loadAgencyRecent();
+      loadAgencyRequested();
+    }
+  }, 5000);
+}
+
 // ── Init ──
 
 async function init() {
@@ -3098,6 +3318,11 @@ async function init() {
   document.getElementById('btn-save-models').addEventListener('click', saveModels);
   document.getElementById('btn-save-assignments')?.addEventListener('click', saveAssignments);
   document.getElementById('btn-reset-assignments')?.addEventListener('click', resetAssignments);
+  document.getElementById('btn-save-agency')?.addEventListener('click', saveAgency);
+
+  // Agency
+  loadAgency();
+  startAgencyPoll();
   document.getElementById('btn-save-system').addEventListener('click', saveSystem);
   document.getElementById('btn-install-deps').addEventListener('click', installDeps);
   document.getElementById('btn-build-ts').addEventListener('click', buildTS);

@@ -838,32 +838,32 @@ function createSettingsRouter(home23Root) {
 
   router.get('/agency/recent', (req, res) => {
     const primary = resolveTargetAgent();
-    if (!primary) return res.json({ actions: [] });
+    if (!primary) return res.json({ agent: null, actions: [] });
     const logPath = path.join(home23Root, 'instances', primary, 'brain', 'actions.jsonl');
-    if (!fs.existsSync(logPath)) return res.json({ actions: [] });
     const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 500);
-    try {
-      const lines = fs.readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean).slice(-limit);
-      const actions = [];
-      for (const line of lines) {
-        try { actions.push(JSON.parse(line)); } catch { /* skip bad line */ }
-      }
-      res.json({ agent: primary, actions: actions.reverse() });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
+    const actions = [];
+    if (fs.existsSync(logPath)) {
+      try {
+        const lines = fs.readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean).slice(-limit);
+        for (const line of lines) {
+          try { actions.push(JSON.parse(line)); } catch { /* skip bad line */ }
+        }
+      } catch { /* file race, return what we have */ }
     }
+    res.json({ agent: primary, actions: actions.reverse() });
   });
 
   router.get('/agency/requested', (req, res) => {
     const primary = resolveTargetAgent();
-    if (!primary) return res.json({ requests: [] });
+    if (!primary) return res.json({ agent: null, requests: [] });
     const p = path.join(home23Root, 'instances', primary, 'brain', 'requested-actions.jsonl');
-    if (!fs.existsSync(p)) return res.json({ requests: [] });
     const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 500);
-    const lines = fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).slice(-limit);
     const requests = [];
-    for (const line of lines) {
-      try { requests.push(JSON.parse(line)); } catch { /* skip */ }
+    if (fs.existsSync(p)) {
+      const lines = fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).slice(-limit);
+      for (const line of lines) {
+        try { requests.push(JSON.parse(line)); } catch { /* skip */ }
+      }
     }
     res.json({ agent: primary, requests: requests.reverse() });
   });
