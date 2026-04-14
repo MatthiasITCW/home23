@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.2 (2026-04-13)
+
+### Evidence loop hardening (final)
+- Self-diagnosis block now injects into ALL four role prompts (previously only
+  curator + analyst). Curiosity + critic were pulling 100+ cycles of stale
+  "loop incomplete" brain context and regurgitating it; they now see the
+  current closure verdict before thinking.
+- Bulletproof try/finally: evidence setup (generateRunId, loadPrevRunId) moved
+  inside the try block. If setup throws, the finally-block enforcer still runs
+  with a freshly-generated run_id as safety net.
+- Fallback cycle_error receipt written if the enforcer itself throws — the
+  chain never silently drops a cycle.
+- `learning_proven_durable` verdict decoupled from historical chain breaks —
+  each cycle reports its own closure on stages + fixture + no divergence.
+- Report unique stages covered (5/5) instead of total receipt count (6/5) —
+  audit stage fires twice on natural completion.
+- Diagnosis format matches spec: JSON block + human-readable verdict line
+  ("All stages accounted for. The living brain loop is closed and durable.")
+
 ## 0.3.1 (2026-04-13)
 
 ### MiniMax-M2.7 integration pass
