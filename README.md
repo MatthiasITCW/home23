@@ -1,15 +1,15 @@
-# Home23 v0.2.0
+# Home23 v0.5.5
 
 **An installable AI operating system — persistent agents with living brains.**
 
-Home23 is not another chatbot framework. It is a complete AI operating system that runs on your machine, with agents that think autonomously, grow a persistent brain over time, dream during idle periods, and are reachable through Telegram, a web dashboard, an AI IDE, and a research engine.
+Home23 is not another chatbot framework. It is a complete AI operating system that runs on your machine, with agents that think autonomously, grow a persistent brain over time, dream during idle periods, and are reachable through Telegram, a web dashboard, an AI IDE, a research engine, and a mobile-optimized chat page you can Add to Home Screen on iOS.
 
 Four integrated systems, one install:
 
-- **Agent** — always-on AI with a cognitive loop, 31 tools (including a full research toolkit for driving COSMO and a `promote_to_memory` tool for governed memory promotion), Telegram channel, and an LLM-powered conversation interface with **situational awareness** — the agent queries its brain and loads domain-specific context before every response
+- **Agent** — always-on AI with a cognitive loop, 34 tools (full COSMO research toolkit, 6-tool brain-tier access incl. Progressive Graph Search, `promote_to_memory` for governed memory promotion), Telegram channel, and an LLM-powered conversation interface with **situational awareness** — the agent queries its brain and loads domain-specific context before every response, and every cognitive cycle produces a structured action (investigate / notify / trigger / no-action)
 - **COSMO 2.3** — multi-phase research engine with guided runs, brain integration, and a 9-tab UI. Fully agent-drivable: your agent can launch runs, monitor them, query completed brains, and compile findings into its own memory
 - **Evobrew** — AI-powered IDE with brain connectivity, multi-provider LLM support, and code editing
-- **Dashboard** — OS home screen with real-time thoughts, chat, intelligence synthesis, settings, and full access to COSMO and Evobrew
+- **Dashboard** — OS home screen with real-time thoughts, chat (with mobile-first standalone page), intelligence synthesis, settings (incl. **per-slot cognitive model assignments** for every place the engine calls a model), and full access to COSMO and Evobrew
 
 ## Prerequisites
 
@@ -51,7 +51,7 @@ The web dashboard is the primary interface for everything — provider configura
 **What you see:**
 - **Dashboard:** `http://localhost:5002/home23` — OS home screen
 - **Settings:** `http://localhost:5002/home23/settings` — all configuration
-- **Chat:** `http://localhost:5002/home23/chat` — standalone chat with your agent
+- **Chat:** `http://localhost:5002/home23/chat` — standalone chat page (mobile-first; bookmark on your phone or use Safari → Share → Add to Home Screen to launch as a full-screen PWA)
 - **Evobrew IDE:** `http://localhost:3415` — AI code editor with brain access
 - **COSMO Research:** `http://localhost:43210` — research engine UI
 
@@ -164,8 +164,8 @@ Each agent runs 3 PM2 processes, plus 2 shared:
 | Process | Purpose | Default Port |
 |---|---|---|
 | `home23-<name>` | Cognitive engine — thinking, dreaming, brain growth, document ingestion | 5001 (WS + admin HTTP) |
-| `home23-<name>-dash` | Dashboard API — brain queries, state, settings, feeder drop zone | 5002 (HTTP) |
-| `home23-<name>-harness` | Agent runtime — Telegram, 31 tools, LLM loop, situational awareness | 5004 (bridge) |
+| `home23-<name>-dash` | Dashboard API — brain queries, state, settings, feeder drop zone, model assignments | 5002 (HTTP) |
+| `home23-<name>-harness` | Agent runtime — Telegram, 34 tools, LLM loop, situational awareness | 5004 (bridge) |
 | `home23-evobrew` | AI IDE (shared across all agents) | 3415 |
 | `home23-cosmo23` | Research engine (shared, on-demand) | 43210 |
 
@@ -177,14 +177,30 @@ The document feeder runs **inside** the cognitive engine process (no separate PM
 
 | File | Purpose |
 |---|---|
-| `config/home.yaml` | Provider URLs, model aliases, embedding config, defaults |
+| `config/home.yaml` | Provider URLs, model aliases, embedding config, chat defaults |
 | `config/secrets.yaml` | API keys and bot tokens (managed by dashboard Settings, gitignored) |
-| `instances/<name>/config.yaml` | Per-agent: ports, owner, channels, model, scheduler |
-| `configs/base-engine.yaml` | Cognitive loop timing and behavior (shared) |
+| `instances/<name>/config.yaml` | Per-agent: ports, owner, channels, chat model, scheduler, `modelAssignments` overrides |
+| `configs/base-engine.yaml` | Cognitive loop timing, feeder block, default `modelAssignments` (shared across agents) |
+
+### Cognitive Model Assignments
+
+Every place the engine calls a model is individually configurable from **Settings → Models → Cognitive Assignments**. 15 slots grouped by purpose:
+
+- **Cognition** — `quantumReasoner.branches` (per-cycle parallel branches — fast + cheap), `quantumReasoner.singleReasoning` (dreams + single-shot fallback — quality)
+- **Agents** — `agents.research`, `agents.research-synthesis`, `agents.research-fallback`, `agents.analytical`, `agents.discovery`, `agents.clustering`, `agents.synthesis`, `agents.quality_assurance`, `agents`
+- **Coordination** — `coordinator`
+- **Goals** — `goalCurator`, `intrinsicGoals`
+- **Default** — catch-all for any unmarked call
+
+Each slot has a primary provider + model and an optional fallback chain that kicks in on error or rate-limit (e.g. MiniMax primary → ollama-cloud fallback → claude-opus last resort). Click the `?` button on a slot for a plain-language description of what it does and guidance on which trade-offs matter for that slot (speed vs quality vs cost). Saves to the agent's instance config and hot-restarts its engine.
 
 ## How It Works
 
-The cognitive engine runs continuous think-consolidate-dream cycles. During waking hours, it processes thoughts through analyst, critic, curiosity, and **curator** roles, pursues goals, and responds to messages. During sleep periods, it dreams — synthesizing connections across its brain, consolidating knowledge, and growing.
+The cognitive engine runs continuous think-consolidate-dream cycles. During waking hours, it processes thoughts through analyst, critic, curiosity, proposal, and **curator** roles, pursues goals, and responds to messages. During sleep periods, it dreams — synthesizing connections across its brain, consolidating knowledge, and growing.
+
+Every thought produces a structured action tag at the end: `INVESTIGATE:` (spawns a research task), `NOTIFY:` (queues a user notification visible as a 🔔 badge in the dashboard), `TRIGGER:` (installs a standing memory-reactivation rule), or `NO_ACTION` when the thought is pure reflection. Notifications can be acknowledged from the dashboard. This is how the brain stops talking to itself and starts doing things.
+
+Cycles are tool-capable — a branch can call `read_surface` / `query_brain` / `get_active_goals` / `get_recent_thoughts` / `get_pending_notifications` mid-thought to ground its reasoning in real data instead of stale memory.
 
 ### Situational Awareness Engine
 
@@ -215,6 +231,21 @@ See `docs/design/STEP20-SITUATIONAL-AWARENESS-ENGINE-DESIGN.md` for the full des
 Documents fed through the feeder are LLM-synthesized before brain entry: raw text becomes structured knowledge with extracted concepts, relationships, and insights. A brain knowledge index is maintained automatically as a human-readable map of everything the agent knows. Feeder behavior is fully configurable from the dashboard's Settings → Feeder tab (watch paths, exclusion patterns, chunking, compiler model, converter, drop zone) — see "Document Feeder" below.
 
 The dashboard is the OS home screen. It shows real-time thoughts, provides a native chat interface with full thinking/tool visibility, runs intelligence synthesis on a schedule, and gives access to COSMO research and Evobrew IDE — all from a single URL.
+
+## Brain-Tier Tools
+
+Your agent has 6 tools for working with its own living brain directly:
+
+| Tool | Purpose |
+|---|---|
+| `brain_status` | Node count, cluster count, last cycle, activity over recent windows |
+| `brain_search` | Semantic search over memory nodes (cosine similarity) |
+| `brain_query` | 9 query modes — `fast`, `normal`, `deep`, `raw`, `report`, `innovation`, `consulting`, `grounded`, `executive` — each trades context breadth for reasoning depth |
+| `brain_memory_graph` | Structural view: cluster sizes, top-activated nodes, tag histogram |
+| `brain_synthesize` | Triggers a meta-cognition synthesis run (async, ~30s) |
+| `brain_pgs` | **Progressive Graph Search** — partitions the brain into communities (Louvain), routes the question to relevant partitions, runs parallel LLM sweeps, then synthesizes. Coverage-optimized; reports absences and cross-domain connections. Supports dual-model control (fast/cheap model for sweeps, stronger model for synthesis) per-call |
+
+PGS is exposed via a new `POST /api/pgs` endpoint that takes `sweepModel` / `synthesisModel` / `sweepProvider` / `synthesisProvider` so the caller picks the models per phase. Providers are auto-resolved from model names via `home.yaml`.
 
 ## Agent Research Toolkit
 
