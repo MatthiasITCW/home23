@@ -16,6 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { executeAction } = require('./action-dispatcher');
 
 // Match action tags liberally: model may emit "INVESTIGATE:", "INVESTIGATE ",
 // "INVESTIGATE\n", or even just "INVESTIGATE" at the start/end of a line
@@ -28,6 +29,53 @@ const ACTION_PATTERNS = {
   noAction: /(?:^|\n)\s*NO_ACTION\s*$/i,
 };
 
+// ACT: is the autonomous-action tag. Payload is a JSON object. We grab the
+// first balanced {...} after the tag on the same line or the following lines.
+const ACT_MARKER = /(?:^|\n)[\s`*_>]*(?:ACT|act)\b[\s`*_]*[:：\-—]?\s*/;
+
+function extractJsonAfter(text, startIdx) {
+  // Find the first '{' at or after startIdx and return the matching balanced
+  // substring. Tolerates leading whitespace and trailing text.
+  let i = startIdx;
+  while (i < text.length && text[i] !== '{') i++;
+  if (i >= text.length) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let j = i; j < text.length; j++) {
+    const c = text[j];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return text.slice(i, j + 1);
+    }
+  }
+  return null;
+}
+
+function parseActPayload(text) {
+  if (!text) return null;
+  const m = text.match(ACT_MARKER);
+  if (!m) return null;
+  const afterIdx = (m.index ?? 0) + m[0].length;
+  const jsonStr = extractJsonAfter(text, afterIdx);
+  if (!jsonStr) return null;
+  try {
+    const obj = JSON.parse(jsonStr);
+    if (!obj || typeof obj !== 'object' || !obj.action) return null;
+    return obj;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Extract the first action tag from a thought's hypothesis text.
  * Returns { type, payload } or { type: 'none' } if no action.
@@ -38,6 +86,14 @@ const ACTION_PATTERNS = {
 function parseThoughtAction(hypothesis) {
   if (!hypothesis || typeof hypothesis !== 'string') {
     return { type: 'none' };
+  }
+
+  // ACT: wins over everything else — it is the autonomous-execution tag and
+  // carries a structured payload. If ACT parses, we route it; if it fails to
+  // parse (missing JSON, malformed), we fall through to the legacy tags.
+  const actPayload = parseActPayload(hypothesis);
+  if (actPayload) {
+    return { type: 'act', payload: actPayload };
   }
 
   // Explicit NO_ACTION wins
@@ -79,10 +135,23 @@ function parseThoughtAction(hypothesis) {
  */
 function stripActionTags(hypothesis) {
   if (!hypothesis) return hypothesis;
-  return hypothesis
+  let out = hypothesis
     .replace(/(?:^|\n)\s*(?:INVESTIGATE|NOTIFY|TRIGGER)\s*[:：].+?(?:\n|$)/gi, '\n')
-    .replace(/(?:^|\n)\s*NO_ACTION\s*$/i, '')
-    .trim();
+    .replace(/(?:^|\n)\s*NO_ACTION\s*$/i, '');
+
+  // Also strip ACT: {...} blocks (balanced-brace aware)
+  const m = out.match(ACT_MARKER);
+  if (m) {
+    const start = m.index ?? 0;
+    const afterTag = start + m[0].length;
+    const jsonStr = extractJsonAfter(out, afterTag);
+    if (jsonStr) {
+      const endIdx = out.indexOf(jsonStr, afterTag) + jsonStr.length;
+      out = out.slice(0, start) + out.slice(endIdx);
+    }
+  }
+
+  return out.trim();
 }
 
 /**
@@ -167,7 +236,10 @@ function addTrigger(brainDir, { condition, source, cycle }) {
  * @returns {{action: string, payload: string|null, routed: string}}
  */
 async function routeThoughtAction(opts) {
-  const { hypothesis, role, cycle, brainDir, agentExecutor, logger } = opts;
+  const {
+    hypothesis, role, cycle, brainDir, workspaceDir, agentName,
+    agentExecutor, logger, sensors, memory, goalSystem, writeReceipt,
+  } = opts;
   const parsed = parseThoughtAction(hypothesis);
 
   if (parsed.type === 'none') {
@@ -175,6 +247,23 @@ async function routeThoughtAction(opts) {
   }
 
   try {
+    // ── ACT: autonomous execution via allow-listed dispatcher ──
+    if (parsed.type === 'act') {
+      const result = await executeAction({
+        action: parsed.payload,
+        role, cycle, brainDir, workspaceDir, agentName,
+        sensors, memory, goalSystem, logger, writeReceipt,
+      });
+      return {
+        action: 'act',
+        actionName: parsed.payload.action,
+        payload: parsed.payload,
+        routed: `dispatcher:${result.status}`,
+        detail: result.detail || null,
+        memoryDelta: result.memoryDelta || null,
+      };
+    }
+
     if (parsed.type === 'notify') {
       const entry = appendNotification(brainDir, {
         message: parsed.payload,

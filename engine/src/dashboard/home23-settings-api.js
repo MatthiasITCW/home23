@@ -796,6 +796,78 @@ function createSettingsRouter(home23Root) {
     res.json({ ok: true, agent: targetAgent, overrideCount: Object.keys(overrides).length });
   });
 
+  // ── Agency (autonomous action allow-list + activity log) ──
+
+  function agencyYamlPath() {
+    return path.join(home23Root, 'configs', 'action-allowlist.yaml');
+  }
+
+  router.get('/agency/allowlist', (req, res) => {
+    const data = loadYaml(agencyYamlPath());
+    res.json(data);
+  });
+
+  router.put('/agency/allowlist', (req, res) => {
+    const { actions, global: globalCfg, integrations } = req.body || {};
+    const current = loadYaml(agencyYamlPath());
+    if (actions && typeof actions === 'object') {
+      current.actions = current.actions || {};
+      for (const [name, updates] of Object.entries(actions)) {
+        if (!current.actions[name]) continue;
+        if (typeof updates.enabled === 'boolean') current.actions[name].enabled = updates.enabled;
+        if (typeof updates.dry_run === 'boolean') current.actions[name].dry_run = updates.dry_run;
+        if (typeof updates.max_per_hour === 'number' && updates.max_per_hour >= 0) {
+          current.actions[name].max_per_hour = updates.max_per_hour;
+        }
+      }
+    }
+    if (globalCfg && typeof globalCfg === 'object') {
+      current.global = current.global || {};
+      if (typeof globalCfg.enabled === 'boolean') current.global.enabled = globalCfg.enabled;
+      if (typeof globalCfg.max_per_hour === 'number') current.global.max_per_hour = globalCfg.max_per_hour;
+    }
+    if (integrations && typeof integrations === 'object') {
+      current.integrations = current.integrations || {};
+      for (const [name, cfg] of Object.entries(integrations)) {
+        current.integrations[name] = { ...(current.integrations[name] || {}), ...cfg };
+      }
+    }
+    saveYaml(agencyYamlPath(), current);
+    res.json({ ok: true });
+  });
+
+  router.get('/agency/recent', (req, res) => {
+    const primary = resolveTargetAgent();
+    if (!primary) return res.json({ actions: [] });
+    const logPath = path.join(home23Root, 'instances', primary, 'brain', 'actions.jsonl');
+    if (!fs.existsSync(logPath)) return res.json({ actions: [] });
+    const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 500);
+    try {
+      const lines = fs.readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean).slice(-limit);
+      const actions = [];
+      for (const line of lines) {
+        try { actions.push(JSON.parse(line)); } catch { /* skip bad line */ }
+      }
+      res.json({ agent: primary, actions: actions.reverse() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/agency/requested', (req, res) => {
+    const primary = resolveTargetAgent();
+    if (!primary) return res.json({ requests: [] });
+    const p = path.join(home23Root, 'instances', primary, 'brain', 'requested-actions.jsonl');
+    if (!fs.existsSync(p)) return res.json({ requests: [] });
+    const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 500);
+    const lines = fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).slice(-limit);
+    const requests = [];
+    for (const line of lines) {
+      try { requests.push(JSON.parse(line)); } catch { /* skip */ }
+    }
+    res.json({ agent: primary, requests: requests.reverse() });
+  });
+
   router.get('/system', (req, res) => {
     const homeConfig = loadYaml(path.join(home23Root, 'config', 'home.yaml'));
     res.json({

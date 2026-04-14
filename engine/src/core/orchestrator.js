@@ -1881,13 +1881,24 @@ class Orchestrator {
       // and route them. This is the "meat" layer — makes cognitive cycles
       // produce real consequences instead of pure reflection.
       try {
+        // Lazy-load sensors module — engine may not have it wired in every
+        // deployment, so the dispatcher will reject refresh_sensor cleanly
+        // if it's not present.
+        let sensorsModule = null;
+        try { sensorsModule = require('./sensors'); } catch { /* optional */ }
+
         const actionResult = await routeThoughtAction({
           hypothesis: thought.hypothesis,
           role: role.id,
           cycle: this.cycleCount,
           brainDir: this.logsDir,
+          workspaceDir: process.env.COSMO_WORKSPACE_PATH || null,
+          agentName: process.env.HOME23_AGENT || null,
           agentExecutor: this.agentExecutor,
           logger: this.logger,
+          sensors: sensorsModule,
+          memory: this.memory,
+          goalSystem: this.goals,
         });
         if (actionResult.action !== 'none') {
           this.logger.info('🎬 Thought produced action', {

@@ -97,10 +97,28 @@ architecture:
           right now that advances JTR'S WORK — his projects, his interests, his
           real world. NOT a meta-action about Home23's internals.
 
-          Pick the single highest-leverage thing for jtr. Output format:
-            <1-2 sentences explaining what and why, grounded in jtr's world>
-            <ACTION TAG on its own line>
-          ACTION TAG must be one of:
+          You have REAL AGENCY. Prefer executing an action yourself over just
+          notifying jtr. Output ONE action tag on its own line at the end of
+          your response.
+
+          Preferred (autonomous execution — you DO the thing):
+            ACT: {"action":"<name>","target":"<optional>","reason":"<one sentence>","safety":"safe"}
+
+          The following ACT actions are available (others will be rejected):
+            run_shortcut             target ∈ [Health, Weather, Pressure, Sauna]
+            refresh_sensor           target ∈ [weather, sauna, pressure]
+            launch_research          target = research topic (also: cycles, context)
+            promote_to_memory        action.content = insight to promote (also: tag)
+            prune_stale_cluster      target = cluster id (optional)
+            compile_research_section action.brainId + action.section
+            update_surface           target ∈ [TOPOLOGY, PROJECTS, PERSONAL, DOCTRINE, RECENT]
+                                      action.body = markdown content (mode: append|replace)
+            write_note               target = filename; action.body = markdown
+            create_goal              target = goal description (also: rationale, priority)
+            break_goal               target = goal id; action.rationale = why
+            ack_notification         target = notification id
+
+          Fallback tags (use only when ACT doesn't fit):
             INVESTIGATE: <specific thing in jtr's world to look into>
             NOTIFY: <message for jtr about something worth his attention>
             TRIGGER: <external condition to watch for going forward>
