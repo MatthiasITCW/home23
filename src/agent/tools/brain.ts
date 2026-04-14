@@ -268,8 +268,11 @@ export const brainPgsTool: ToolDefinition = {
     'Progressive Graph Search over the full brain. Four-phase pipeline: partition the graph (Louvain), ' +
     'route the query to relevant partitions, run parallel LLM sweeps per partition, synthesize across. ' +
     'Optimized for COVERAGE and finding what standard RAG misses — reports absences, discovers ' +
-    'cross-domain connections. Slow (~20-60s) but most thorough. Use for questions where you want to ' +
-    'be sure nothing important is missed, or to spot gaps in what the brain knows.',
+    'cross-domain connections. Slow (~20-60s) but most thorough. ' +
+    'Dual-model control: sweeps run many parallel calls, so pick a cheap/fast model (e.g. ' +
+    'minimax-m2.7-highspeed, nemotron-3-nano, gpt-5.4-mini). Synthesis is one final reasoning pass, so a ' +
+    'stronger model helps (e.g. claude-opus-4-6, MiniMax-M2.7, gpt-5.4). If models are omitted, uses the ' +
+    "engine's default model for both.",
   input_schema: {
     type: 'object',
     properties: {
@@ -283,6 +286,22 @@ export const brainPgsTool: ToolDefinition = {
         type: 'integer',
         description: 'Cap on how many partitions to sweep. Default 5. Higher = more coverage, slower.',
       },
+      sweepModel: {
+        type: 'string',
+        description: 'Model for parallel partition sweeps (many calls — pick fast/cheap). E.g. MiniMax-M2.7-highspeed, gpt-5.4-mini, nemotron-3-super.',
+      },
+      synthesisModel: {
+        type: 'string',
+        description: 'Model for the single cross-partition synthesis pass (pick stronger). E.g. claude-opus-4-6, MiniMax-M2.7, gpt-5.4.',
+      },
+      sweepProvider: {
+        type: 'string',
+        description: 'Optional provider override for sweeps (minimax / anthropic / openai / openai-codex / xai / ollama-cloud). Usually auto-resolved from model name.',
+      },
+      synthesisProvider: {
+        type: 'string',
+        description: 'Optional provider override for synthesis.',
+      },
     },
     required: ['query'],
   },
@@ -291,14 +310,24 @@ export const brainPgsTool: ToolDefinition = {
     const query = input.query as string;
     const mode = (input.mode as string) || 'full';
     const maxPartitions = Number(input.maxPartitions) || 5;
+    const sweepModel = input.sweepModel as string | undefined;
+    const synthesisModel = input.synthesisModel as string | undefined;
+    const sweepProvider = input.sweepProvider as string | undefined;
+    const synthesisProvider = input.synthesisProvider as string | undefined;
 
     try {
       const url = `http://localhost:${ctx.enginePort}/api/pgs`;
+      const body: Record<string, unknown> = { query, mode, maxPartitions };
+      if (sweepModel) body.sweepModel = sweepModel;
+      if (synthesisModel) body.synthesisModel = synthesisModel;
+      if (sweepProvider) body.sweepProvider = sweepProvider;
+      if (synthesisProvider) body.synthesisProvider = synthesisProvider;
+
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, mode, maxPartitions }),
-        signal: AbortSignal.timeout(180_000),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(300_000),
       });
 
       if (!res.ok) {
@@ -313,7 +342,7 @@ export const brainPgsTool: ToolDefinition = {
         sweeps?: Array<{ partitionId?: string; finding?: string }>;
         absences?: string[];
         crossDomain?: string[];
-        metadata?: Record<string, unknown>;
+        metadata?: { models?: { sweep?: string; sweepProvider?: string; synthesis?: string; synthesisProvider?: string } } & Record<string, unknown>;
       };
 
       const parts: string[] = [];
@@ -331,6 +360,10 @@ export const brainPgsTool: ToolDefinition = {
           `- [${p.id}] size=${p.size} score=${p.score?.toFixed?.(3) ?? '?'} keywords=${(p.keywords ?? []).slice(0, 5).join(', ')}`
         ).join('\n');
         parts.push(`## Partitions Swept (${data.partitions.length})\n${pList}`);
+      }
+      if (data.metadata?.models) {
+        const m = data.metadata.models;
+        parts.push(`---\n_[PGS models: sweep=${m.sweep} (${m.sweepProvider}), synthesis=${m.synthesis} (${m.synthesisProvider})]_`);
       }
 
       const out = parts.join('\n\n') || 'PGS returned no synthesis.';

@@ -5937,7 +5937,24 @@ You are empowered to explore and understand. The user trusts you to discover the
     // returns synthesized findings + absences + cross-domain connections.
     this.app.post('/api/pgs', async (req, res) => {
       try {
-        const { query, mode = 'full', maxPartitions } = req.body || {};
+        const {
+          query,
+          mode = 'full',
+          maxPartitions,
+          // Dual model control — sweeps can use a cheaper/faster model
+          // (many parallel calls) while synthesis uses a stronger model
+          // for the single cross-partition reasoning pass.
+          sweepModel,
+          synthesisModel,
+          // Optional provider override — routes to a specific adapter
+          // (minimax / anthropic / openai / openai-codex / xai / ollama-cloud).
+          // Usually UnifiedClient picks the right one from the model name.
+          sweepProvider,
+          synthesisProvider,
+          // Optional per-call max_tokens override
+          sweepMaxTokens,
+          synthesisMaxTokens,
+        } = req.body || {};
         if (!query) return res.status(400).json({ error: 'query is required' });
 
         // Lazy-load PGS engine + UnifiedClient shim (avoids startup cost when PGS unused)
@@ -5952,26 +5969,146 @@ You are empowered to explore and understand. The user trusts you to discover the
           });
         }
 
-        // Build a provider shim over UnifiedClient (sweep + synthesis providers)
+        // Build provider shim over UnifiedClient. Caller can pass any model
+        // from any configured provider — we resolve the provider from the
+        // model name via home.yaml lookup, then route directly to the
+        // correct generate*() method. This bypasses getModelAssignment()
+        // so PGS works with any model regardless of engine config state.
         const { UnifiedClient } = require('../core/unified-client');
-        const unified = new UnifiedClient(this.config || {}, this.logger);
 
-        const providerShim = {
+        // The dashboard process doesn't have a direct config object (it only
+        // receives logsDir at construction). Load the engine config fresh so
+        // UnifiedClient can initialize all providers. COSMO_CONFIG_PATH points
+        // to base-engine.yaml; we merge home.yaml providers/secrets underneath
+        // using the same loader the engine itself uses.
+        let unifiedConfig = {};
+        try {
+          const yaml = require('js-yaml');
+          const fsSync = require('fs');
+          const cfgPath = process.env.COSMO_CONFIG_PATH;
+          if (cfgPath && fsSync.existsSync(cfgPath)) {
+            unifiedConfig = yaml.load(fsSync.readFileSync(cfgPath, 'utf8')) || {};
+          }
+          // Merge home.yaml providers + secrets.yaml keys into the config so
+          // UnifiedClient's provider init (which looks at config.providers.*)
+          // finds credentials.
+          const engineRoot = path.resolve(__dirname, '..', '..');
+          const homeRoot = path.join(engineRoot, '..', 'config');
+          const homePath = path.join(homeRoot, 'home.yaml');
+          const secretsPath = path.join(homeRoot, 'secrets.yaml');
+          if (fsSync.existsSync(homePath)) {
+            const home = yaml.load(fsSync.readFileSync(homePath, 'utf8')) || {};
+            unifiedConfig.providers = { ...(unifiedConfig.providers || {}), ...(home.providers || {}) };
+          }
+          if (fsSync.existsSync(secretsPath)) {
+            const secrets = yaml.load(fsSync.readFileSync(secretsPath, 'utf8')) || {};
+            const provSecrets = secrets.providers || {};
+            for (const [name, sec] of Object.entries(provSecrets)) {
+              unifiedConfig.providers[name] = {
+                ...(unifiedConfig.providers[name] || {}),
+                ...sec,
+                enabled: true,
+              };
+            }
+          }
+        } catch (e) {
+          console.warn('[PGS] Could not load engine config, provider routing may be limited:', e.message);
+        }
+
+        const unified = new UnifiedClient(unifiedConfig, this.logger);
+
+        // Load provider → defaultModels map from home.yaml once
+        const resolveProviderForModel = (() => {
+          let cache = null;
+          return (modelName) => {
+            if (!modelName) return null;
+            if (!cache) {
+              try {
+                const yaml = require('js-yaml');
+                const fsSync = require('fs');
+                const engineRoot = path.resolve(__dirname, '..', '..');
+                const homePath = path.join(engineRoot, '..', 'config', 'home.yaml');
+                const home = fsSync.existsSync(homePath)
+                  ? yaml.load(fsSync.readFileSync(homePath, 'utf8'))
+                  : {};
+                cache = home.providers || {};
+              } catch { cache = {}; }
+            }
+            const modelLower = modelName.toLowerCase();
+            for (const [name, prov] of Object.entries(cache)) {
+              const defaultModels = (prov.defaultModels || []).map(m => String(m));
+              if (defaultModels.includes(modelName)) return name;
+              if (defaultModels.map(m => m.toLowerCase()).includes(modelLower)) return name;
+            }
+            return null;
+          };
+        })();
+
+        // Defaults: use engine's quantumReasoner model assignment (MiniMax-M2.7
+        // in the current config) for sweeps, and the same for synthesis unless
+        // the user passed a stronger model. Works out of the box.
+        const cfgAssignments = this.config?.models?.modelAssignments || {};
+        const defaultFast = cfgAssignments['quantumReasoner.branches']?.model
+          || this.config?.models?.defaultModel
+          || 'MiniMax-M2.7';
+        const defaultStrong = cfgAssignments['synthesis']?.model
+          || this.config?.models?.strategicModel
+          || defaultFast;
+
+        const effectiveSweepModel = sweepModel || defaultFast;
+        const effectiveSynthesisModel = synthesisModel || defaultStrong;
+
+        // Resolve provider from model name if caller didn't pin one explicitly
+        const effectiveSweepProvider = sweepProvider || resolveProviderForModel(effectiveSweepModel) || 'openai';
+        const effectiveSynthesisProvider = synthesisProvider || resolveProviderForModel(effectiveSynthesisModel) || 'openai';
+
+        const buildProvider = (kind, modelName, providerName, maxTokensOverride) => ({
           async generate({ instructions, input, maxTokens, reasoningEffort }) {
-            // PGSEngine sends {instructions, input} — UnifiedClient wants
-            // {instructions, messages: [{role:'user', content}]}
-            const response = await unified.generate({
+            const finalMaxTokens = maxTokensOverride || maxTokens || (kind === 'synthesis' ? 8000 : 4000);
+            const finalReasoning = reasoningEffort || (kind === 'synthesis' ? 'high' : 'medium');
+            const callOpts = {
               component: 'pgsEngine',
-              purpose: 'sweep',
-              model: 'gpt-5-mini',
+              purpose: kind,
+              model: modelName,
               instructions: instructions || '',
               messages: [{ role: 'user', content: input || '' }],
-              max_completion_tokens: maxTokens || 4000,
-              reasoningEffort: reasoningEffort || 'medium',
-            });
+              max_completion_tokens: finalMaxTokens,
+              reasoningEffort: finalReasoning,
+            };
+            // Route to the explicit provider method — bypasses getModelAssignment()
+            // which returns null when config has no pgsEngine.* assignment.
+            const assignment = { provider: providerName, model: modelName };
+            let response;
+            try {
+              if (providerName === 'anthropic') {
+                response = await unified.generateAnthropic(assignment, callOpts);
+              } else if (providerName === 'minimax') {
+                response = await unified.generateMiniMax(assignment, callOpts);
+              } else if (providerName === 'xai') {
+                response = await unified.generateXAI(assignment, callOpts);
+              } else if (providerName === 'ollama-cloud') {
+                response = await unified.generateWithChatClient(unified.ollamaCloudClient, 'ollama-cloud', assignment, callOpts);
+              } else if (providerName === 'groq') {
+                response = await unified.generateWithChatClient(unified.groqClient, 'groq', assignment, callOpts);
+              } else if (providerName === 'huggingface') {
+                response = await unified.generateWithChatClient(unified.hfClient, 'huggingface', assignment, callOpts);
+              } else if (providerName === 'local') {
+                response = await unified.generateLocal(assignment, callOpts);
+              } else {
+                // OpenAI / OpenAI-Codex / unknown → parent GPT5Client via generate()
+                response = await unified.generate(callOpts);
+              }
+            } catch (err) {
+              return { content: `[PGS ${kind} error: ${err.message}]` };
+            }
             return { content: response.content || '' };
           },
-        };
+        });
+
+        const sweepProviderShim = buildProvider('sweep', effectiveSweepModel, effectiveSweepProvider, sweepMaxTokens);
+        const synthesisProviderShim = buildProvider('synthesis', effectiveSynthesisModel, effectiveSynthesisProvider, synthesisMaxTokens);
+
+        console.log(`[PGS] Models: sweep=${effectiveSweepModel} (${effectiveSweepProvider}), synthesis=${effectiveSynthesisModel} (${effectiveSynthesisProvider})`);
 
         // Embedding provider — uses engine's network-memory embed helper when available
         let embeddingProvider = null;
@@ -5991,8 +6128,8 @@ You are empowered to explore and understand. The user trusts you to discover the
         }
 
         const pgs = new PGSEngine({
-          sweepProvider: providerShim,
-          synthesisProvider: providerShim,
+          sweepProvider: sweepProviderShim,
+          synthesisProvider: synthesisProviderShim,
           embeddingProvider,
           config: maxPartitions ? { maxSweepPartitions: Number(maxPartitions) } : {},
           onEvent: (e) => console.log(`[PGS] ${e.type}: ${JSON.stringify(e).slice(0, 200)}`),
@@ -6008,7 +6145,15 @@ You are empowered to explore and understand. The user trusts you to discover the
           sweeps: result.sweeps || result.metadata?.sweeps || [],
           absences: result.absences || [],
           crossDomain: result.crossDomain || result.metadata?.crossDomain || [],
-          metadata: result.metadata || {},
+          metadata: {
+            ...(result.metadata || {}),
+            models: {
+              sweep: effectiveSweepModel,
+              sweepProvider: effectiveSweepProvider,
+              synthesis: effectiveSynthesisModel,
+              synthesisProvider: effectiveSynthesisProvider,
+            },
+          },
         };
 
         // Log the PGS query alongside other queries

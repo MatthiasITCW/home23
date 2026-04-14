@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.3 (2026-04-14)
+
+### PGS works with any model + dual-model sweep/synthesis control
+Initial PGS implementation hardcoded gpt-5-mini for sweep + synthesis. Now:
+
+- `/api/pgs` accepts `sweepModel`, `synthesisModel`, `sweepProvider`,
+  `synthesisProvider` — caller picks the model per phase.
+- Provider is auto-resolved from model name via home.yaml lookup
+  (MiniMax-M2.7 → minimax, claude-sonnet-4-6 → anthropic, etc.).
+- Provider-specific generate method called directly (bypasses
+  getModelAssignment which returned null for pgsEngine.*). Supports
+  minimax / anthropic / openai / openai-codex / xai / ollama-cloud / local.
+- Dashboard server now loads the full engine config (base-engine.yaml +
+  home.yaml providers + secrets.yaml keys) on /api/pgs so UnifiedClient
+  can init all provider SDKs. Previously only OpenAI was initialized.
+- `brain_pgs` tool surfaces sweepModel/synthesisModel/sweepProvider/
+  synthesisProvider args. Tool description calls out the dual-model
+  design (cheap/fast for many parallel sweeps, stronger for single synthesis).
+- Response metadata now reports which sweep + synthesis models actually
+  ran so the caller can see what was used.
+
+Verified live:
+- MiniMax-M2.7-highspeed sweep + MiniMax-M2.7 synthesis: end-to-end synthesis
+- MiniMax-M2.7-highspeed sweep + grok-4-0709 synthesis: cross-provider routing
+- claude-sonnet-4-6 synthesis surfaces a separate Anthropic OAuth-auth
+  issue (Home23 uses sk-ant-oat* tokens which need stealth headers; the
+  direct Anthropic SDK rejects them). Tracked separately.
+
 ## 0.5.2 (2026-04-14)
 
 ### Full brain-tier access for Jerry (all query layers exposed)
