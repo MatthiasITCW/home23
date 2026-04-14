@@ -4461,10 +4461,40 @@ Be specific, actionable, and maintain research continuity.`;
       }
     });
 
+    // /api/state — lightweight projection. The full state file is ~185MB
+    // compressed / ~400MB uncompressed; we never want to serialize that over
+    // HTTP. Callers (dashboard, chat tools, harness) need cycle count, mode,
+    // memory/goal counts, and recent thought — not the full graph. Pass
+    // ?full=1 to get the full state for debugging (still gated by cache).
     this.app.get('/api/state', async (req, res) => {
       try {
         const state = await this.loadState();
-        res.json(state);
+        const wantsFull = req.query.full === '1' || req.query.full === 'true';
+        if (wantsFull) {
+          return res.json(state);
+        }
+        // Cheap projection: counts instead of arrays, latest thought summary
+        const memory = state.memory || {};
+        const goals = state.goals || {};
+        const projection = {
+          cycleCount: state.cycleCount || 0,
+          oscillatorMode: state.oscillatorMode || state.currentMode || 'focus',
+          cognitiveState: state.cognitiveState || {},
+          memory: {
+            nodes: Array.isArray(memory.nodes) ? memory.nodes.length : 0,
+            edges: Array.isArray(memory.edges) ? memory.edges.length : 0,
+            clusters: Array.isArray(memory.clusters) ? memory.clusters.length : 0,
+          },
+          goals: {
+            active: Array.isArray(goals.active) ? goals.active.length : 0,
+            completed: Array.isArray(goals.completed) ? goals.completed.length : 0,
+            archived: Array.isArray(goals.archived) ? goals.archived.length : 0,
+          },
+          temporal: state.temporal || null,
+          lastUpdated: state.lastUpdated || null,
+          projection: true,
+        };
+        res.json(projection);
       } catch (error) {
         // Fallback: derive state from thoughts if state.json doesn't exist
         const thoughts = await this.getRecentThoughts(1);
@@ -7782,10 +7812,31 @@ You are empowered to explore and understand. The user trusts you to discover the
   }
 
   async loadState() {
+    // state.json.gz is ~180MB compressed on a big brain — decompressing +
+    // parsing it on every request blocks the event loop for 1-3 seconds.
+    // Cache the parsed state in memory with a short TTL and invalidate when
+    // the file mtime changes (engine writes it every cycle).
     const statePath = path.join(this.logsDir, 'state.json');
     try {
-      // Use StateCompression to handle both .gz and uncompressed files
-      return await StateCompression.loadCompressed(statePath);
+      const gzPath = statePath + '.gz';
+      let mtime = 0;
+      try {
+        const fsSync = require('fs');
+        const target = fsSync.existsSync(gzPath) ? gzPath : statePath;
+        if (fsSync.existsSync(target)) {
+          mtime = fsSync.statSync(target).mtimeMs;
+        }
+      } catch { /* file may not exist yet */ }
+
+      const now = Date.now();
+      const cache = this._stateCache;
+      if (cache && cache.mtime === mtime && (now - cache.loadedAt) < 30000) {
+        return cache.data;
+      }
+
+      const data = await StateCompression.loadCompressed(statePath);
+      this._stateCache = { data, mtime, loadedAt: now };
+      return data;
     } catch (error) {
       // Return empty state object if file doesn't exist or is corrupted
       this.logger?.warn?.('Could not load state.json', { path: statePath, error: error.message });
