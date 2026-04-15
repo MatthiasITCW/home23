@@ -1337,10 +1337,14 @@ class DashboardServer {
       if (!filePath || typeof filePath !== 'string') {
         return res.status(400).json({ error: 'path required' });
       }
-      // Security: only serve from temp dirs or workspace
+      // Security: only serve from temp dirs, workspace, or user-configured vibe source paths.
       const home23Root = this.getHome23Root();
       const resolved = path.resolve(filePath);
-      if (!resolved.startsWith(home23Root) && !resolved.startsWith('/tmp/')) {
+      const allowed =
+        resolved.startsWith(home23Root) ||
+        resolved.startsWith('/tmp/') ||
+        (this.home23Vibe && this.home23Vibe.isPathAllowed(resolved));
+      if (!allowed) {
         return res.status(403).json({ error: 'Access denied' });
       }
       if (!fsSync.existsSync(resolved)) {

@@ -1505,12 +1505,28 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
     generationIntervalHours: 12,
     rotationIntervalSeconds: 45,
     galleryLimit: 60,
+    sourcePaths: [],
     dreams: {
       enabled: true,
       lookback: 3,
       extraction: 'heuristic',
     },
   };
+
+  function normalizeSourcePathsInput(raw) {
+    const list = Array.isArray(raw) ? raw : [];
+    const seen = new Set();
+    const out = [];
+    for (const entry of list) {
+      if (typeof entry !== 'string') continue;
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      if (seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+    return out;
+  }
 
   function mergeVibeConfig(s = {}) {
     const dreams = (s.dreams && typeof s.dreams === 'object') ? s.dreams : {};
@@ -1519,6 +1535,7 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
       generationIntervalHours: Number(s.generationIntervalHours) || VIBE_DEFAULTS.generationIntervalHours,
       rotationIntervalSeconds: Number(s.rotationIntervalSeconds) || VIBE_DEFAULTS.rotationIntervalSeconds,
       galleryLimit: Number(s.galleryLimit) || VIBE_DEFAULTS.galleryLimit,
+      sourcePaths: normalizeSourcePathsInput(s.sourcePaths),
       dreams: {
         enabled: dreams.enabled !== false,
         lookback: Number(dreams.lookback) || VIBE_DEFAULTS.dreams.lookback,

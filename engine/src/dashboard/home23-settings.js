@@ -1500,6 +1500,7 @@ async function loadVibe() {
     document.getElementById('vibe-dreams-enabled').checked = d.enabled !== false;
     document.getElementById('vibe-dreams-lookback').value = d.lookback ?? 3;
     document.getElementById('vibe-dreams-extraction').value = d.extraction === 'llm' ? 'llm' : 'heuristic';
+    document.getElementById('vibe-source-paths').value = Array.isArray(v.sourcePaths) ? v.sourcePaths.join('\n') : '';
   } catch (err) {
     console.error('[vibe] load failed', err);
   }
@@ -1514,6 +1515,10 @@ async function saveVibe() {
       generationIntervalHours: Number(document.getElementById('vibe-gen-hours').value),
       rotationIntervalSeconds: Number(document.getElementById('vibe-rot-seconds').value),
       galleryLimit: Number(document.getElementById('vibe-gallery-limit').value),
+      sourcePaths: document.getElementById('vibe-source-paths').value
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean),
       dreams: {
         enabled: document.getElementById('vibe-dreams-enabled').checked,
         lookback: Number(document.getElementById('vibe-dreams-lookback').value),

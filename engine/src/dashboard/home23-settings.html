@@ -619,6 +619,17 @@
       </div>
 
       <div class="h23s-section">
+        <h3 class="h23s-section-title">External Sources</h3>
+        <p class="h23s-panel-desc">Additional directories of images to mix into the Vibe cycle. One absolute path per line (use <code>~/</code> for your home directory). Images from these folders are displayed alongside CHAOS MODE generations — sorted by file modification time, newest first.</p>
+        <div class="h23s-field-row">
+          <div class="h23s-field" style="flex: 1 1 100%;">
+            <label>Source Paths</label>
+            <textarea id="vibe-source-paths" rows="4" placeholder="~/websites/cosmoimages.evobrew.com&#10;/Users/me/Pictures/wallpapers" style="width: 100%; font-family: inherit;"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="h23s-section">
         <h3 class="h23s-section-title">Dream Augmentation</h3>
         <p class="h23s-panel-desc">When enabled, the vibe service reads the N most recent dreams from the agent's brain and extracts symbolic motifs. Motifs are woven into CHAOS MODE prompts as texture and atmosphere, never as the literal subject.</p>
         <div class="h23s-field-row">

@@ -2,11 +2,13 @@
 
 const fs = require('fs');
 const fsp = require('fs').promises;
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const yaml = require('js-yaml');
 const { createImageProvider } = require('../../core/image-provider');
 
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const DEFAULT_GALLERY_LIMIT = 60;
 const DEFAULT_GENERATION_INTERVAL_HOURS = 12;
 const DEFAULT_ROTATION_INTERVAL_SECONDS = 45;
@@ -24,12 +26,37 @@ const DEFAULT_VIBE_CONFIG = Object.freeze({
   generationIntervalHours: DEFAULT_GENERATION_INTERVAL_HOURS,
   rotationIntervalSeconds: DEFAULT_ROTATION_INTERVAL_SECONDS,
   galleryLimit: DEFAULT_GALLERY_LIMIT,
+  sourcePaths: [],
   dreams: {
     enabled: true,
     lookback: DEFAULT_DREAM_LOOKBACK,
     extraction: 'heuristic',
   },
 });
+
+function expandPath(p) {
+  if (!p || typeof p !== 'string') return '';
+  const trimmed = p.trim();
+  if (!trimmed) return '';
+  if (trimmed === '~') return os.homedir();
+  if (trimmed.startsWith('~/')) return path.join(os.homedir(), trimmed.slice(2));
+  return trimmed;
+}
+
+function normalizeSourcePaths(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of list) {
+    const expanded = expandPath(entry);
+    if (!expanded) continue;
+    const resolved = path.resolve(expanded);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
+}
 
 // Heuristic stop-word list for motif extraction — drops filler so concrete
 // nouns/adjectives surface from dream text.
@@ -239,6 +266,7 @@ class Home23VibeService {
       rotationIntervalSeconds,
       rotationIntervalMs: rotationIntervalSeconds * 1000,
       galleryLimit,
+      sourcePaths: normalizeSourcePaths(config.sourcePaths),
       dreams,
     };
   }
@@ -249,8 +277,68 @@ class Home23VibeService {
       generationIntervalHours: config.generationIntervalHours,
       rotationIntervalSeconds: config.rotationIntervalSeconds,
       galleryLimit: config.galleryLimit,
+      sourcePaths: config.sourcePaths,
       dreams: config.dreams,
     };
+  }
+
+  isPathAllowed(absolutePath) {
+    if (!absolutePath || typeof absolutePath !== 'string') return false;
+    const resolved = path.resolve(absolutePath);
+    const sourcePaths = this.getConfig().sourcePaths || [];
+    for (const root of sourcePaths) {
+      if (resolved === root) return true;
+      if (resolved.startsWith(root + path.sep)) return true;
+    }
+    return false;
+  }
+
+  async getExternalItems(config) {
+    const roots = config.sourcePaths || [];
+    if (!roots.length) return [];
+
+    const items = [];
+    for (const root of roots) {
+      if (!fs.existsSync(root)) continue;
+      let stat;
+      try { stat = await fsp.stat(root); } catch { continue; }
+      if (!stat.isDirectory()) continue;
+
+      let entries;
+      try { entries = await fsp.readdir(root); } catch { continue; }
+
+      for (const name of entries) {
+        const ext = path.extname(name).toLowerCase();
+        if (!IMAGE_EXTENSIONS.has(ext)) continue;
+        const abs = path.join(root, name);
+        let fileStat;
+        try { fileStat = await fsp.stat(abs); } catch { continue; }
+        if (!fileStat.isFile()) continue;
+
+        items.push({
+          id: `ext:${crypto.createHash('sha1').update(abs).digest('hex').slice(0, 16)}`,
+          agentName: this.agentName,
+          imagePath: abs,
+          generatedAt: fileStat.mtime.toISOString(),
+          createdAt: fileStat.mtime.toISOString(),
+          caption: path.basename(name, ext).replace(/[-_]+/g, ' '),
+          prompt: '',
+          source: 'external',
+          sourceRoot: root,
+        });
+      }
+    }
+    return items;
+  }
+
+  mergeItems(storedItems, externalItems) {
+    const combined = [...storedItems, ...externalItems];
+    combined.sort((a, b) => {
+      const ta = new Date(a.generatedAt || a.createdAt || 0).getTime();
+      const tb = new Date(b.generatedAt || b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+    return combined;
   }
 
   getStoredItems(manifest) {
@@ -289,6 +377,8 @@ class Home23VibeService {
     const config = this.getConfig();
     const manifest = await this.loadManifest();
     const storedItems = this.getStoredItems(manifest);
+    const externalItems = await this.getExternalItems(config);
+    const allItems = this.mergeItems(storedItems, externalItems);
     const resolvedLimit = Math.max(
       1,
       Math.min(
@@ -296,11 +386,13 @@ class Home23VibeService {
         Math.floor(positiveNumber(limit, config.galleryLimit))
       )
     );
-    const items = storedItems.slice(0, resolvedLimit).map(item => this.enrichItem(item));
+    const items = allItems.slice(0, resolvedLimit).map(item => this.enrichItem(item));
 
     return {
       agentName: this.agentName,
-      total: storedItems.length,
+      total: allItems.length,
+      storedTotal: storedItems.length,
+      externalTotal: externalItems.length,
       generating: Boolean(this.generationPromise),
       policy: this.describePolicy(config),
       images: items,
@@ -310,9 +402,12 @@ class Home23VibeService {
   async getCurrent() {
     const config = this.getConfig();
     const manifest = await this.loadManifest();
-    const storedItems = this.getStoredItems(manifest).slice(0, config.galleryLimit);
+    const storedItems = this.getStoredItems(manifest);
+    const externalItems = await this.getExternalItems(config);
+    const allItems = this.mergeItems(storedItems, externalItems).slice(0, config.galleryLimit);
+    // Generation cadence is driven only by agent-generated images, not external mirrors.
     const latest = storedItems[0] || null;
-    const item = this.pickDisplayItem(storedItems, config);
+    const item = this.pickDisplayItem(allItems, config);
     const generationDue = this.isGenerationDue(latest, config);
 
     if (this.shouldAutoGenerate(latest, config)) {
@@ -325,7 +420,9 @@ class Home23VibeService {
       status: item
         ? (generationDue ? (this.generationPromise ? 'refreshing' : 'stale') : 'ready')
         : (this.generationPromise ? 'generating' : 'empty'),
-      total: storedItems.length,
+      total: allItems.length,
+      storedTotal: storedItems.length,
+      externalTotal: externalItems.length,
       generationDue,
       policy: this.describePolicy(config),
       latestItem: latest ? this.enrichItem(latest) : null,
