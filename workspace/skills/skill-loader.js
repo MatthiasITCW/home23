@@ -11,8 +11,9 @@ import yaml from "js-yaml";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = __dirname;
-const SUPPORT_DIRS = new Set(["_archived"]);
+const SUPPORT_DIRS = new Set(["_archived", ".telemetry"]);
 const SCRIPT_EXTS = new Set([".js", ".mjs", ".sh", ".py"]);
+const SIDE_EFFECT_ACTIONS = new Set(["post", "reply", "delete", "publish", "send", "write", "mutate"]);
 
 function parseSkillMd(content) {
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
@@ -35,6 +36,27 @@ function readJsonIfExists(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function normalizeStringArray(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
+  }
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
+}
+
+function normalizeHooks(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const hooks = {};
+  for (const [key, hookPath] of Object.entries(value)) {
+    if (typeof hookPath === "string" && hookPath.trim()) {
+      hooks[key] = hookPath.trim();
+    }
+  }
+  return hooks;
+}
+
 function getSkillDirs() {
   return fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -44,7 +66,7 @@ function getSkillDirs() {
 }
 
 function normalizeActions(manifest, skillMdMeta, scriptsDir) {
-  const manifestActions = Array.isArray(manifest?.actions) ? manifest.actions : [];
+  const manifestActions = normalizeStringArray(manifest?.actions);
   const mdCapabilities = Array.isArray(skillMdMeta?.capabilities)
     ? skillMdMeta.capabilities
         .map((capability) => typeof capability === "string" ? capability : Object.keys(capability || {})[0])
@@ -76,6 +98,8 @@ function buildSkillRecord(name) {
 
   if (!manifest && !skillMd) return null;
 
+  const hooks = normalizeHooks(manifest?.hooks || skillMd?.meta?.hooks);
+  const actions = normalizeActions(manifest, skillMd?.meta, scriptsDir);
   const meta = {
     id: manifest?.id || skillMd?.meta?.id || name,
     name: manifest?.name || skillMd?.meta?.name || name,
@@ -85,7 +109,15 @@ function buildSkillRecord(name) {
     entry: manifest?.entry || "index.js",
     layer: manifest?.layer || skillMd?.meta?.layer || "skill",
     runtime: manifest?.runtime || skillMd?.meta?.runtime || (fs.existsSync(entryPath) ? "nodejs" : "docs"),
-    actions: normalizeActions(manifest, skillMd?.meta, scriptsDir),
+    category: manifest?.category || skillMd?.meta?.category || "general",
+    keywords: normalizeStringArray(manifest?.keywords || skillMd?.meta?.keywords),
+    triggers: normalizeStringArray(manifest?.triggers || skillMd?.meta?.triggers),
+    requiresTools: normalizeStringArray(manifest?.requiresTools || skillMd?.meta?.requiresTools || skillMd?.meta?.requires_tools),
+    dependsOn: normalizeStringArray(manifest?.dependsOn || skillMd?.meta?.dependsOn || skillMd?.meta?.depends_on),
+    composes: normalizeStringArray(manifest?.composes || skillMd?.meta?.composes),
+    hooks,
+    actions,
+    sideEffects: Boolean(manifest?.sideEffects || skillMd?.meta?.sideEffects || actions.some((action) => SIDE_EFFECT_ACTIONS.has(action))),
   };
 
   return {
@@ -125,6 +157,14 @@ function listSkills() {
     description: skill.meta.description,
     version: skill.meta.version,
     runtime: skill.meta.runtime,
+    category: skill.meta.category,
+    keywords: skill.meta.keywords,
+    triggers: skill.meta.triggers,
+    requiresTools: skill.meta.requiresTools,
+    dependsOn: skill.meta.dependsOn,
+    composes: skill.meta.composes,
+    hookNames: Object.keys(skill.meta.hooks),
+    sideEffects: skill.meta.sideEffects,
     actions: skill.meta.actions,
     hasEntry: skill.hasEntry,
     hasManifest: skill.hasManifest,
@@ -146,8 +186,16 @@ function getSkillInfo(skillName) {
     description: skill.meta.description,
     author: skill.meta.author,
     runtime: skill.meta.runtime,
+    category: skill.meta.category,
     entry: skill.meta.entry,
     actions: skill.meta.actions,
+    keywords: skill.meta.keywords,
+    triggers: skill.meta.triggers,
+    requiresTools: skill.meta.requiresTools,
+    dependsOn: skill.meta.dependsOn,
+    composes: skill.meta.composes,
+    hooks: skill.meta.hooks,
+    sideEffects: skill.meta.sideEffects,
     type: skill.type,
     hasEntry: skill.hasEntry,
     files: {
@@ -179,6 +227,96 @@ function sanitizeContextForScripts(context = {}) {
     enginePort: context.enginePort || "",
     chatId: context.chatId || "",
   };
+}
+
+function telemetryDir() {
+  return path.join(SKILLS_DIR, ".telemetry");
+}
+
+function readTelemetryEvents(telemetryDays = 30) {
+  const dir = telemetryDir();
+  if (!fs.existsSync(dir)) return [];
+  const cutoff = Date.now() - (telemetryDays * 24 * 60 * 60 * 1000);
+  const events = [];
+
+  for (const file of fs.readdirSync(dir).filter((entry) => entry.endsWith(".jsonl")).sort()) {
+    const filePath = path.join(dir, file);
+    const raw = fs.readFileSync(filePath, "utf8");
+    for (const line of raw.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line);
+        const ts = new Date(event.ts || 0).getTime();
+        if (!Number.isNaN(ts) && ts >= cutoff) {
+          events.push(event);
+        }
+      } catch {
+        // ignore malformed telemetry
+      }
+    }
+  }
+
+  return events;
+}
+
+function resolveHookPath(skill, hookRef) {
+  return path.resolve(skill.path, hookRef);
+}
+
+async function runHookModule(hookPath, hookName, payload) {
+  const ext = path.extname(hookPath);
+
+  if (ext === ".js" || ext === ".mjs") {
+    const mod = await import(pathToFileURL(hookPath).href);
+    const fn = mod[hookName] || mod.run || mod.default;
+    if (typeof fn !== "function") {
+      throw new Error(`Hook '${hookName}' in ${hookPath} must export a function`);
+    }
+    return await fn(payload);
+  }
+
+  if (ext === ".sh" || ext === ".py") {
+    const env = {
+      ...process.env,
+      HOME23_SKILL_HOOK: hookName,
+      HOME23_SKILL_HOOK_PAYLOAD: JSON.stringify(payload),
+    };
+    const command = ext === ".sh" ? "bash" : "python3";
+    const result = spawnSync(command, [hookPath], { cwd: path.dirname(hookPath), env, encoding: "utf8" });
+    if (result.status !== 0) {
+      throw new Error(result.stderr?.trim() || result.stdout?.trim() || `Hook failed with code ${result.status}`);
+    }
+    const stdout = result.stdout?.trim() || "";
+    if (!stdout) return null;
+    try {
+      return JSON.parse(stdout);
+    } catch {
+      return { notes: [stdout] };
+    }
+  }
+
+  throw new Error(`Unsupported hook extension '${ext}'`);
+}
+
+async function runHook(skill, hookName, payload) {
+  const hookRef = skill.meta.hooks[hookName];
+  if (!hookRef) return null;
+  return runHookModule(resolveHookPath(skill, hookRef), hookName, payload);
+}
+
+function mergeNotesIntoResult(result, notes) {
+  if (!notes || notes.length === 0) return result;
+
+  if (typeof result === "string") {
+    return `${result}\n\n[skill notes]\n- ${notes.join("\n- ")}`;
+  }
+
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    const existing = Array.isArray(result._skillNotes) ? result._skillNotes : [];
+    return { ...result, _skillNotes: [...existing, ...notes] };
+  }
+
+  return { result, _skillNotes: notes };
 }
 
 async function executeEntryModule(skill, action, params, context) {
@@ -270,21 +408,259 @@ async function executeSkill(skillName, action, params = {}, context = {}) {
     throw new Error(`Skill not found: ${skillName}`);
   }
 
-  if (skill.hasEntry) {
-    return executeEntryModule(skill, action, params, context);
+  const hookPayload = {
+    skill: getSkillInfo(skillName),
+    action,
+    params,
+    context: sanitizeContextForScripts(context),
+  };
+
+  const before = await runHook(skill, "beforeRun", hookPayload);
+  if (before?.cancel) {
+    throw new Error(before.reason || `Execution cancelled by ${skillName} beforeRun hook`);
   }
 
-  const actionScript = findScriptForAction(skill, action);
-  if (actionScript) {
-    return runScript(path.join(skill.scriptsDir, actionScript), skill.path, action, params, context);
+  const effectiveParams = before?.params && typeof before.params === "object"
+    ? before.params
+    : params;
+  const notes = Array.isArray(before?.notes) ? [...before.notes] : [];
+
+  try {
+    let result;
+    if (skill.hasEntry) {
+      result = await executeEntryModule(skill, action, effectiveParams, context);
+    } else {
+      const actionScript = findScriptForAction(skill, action);
+      if (actionScript) {
+        result = runScript(path.join(skill.scriptsDir, actionScript), skill.path, action, effectiveParams, context);
+      } else {
+        result = {
+          skill: skillName,
+          runtime: skill.meta.runtime,
+          description: skill.meta.description,
+          availableActions: skill.meta.actions,
+          details: skill.skillMd?.body?.slice(0, 1600) || null,
+        };
+      }
+    }
+
+    const after = await runHook(skill, "afterRun", {
+      ...hookPayload,
+      params: effectiveParams,
+      result,
+    });
+    const finalResult = after && Object.prototype.hasOwnProperty.call(after, "result")
+      ? after.result
+      : result;
+    const finalNotes = [
+      ...notes,
+      ...(Array.isArray(after?.notes) ? after.notes : []),
+    ];
+    return mergeNotesIntoResult(finalResult, finalNotes);
+  } catch (err) {
+    const onError = await runHook(skill, "onError", {
+      ...hookPayload,
+      params: effectiveParams,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (onError?.swallow && Object.prototype.hasOwnProperty.call(onError, "result")) {
+      return mergeNotesIntoResult(onError.result, onError.notes || []);
+    }
+    if (onError?.error) {
+      throw new Error(onError.error);
+    }
+    throw err;
+  }
+}
+
+function scoreSkillForTask(skill, task) {
+  const text = String(task || "").toLowerCase();
+  const words = new Set(text.match(/[a-z0-9_-]+/g) || []);
+  let score = 0;
+  const reasons = [];
+
+  for (const trigger of skill.meta.triggers) {
+    const normalized = trigger.toLowerCase();
+    if (normalized && text.includes(normalized)) {
+      score += 12;
+      reasons.push(`trigger: ${trigger}`);
+    }
+  }
+
+  for (const keyword of skill.meta.keywords) {
+    const normalized = keyword.toLowerCase();
+    if (!normalized) continue;
+    const keyWords = normalized.split(/\s+/).filter(Boolean);
+    if (keyWords.every((word) => words.has(word) || text.includes(word))) {
+      score += keyWords.length > 1 ? 5 : 3;
+      reasons.push(`keyword: ${keyword}`);
+    }
+  }
+
+  for (const action of skill.meta.actions) {
+    const normalized = action.toLowerCase();
+    if (words.has(normalized) || text.includes(normalized.replace(/-/g, " "))) {
+      score += 2;
+      reasons.push(`action: ${action}`);
+    }
+  }
+
+  const categoryWords = skill.meta.category.toLowerCase().split(/\s+/).filter(Boolean);
+  if (categoryWords.some((word) => words.has(word))) {
+    score += 2;
+    reasons.push(`category: ${skill.meta.category}`);
+  }
+
+  const descriptionWords = String(skill.meta.description || "").toLowerCase().split(/[^a-z0-9_-]+/).filter(Boolean);
+  const sharedDescriptionTerms = descriptionWords.filter((word) => word.length > 4 && words.has(word));
+  if (sharedDescriptionTerms.length > 0) {
+    score += Math.min(sharedDescriptionTerms.length, 3);
+    reasons.push(`description terms: ${sharedDescriptionTerms.join(", ")}`);
   }
 
   return {
-    skill: skillName,
+    id: skill.id,
+    name: skill.meta.name,
+    category: skill.meta.category,
     runtime: skill.meta.runtime,
     description: skill.meta.description,
-    availableActions: skill.meta.actions,
-    details: skill.skillMd?.body?.slice(0, 1600) || null,
+    actions: skill.meta.actions,
+    score,
+    reasons: [...new Set(reasons)],
+  };
+}
+
+function suggestSkills(task, options = {}) {
+  const limit = Math.max(1, Math.min(Number(options.limit || 5), 20));
+  const suggestions = Object.values(loadSkills())
+    .map((skill) => scoreSkillForTask(skill, task))
+    .filter((skill) => skill.score > 0)
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .slice(0, limit);
+
+  return suggestions;
+}
+
+function checkSection(body, heading) {
+  return new RegExp(`^##\\s+${heading}\\b`, "im").test(body);
+}
+
+function buildUsageSummary(skillId, telemetryEvents) {
+  const matching = telemetryEvents.filter((event) => event.skillId === skillId);
+  const suggestCount = matching.filter((event) => event.event === "skills_suggest").length;
+  const runEvents = matching.filter((event) => event.event === "skills_run");
+  const runCount = runEvents.filter((event) => event.success !== false).length;
+  const failureCount = runEvents.filter((event) => event.success === false).length;
+  const lastUsedAt = runEvents.length > 0 ? runEvents[runEvents.length - 1].ts : null;
+
+  return {
+    suggestCount,
+    runCount,
+    failureCount,
+    lastUsedAt,
+  };
+}
+
+function buildSkillAudit(skill, telemetryEvents) {
+  const body = skill.skillMd?.body || "";
+  const checks = {
+    hasCategory: Boolean(skill.meta.category && skill.meta.category !== "general"),
+    hasTriggers: skill.meta.triggers.length >= 3,
+    hasKeywords: skill.meta.keywords.length >= 4,
+    hasWhenToUse: checkSection(body, "When to use"),
+    hasActionsOrWorkflow: checkSection(body, "Actions") || checkSection(body, "Workflow"),
+    hasGotchas: checkSection(body, "Gotchas"),
+    hasExamples: /```/.test(body) || checkSection(body, "Examples"),
+    hasCompositionHints: skill.meta.requiresTools.length > 0 || skill.meta.dependsOn.length > 0 || skill.meta.composes.length > 0,
+    hooksForSideEffects: !skill.meta.sideEffects || Object.keys(skill.meta.hooks).length > 0,
+  };
+  const usage = buildUsageSummary(skill.id, telemetryEvents);
+  let score = 100;
+  const issues = [];
+  const recommendations = [];
+
+  function addIssue(message, penalty, recommendation) {
+    score -= penalty;
+    issues.push(message);
+    if (recommendation) recommendations.push(recommendation);
+  }
+
+  if (skill.meta.description.length < 50) {
+    addIssue("Description is too short to serve as strong trigger text.", 8, "Rewrite the description as a clear use-when trigger.");
+  }
+  if (!checks.hasCategory) {
+    addIssue("Missing category metadata.", 8, "Add a concrete category like research, coding, automation, browser, or social.");
+  }
+  if (!checks.hasTriggers) {
+    addIssue("Trigger phrases are too weak or missing.", 14, "Add at least 3 trigger phrases that match real user asks.");
+  }
+  if (!checks.hasKeywords) {
+    addIssue("Keyword coverage is thin.", 8, "Add keywords for nouns and verbs users will actually say.");
+  }
+  if (!checks.hasWhenToUse) {
+    addIssue("SKILL.md is missing a 'When to use' section.", 10, "Add a concise routing section so the model knows when to reach for the skill.");
+  }
+  if (!checks.hasActionsOrWorkflow) {
+    addIssue("SKILL.md is missing an actions or workflow section.", 12, "Describe the available actions or the execution workflow.");
+  }
+  if (!checks.hasGotchas) {
+    addIssue("SKILL.md is missing gotchas.", 12, "Add the specific failure modes or edge cases the model is likely to miss.");
+  }
+  if (!checks.hasExamples) {
+    addIssue("SKILL.md lacks examples or concrete input blocks.", 10, "Add a JSON input example or a small usage example.");
+  }
+  if (!checks.hasCompositionHints) {
+    addIssue("Manifest has no composition hints.", 6, "Add requiresTools, dependsOn, or composes metadata.");
+  }
+  if (!checks.hooksForSideEffects) {
+    addIssue("Side-effecting skill has no safety hook.", 15, "Add a beforeRun hook that blocks unsafe writes unless explicitly confirmed.");
+  }
+
+  let undertriggerRisk = "low";
+  if (usage.runCount === 0 && (!checks.hasTriggers || !checks.hasKeywords)) {
+    undertriggerRisk = "high";
+    recommendations.push("This skill may be hard for the agent to find. Improve trigger phrases and keywords.");
+  } else if (usage.runCount === 0) {
+    undertriggerRisk = "medium";
+    recommendations.push("Telemetry shows no successful runs yet. Validate whether routing text is strong enough.");
+  }
+
+  const status = score >= 90 ? "strong" : score >= 75 ? "good" : score >= 60 ? "needs-work" : "weak";
+
+  return {
+    id: skill.id,
+    score: Math.max(0, score),
+    status,
+    undertriggerRisk,
+    usage,
+    checks,
+    issues: [...new Set(issues)],
+    recommendations: [...new Set(recommendations)],
+  };
+}
+
+function auditSkills(options = {}) {
+  const telemetryDays = Math.max(1, Math.min(Number(options.telemetryDays || 30), 365));
+  const requestedSkillId = typeof options.skillId === "string" ? options.skillId : "";
+  const allSkills = loadSkills();
+  const selected = requestedSkillId
+    ? Object.values(allSkills).filter((skill) => skill.id === requestedSkillId)
+    : Object.values(allSkills);
+  const telemetryEvents = readTelemetryEvents(telemetryDays);
+  const audits = selected
+    .map((skill) => buildSkillAudit(skill, telemetryEvents))
+    .sort((a, b) => a.score - b.score || a.id.localeCompare(b.id));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    telemetryDays,
+    summary: {
+      skillCount: audits.length,
+      strongCount: audits.filter((audit) => audit.status === "strong").length,
+      needsWorkCount: audits.filter((audit) => audit.status === "needs-work" || audit.status === "weak").length,
+      highUndertriggerCount: audits.filter((audit) => audit.undertriggerRisk === "high").length,
+    },
+    skills: audits,
   };
 }
 
@@ -301,12 +677,18 @@ function renderRegistry() {
     lines.push(`- **ID:** \`${skill.id}\``);
     lines.push(`- **Type:** ${skill.type}`);
     lines.push(`- **Runtime:** ${skill.runtime}`);
+    lines.push(`- **Category:** ${skill.category}`);
     lines.push(`- **Operational:** ${skill.hasEntry ? "yes" : "no"}`);
     lines.push(`- **Has SKILL.md:** ${skill.hasSkillMd ? "yes" : "no"}`);
     lines.push(`- **Has manifest:** ${skill.hasManifest ? "yes" : "no"}`);
     lines.push(`- **Has scripts:** ${skill.hasScripts ? "yes" : "no"}`);
+    lines.push(`- **Hooks:** ${skill.hookNames.length > 0 ? skill.hookNames.join(", ") : "none"}`);
     lines.push(`- **Description:** ${skill.description || "No description"}`);
     lines.push(`- **Actions:** ${skill.actions.length > 0 ? skill.actions.join(", ") : "N/A"}`);
+    lines.push(`- **Triggers:** ${skill.triggers.length > 0 ? skill.triggers.join(" | ") : "N/A"}`);
+    lines.push(`- **Requires tools:** ${skill.requiresTools.length > 0 ? skill.requiresTools.join(", ") : "none"}`);
+    lines.push(`- **Composes:** ${skill.composes.length > 0 ? skill.composes.join(", ") : "none"}`);
+    lines.push(`- **Depends on:** ${skill.dependsOn.length > 0 ? skill.dependsOn.join(", ") : "none"}`);
     lines.push("");
   }
   return lines.join("\n") + "\n";
@@ -327,6 +709,8 @@ export {
   listSkills,
   getSkillInfo,
   getSkillDetails,
+  suggestSkills,
+  auditSkills,
   executeSkill,
   renderRegistry,
   syncRegistry,

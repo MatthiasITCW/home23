@@ -1,0 +1,34 @@
+{
+  "id": "source-validation",
+  "version": "1.0.0",
+  "name": "Source Validation",
+  "description": "Validate claims and sources for credibility, recency, provenance, and likely bias before you rely on them.",
+  "layer": "skill",
+  "runtime": "docs",
+  "category": "research",
+  "author": "home23",
+  "keywords": [
+    "source",
+    "validate",
+    "credibility",
+    "bias",
+    "primary source",
+    "provenance",
+    "recency"
+  ],
+  "triggers": [
+    "is this source trustworthy",
+    "validate this claim",
+    "check the source quality",
+    "is this a primary source"
+  ],
+  "requiresTools": [
+    "web_search",
+    "web_browse"
+  ],
+  "dependsOn": [],
+  "composes": [],
+  "actions": [
+    "validate"
+  ]
+}

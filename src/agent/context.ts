@@ -182,7 +182,7 @@ export class ContextManager implements ContextManagerRef {
     } else if (filename === 'COSMO_RESEARCH.md') {
       content = content.slice(0, 2800);
     } else if (filename === 'SKILL_ROUTING.md') {
-      content = content.slice(0, 2200);
+      content = content.slice(0, 4200);
     }
 
     return content;

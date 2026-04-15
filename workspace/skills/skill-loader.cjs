@@ -27,6 +27,14 @@ module.exports = {
     const mod = await loadModule();
     return mod.getSkillDetails(skillId);
   },
+  async suggestSkills(task, options) {
+    const mod = await loadModule();
+    return mod.suggestSkills(task, options);
+  },
+  async auditSkills(options) {
+    const mod = await loadModule();
+    return mod.auditSkills(options);
+  },
   async executeSkill(skillId, action, params) {
     const mod = await loadModule();
     return mod.executeSkill(skillId, action, params);

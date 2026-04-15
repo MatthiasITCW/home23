@@ -1,5 +1,11 @@
 import type { ToolDefinition, ToolContext, ToolResult } from '../types.js';
-import { executeSharedSkill, getSharedSkillDetails, listSharedSkills } from '../../skills/runtime.js';
+import {
+  auditSharedSkills,
+  executeSharedSkill,
+  getSharedSkillDetails,
+  listSharedSkills,
+  suggestSharedSkills,
+} from '../../skills/runtime.js';
 
 function stringifyResult(value: unknown, maxChars = 12000): string {
   if (typeof value === 'string') return value.slice(0, maxChars);
@@ -9,7 +15,7 @@ function stringifyResult(value: unknown, maxChars = 12000): string {
 
 export const skillsListTool: ToolDefinition = {
   name: 'skills_list',
-  description: 'List shared skills available under home23/workspace/skills. Use this to discover canonical skill IDs before reading or running one.',
+  description: 'List shared skills available under home23/workspace/skills. Includes category and trigger metadata so you can discover the right canonical skill before reading or running it.',
   input_schema: {
     type: 'object',
     properties: {
@@ -19,7 +25,7 @@ export const skillsListTool: ToolDefinition = {
     },
   },
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-    const allSkills = await listSharedSkills(ctx.projectRoot);
+    const allSkills = await listSharedSkills(ctx.projectRoot, ctx);
     const query = typeof input.query === 'string' ? input.query.toLowerCase() : '';
     const runtime = typeof input.runtime === 'string' ? input.runtime.toLowerCase() : '';
     const limit = Math.max(1, Math.min(Number(input.limit || 20), 50));
@@ -46,7 +52,9 @@ export const skillsListTool: ToolDefinition = {
 
     const lines = filtered.map((skill) => {
       const actions = Array.isArray(skill.actions) ? skill.actions.join(', ') : 'N/A';
-      return `- ${skill.id} [${skill.runtime}]${skill.hasEntry ? ' executable' : ' docs'}: ${skill.description}\n  actions: ${actions}`;
+      const category = String(skill.category ?? 'general');
+      const triggers = Array.isArray(skill.triggers) ? skill.triggers.length : 0;
+      return `- ${skill.id} [${category}] [${skill.runtime}]${skill.hasEntry ? ' executable' : ' docs'}: ${skill.description}\n  actions: ${actions}\n  triggers: ${triggers}`;
     });
 
     return { content: `Shared skills (${filtered.length}):\n${lines.join('\n')}` };
@@ -67,7 +75,7 @@ export const skillsGetTool: ToolDefinition = {
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     const skillId = String(input.skillId || '');
     const maxChars = Math.max(500, Math.min(Number(input.max_chars || 2500), 12000));
-    const details = await getSharedSkillDetails(ctx.projectRoot, skillId);
+    const details = await getSharedSkillDetails(ctx.projectRoot, skillId, ctx);
 
     if (!details || typeof details !== 'object') {
       return { content: `Skill not found: ${skillId}`, is_error: true };
@@ -81,6 +89,74 @@ export const skillsGetTool: ToolDefinition = {
     };
 
     return { content: stringifyResult(payload) };
+  },
+};
+
+export const skillsSuggestTool: ToolDefinition = {
+  name: 'skills_suggest',
+  description: 'Suggest the best shared skills for a task description using trigger phrases, keywords, categories, and actions.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      task: { type: 'string', description: 'Task or intent to match against the shared skills library' },
+      limit: { type: 'number', description: 'Max suggestions to return (default 5)' },
+    },
+    required: ['task'],
+  },
+  async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const task = String(input.task || '');
+    const limit = Math.max(1, Math.min(Number(input.limit || 5), 20));
+    const suggestions = await suggestSharedSkills(ctx.projectRoot, task, ctx);
+    const list = suggestions
+      .filter((raw) => typeof raw === 'object' && raw !== null)
+      .map((raw) => raw as Record<string, unknown>)
+      .slice(0, limit);
+
+    if (list.length === 0) {
+      return { content: 'No strong shared skill matches found.' };
+    }
+
+    const lines = list.map((item, index) => {
+      const reasons = Array.isArray(item.reasons) ? item.reasons.join('; ') : 'no reasons captured';
+      return `${index + 1}. ${item.id} score=${item.score} [${item.category}] - ${item.description}\n   reasons: ${reasons}`;
+    });
+
+    return { content: `Skill suggestions for "${task}":\n${lines.join('\n')}` };
+  },
+};
+
+export const skillsAuditTool: ToolDefinition = {
+  name: 'skills_audit',
+  description: 'Audit the shared skills library for metadata quality, section coverage, hook safety, composition hints, and undertrigger risk from telemetry.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      skillId: { type: 'string', description: 'Optional single skill ID to audit' },
+      telemetryDays: { type: 'number', description: 'Lookback window for telemetry-based checks (default 30)' },
+    },
+  },
+  async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const result = await auditSharedSkills(ctx.projectRoot, {
+      skillId: input.skillId,
+      telemetryDays: input.telemetryDays,
+    }, ctx);
+
+    if (!result || typeof result !== 'object') {
+      return { content: 'Shared skills audit is unavailable.', is_error: true };
+    }
+
+    const payload = result as Record<string, unknown>;
+    const audits = Array.isArray(payload.skills) ? payload.skills as Array<Record<string, unknown>> : [];
+    const lines = audits.slice(0, 20).map((audit) => {
+      const issues = Array.isArray(audit.issues) ? audit.issues.slice(0, 3).join(' | ') : 'none';
+      return `- ${audit.id}: score=${audit.score}, status=${audit.status}, undertrigger=${audit.undertriggerRisk}\n  issues: ${issues}`;
+    });
+
+    const summary = payload.summary && typeof payload.summary === 'object'
+      ? stringifyResult(payload.summary, 1600)
+      : 'No summary';
+
+    return { content: `Skills audit summary:\n${summary}\n\n${lines.join('\n')}` };
   },
 };
 

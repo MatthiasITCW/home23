@@ -211,7 +211,7 @@ export class ChatAgent {
     } else if (filename === 'ALIASES.json') {
       content = content.slice(0, 1800);
     } else if (filename === 'SKILL_ROUTING.md') {
-      content = content.slice(0, 2200);
+      content = content.slice(0, 4200);
     }
 
     return content;

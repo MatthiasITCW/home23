@@ -8,6 +8,8 @@ import {
   listSkills,
   getSkillInfo,
   getSkillDetails,
+  suggestSkills,
+  auditSkills,
   executeSkill,
   syncRegistry,
 } from "./skill-loader.js";
@@ -17,6 +19,8 @@ export {
   listSkills,
   getSkillInfo,
   getSkillDetails,
+  suggestSkills,
+  auditSkills,
   executeSkill,
   syncRegistry,
 };
@@ -64,6 +68,18 @@ if (isMain) {
     process.exit(0);
   }
 
+  if ((command === "suggest" || command === "match") && args[1]) {
+    const task = args.slice(1).join(" ");
+    console.log(JSON.stringify(suggestSkills(task), null, 2));
+    process.exit(0);
+  }
+
+  if (command === "audit" || command === "qc") {
+    const skillId = args[1] || undefined;
+    console.log(JSON.stringify(auditSkills({ skillId }), null, 2));
+    process.exit(0);
+  }
+
   if (command === "registry") {
     const result = syncRegistry();
     console.log(JSON.stringify(result, null, 2));
@@ -73,6 +89,8 @@ if (isMain) {
   console.log(`Usage:
   node workspace/skills/index.js list
   node workspace/skills/index.js info <skill>
+  node workspace/skills/index.js suggest <task>
+  node workspace/skills/index.js audit [skill]
   node workspace/skills/index.js run <skill> <action> [jsonParams]
   node workspace/skills/index.js registry`);
   process.exit(1);

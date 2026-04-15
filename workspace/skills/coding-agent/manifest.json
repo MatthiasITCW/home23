@@ -2,10 +2,32 @@
   "id": "coding-agent",
   "version": "1.0.0",
   "name": "Coding Agent",
-  "description": "Guidance for when to delegate coding work to a specialized coding runtime or worker.",
+  "description": "Delegate a substantial coding task to a specialized coding runtime or worker when the job is too large for an inline pass.",
   "layer": "skill",
   "runtime": "docs",
+  "category": "coding",
   "author": "home23",
+  "keywords": [
+    "coding",
+    "delegate",
+    "worker",
+    "refactor",
+    "feature",
+    "implementation"
+  ],
+  "triggers": [
+    "delegate this coding task",
+    "spin up a worker for this feature",
+    "use a coding agent",
+    "hand this off to codex"
+  ],
+  "requiresTools": [
+    "spawn_agent"
+  ],
+  "dependsOn": [],
+  "composes": [
+    "workflow-automation"
+  ],
   "actions": [
     "brief",
     "model-selection",

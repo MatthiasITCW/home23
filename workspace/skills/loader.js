@@ -8,6 +8,8 @@ export {
   listSkills,
   getSkillInfo,
   getSkillDetails,
+  suggestSkills,
+  auditSkills,
   executeSkill,
   syncRegistry,
 } from "./skill-loader.js";

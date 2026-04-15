@@ -2,10 +2,32 @@
   "id": "autoresearch",
   "version": "1.0.0",
   "name": "Autoresearch",
-  "description": "Guidance for iteratively improving a weak skill through score, tweak, and retest loops.",
+  "description": "Improve a weak skill by running a score, tweak, and retest loop when the issue is the skill itself rather than the current task.",
   "layer": "skill",
   "runtime": "docs",
+  "category": "meta",
   "author": "home23",
+  "keywords": [
+    "skill",
+    "improve",
+    "autoresearch",
+    "optimize",
+    "iterate",
+    "quality"
+  ],
+  "triggers": [
+    "improve this skill",
+    "autoresearch this skill",
+    "optimize the skill",
+    "why is this skill weak"
+  ],
+  "requiresTools": [
+    "skills_audit"
+  ],
+  "dependsOn": [],
+  "composes": [
+    "knowledge-structuring"
+  ],
   "actions": [
     "autoresearch_loop"
   ]

@@ -37,12 +37,21 @@ Use progressive disclosure:
   "id": "x",
   "version": "1.0.0",
   "name": "X",
-  "description": "Operate on X/Twitter via bird CLI",
+  "description": "Read, search, or post on X/Twitter when the task clearly involves tweets, mentions, or timelines.",
   "layer": "skill",
   "runtime": "nodejs",
+  "category": "social",
   "author": "home23",
   "entry": "index.js",
-  "actions": ["timeline", "read", "search"]
+  "actions": ["timeline", "read", "search"],
+  "keywords": ["x", "twitter", "tweet", "mentions", "timeline"],
+  "triggers": ["read this X link", "check mentions", "search X for reactions"],
+  "requiresTools": [],
+  "dependsOn": [],
+  "composes": [],
+  "hooks": {
+    "beforeRun": "hooks/before-run.js"
+  }
 }
 ```
 
@@ -51,3 +60,16 @@ Use progressive disclosure:
 - Shared routing guidance lives in `SKILL_ROUTING.md`.
 - Home23 agents discover these skills through `skills_list`, `skills_get`, and `skills_run`.
 - `SKILL_ROUTING.md` is injected into agent context automatically when present.
+
+## Curation rules
+
+- Descriptions must read like trigger text, not generic summaries.
+- Add `category`, `keywords`, and `triggers` to every skill.
+- Add `requiresTools`, `dependsOn`, or `composes` whenever the skill relies on other house surfaces.
+- `SKILL.md` should include:
+  - `When to use`
+  - `Actions` or `Workflow`
+  - `Gotchas`
+  - at least one concrete example or JSON input block
+- Side-effecting executable skills should use hooks for guardrails.
+- Run `node workspace/skills/index.js audit` to check quality and undertrigger risk.

@@ -6,6 +6,21 @@ layer: skill
 runtime: nodejs
 author: home23
 description: Operate on X/Twitter with bird CLI for timelines, reads, search, mentions, posts, and replies.
+category: social
+keywords:
+  - x
+  - twitter
+  - tweet
+  - mentions
+  - timeline
+  - reply
+  - post
+triggers:
+  - read this x link
+  - search x for reactions
+  - check mentions
+  - look at my timeline
+  - reply on x
 capabilities:
   - timeline: Fetch For You plus Following feeds and save them to workspace
   - read: Read a tweet by URL or ID
@@ -71,9 +86,32 @@ Checks mentions for the logged-in account or a specific handle.
 
 Posts a tweet. Use only when the user explicitly wants X activity.
 
+Input:
+```json
+{
+  "text": "short tweet text",
+  "confirm": true
+}
+```
+
 ### reply
 
 Replies to a tweet by URL or ID.
+
+Input:
+```json
+{
+  "url": "https://x.com/user/status/123",
+  "text": "reply text",
+  "confirm": true
+}
+```
+
+## Gotchas
+
+- `post` and `reply` require `confirm: true`. The skill blocks write actions without it.
+- `bird` must have working browser cookies. If X auth is stale, read and timeline calls will fail cleanly.
+- This skill is for X itself. If you just need web content from an X link, `browser-automation` may still be better.
 
 ## Notes
 

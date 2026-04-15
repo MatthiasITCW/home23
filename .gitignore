@@ -84,6 +84,7 @@ cosmo23/.worktrees/
 .superpowers/
 .worktrees/
 .claude/
+workspace/skills/.telemetry/
 
 # IDE
 .vscode/

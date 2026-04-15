@@ -2,11 +2,39 @@
   "id": "x",
   "version": "1.0.0",
   "name": "X",
-  "description": "Operate on X/Twitter with bird CLI for timelines, reads, search, mentions, posts, and replies.",
+  "description": "Read, search, or post on X/Twitter when the task clearly involves tweets, mentions, timelines, or tweet URLs.",
   "layer": "skill",
   "runtime": "nodejs",
+  "category": "social",
   "author": "home23",
   "entry": "index.js",
+  "keywords": [
+    "x",
+    "twitter",
+    "tweet",
+    "tweets",
+    "mention",
+    "mentions",
+    "timeline",
+    "reply",
+    "post"
+  ],
+  "triggers": [
+    "read this x link",
+    "search x for",
+    "check mentions",
+    "look at my timeline",
+    "reply on x"
+  ],
+  "requiresTools": [],
+  "dependsOn": [],
+  "composes": [
+    "source-validation"
+  ],
+  "sideEffects": true,
+  "hooks": {
+    "beforeRun": "hooks/before-run.js"
+  },
   "actions": [
     "timeline",
     "read",
