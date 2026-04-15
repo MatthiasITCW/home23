@@ -271,6 +271,7 @@ async function main(): Promise<void> {
     baseURL: startupBaseURL,
     model: startupModel,
     provider: startupProvider,
+    // Note: providerMap set via setProviderMap below, after construction.
     maxTokens: 8192,
     temperature: config.chat.temperature,
     registry,
@@ -296,6 +297,16 @@ async function main(): Promise<void> {
   toolContext.runAgentLoop = async (_systemPrompt, userMessage, _tools, ctx) => {
     return agent.run(ctx.chatId, userMessage);
   };
+
+  // Give AgentLoop the provider map so runtime setModel can rebuild the client
+  // with the correct apiKey + baseURL when switching between anthropic-SDK providers.
+  agent.setProviderMap({
+    anthropic: { apiKey: resolveApiKey('anthropic'), baseURL: resolveBaseUrl('anthropic') },
+    minimax: { apiKey: resolveApiKey('minimax'), baseURL: resolveBaseUrl('minimax') },
+    openai: { apiKey: resolveApiKey('openai'), baseURL: resolveBaseUrl('openai') },
+    xai: { apiKey: resolveApiKey('xai'), baseURL: resolveBaseUrl('xai') },
+    'ollama-cloud': { apiKey: resolveApiKey('ollama-cloud'), baseURL: resolveBaseUrl('ollama-cloud') },
+  });
 
   // ── Command Handler ──
   const commandCtx: CommandContext = {

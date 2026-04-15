@@ -327,13 +327,51 @@ export class AgentLoop {
   /** Expose memory for CompactionManager wiring */
   getMemory(): MemoryManager { return this.memory; }
 
+  private providerMap: Map<string, { apiKey: string; baseURL?: string }> = new Map();
+
+  /** Give AgentLoop the knowledge it needs to rebuild its HTTP client when switching
+   *  between Anthropic-SDK providers (anthropic vs minimax vs Claude-via-OAuth).
+   *  Other providers (openai/xai/ollama) are called via fetch() and read their keys
+   *  from env, so no client rebuild needed. */
+  setProviderMap(map: Record<string, { apiKey: string; baseURL?: string }>): void {
+    this.providerMap = new Map(Object.entries(map));
+  }
+
   setModel(model: string, provider?: string): void {
-    this.model = model;
-    this.provider = provider ?? (
+    const newProvider = provider ?? (
       model.includes('claude') ? 'anthropic' :
       model.includes('grok') ? 'xai' :
+      model.includes('MiniMax') ? 'minimax' :
+      model.startsWith('gpt') ? 'openai' :
       'unknown'
     );
+
+    // Rebuild the Anthropic SDK client when switching between SDK providers
+    // (anthropic <-> minimax). Their baseURLs differ; the client is bound at construction.
+    const sdkProviders = new Set(['anthropic', 'minimax']);
+    if (newProvider !== this.provider && sdkProviders.has(newProvider)) {
+      const cfg = this.providerMap.get(newProvider);
+      if (cfg && cfg.apiKey) {
+        this.isOAuth = cfg.apiKey.startsWith('sk-ant-oat');
+        this.client = this.isOAuth
+          ? new Anthropic({
+              authToken: cfg.apiKey,
+              ...(cfg.baseURL ? { baseURL: cfg.baseURL } : {}),
+              defaultHeaders: getStealthHeaders(),
+              dangerouslyAllowBrowser: true,
+            })
+          : new Anthropic({
+              apiKey: cfg.apiKey,
+              ...(cfg.baseURL ? { baseURL: cfg.baseURL } : {}),
+            });
+        console.log(`[agent] provider switched to ${newProvider} (baseURL=${cfg.baseURL ?? 'default'})`);
+      } else {
+        console.warn(`[agent] setModel: no provider config for ${newProvider} — keeping existing client`);
+      }
+    }
+
+    this.model = model;
+    this.provider = newProvider;
   }
 
   getModel(): string {
