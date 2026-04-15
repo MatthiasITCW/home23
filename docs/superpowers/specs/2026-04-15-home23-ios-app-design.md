@@ -15,6 +15,44 @@ V1 scope is chat-only. Architecture is built so future features (pulse, brain ma
 
 **Fork, don't add-a-section.** Clone the existing `Cosmo.xcodeproj` into a new `Home23.xcodeproj`. Keep the learned scaffolding (SSE streaming, SwiftUI chat patterns, conversation store, APIClient architecture). Rip out Cosmo-specific pieces (Supabase auth, regina6.com networking, ImageGen, Gallery, Brains graph — all deferred to later phases). Rebuild the networking layer against the home23 bridge. New bundle ID, new app identity. Cosmo continues unchanged as a separate product.
 
+## Repository location
+
+The iOS project lives as a sibling to Cosmo, not inside the home23 Node repo:
+
+```
+/Users/jtr/xCode_Builds/
+  Cosmo/                      ← existing, untouched
+    Cosmo.xcodeproj
+    Cosmo/…
+  Home23/                     ← NEW (this project)
+    Home23.xcodeproj
+    Home23/
+      Home23App.swift
+      ContentView.swift
+      Info.plist
+      Home23.entitlements
+      Assets.xcassets/
+      Sources/
+        App/
+        Core/
+        Features/
+        Shared/
+    Configs/                  ← xcconfig files (mirrors Cosmo pattern)
+    AGENTS.md
+    CLAUDE.md
+    README.md
+
+/Users/jtr/_JTR23_/release/home23/   ← existing Node/TS monorepo, untouched
+  (backend additions from "Backend changes" section land here)
+```
+
+**Rationale:** the app and the backend version independently, TestFlight/signing is a per-app concern, and the home23 repo already has enough going on. Cross-references between repos happen via:
+- This spec and plan (in `home23/docs/superpowers/`)
+- A pointer file in `Home23/` (`README.md` links back to the home23 repo + this spec)
+- Git history on both sides references the other by commit SHA when coordinated changes ship (e.g. "iOS v0.1.0 requires home23 ≥ commit X")
+
+Home23 is its own git repo initialized at `Home23/`. First commit lands the fork + initial rip-out.
+
 ## Non-goals (v1)
 
 - No public endpoint. Tailscale-only.
