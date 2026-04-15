@@ -22,6 +22,9 @@ import { assembleContext } from './context-assembly.js';
 import { EventLedger } from './event-ledger.js';
 import { TriggerIndex } from './trigger-index.js';
 import { MemoryObjectStore } from './memory-objects.js';
+import { TurnStore } from '../chat/turn-store.js';
+import { turnBus } from '../chat/turn-bus.js';
+import { newTurnId, type TurnEvent } from '../chat/turn-types.js';
 
 const MAX_ITERATIONS = 100;
 const TYPING_INTERVAL_MS = 4000;
@@ -215,6 +218,7 @@ export class AgentLoop {
   private eventLedger: EventLedger;
   private triggerIndex: TriggerIndex;
   private memoryStore: MemoryObjectStore;
+  private turnStore: TurnStore;
 
   constructor(opts: {
     apiKey: string;
@@ -252,6 +256,7 @@ export class AgentLoop {
     this.registry = opts.registry;
     this.contextManager = opts.contextManager;
     this.history = opts.history;
+    this.turnStore = new TurnStore(this.history);
     this.toolContext = opts.toolContext;
     this.memory = new MemoryManager({
       client: this.client,
@@ -364,6 +369,60 @@ export class AgentLoop {
   /** List all active run chatIds. */
   getActiveRuns(): string[] {
     return [...this.activeRuns.keys()];
+  }
+
+  /**
+   * Run a turn with lifecycle tracking. Writes a `pending` envelope, persists every
+   * onEvent as a seq'd `event` record, and writes a final envelope on completion/error.
+   * Returns the turn_id immediately — the agent run is awaited by the caller but can
+   * be detached (caller fires-and-forgets the returned promise).
+   */
+  async runWithTurn(
+    chatId: string,
+    userText: string,
+    opts: { turnId?: string; media?: import('../types.js').MediaAttachment[]; onEvent?: import('./types.js').AgentEventCallback } = {},
+  ): Promise<{ turnId: string; response: Promise<import('./types.js').AgentResponse> }> {
+    const turnId = opts.turnId ?? newTurnId();
+    const model = this.getModel?.() ?? undefined;
+    this.turnStore.writeStart(chatId, turnId, model);
+
+    let seq = 0;
+    const persistAndFanOut = (event: import('./types.js').AgentEvent): void => {
+      seq++;
+      const record: TurnEvent = {
+        type: 'event',
+        turn_id: turnId,
+        seq,
+        ts: new Date().toISOString(),
+        kind: event.type,
+        data: { ...event } as Record<string, unknown>,
+      };
+      this.turnStore.writeEvent(chatId, record);
+      turnBus.emit(chatId, turnId, record);
+      if (opts.onEvent) {
+        try { opts.onEvent(event); } catch { /* caller errors don't kill the run */ }
+      }
+    };
+
+    const response = (async () => {
+      try {
+        const result = await this.run(chatId, userText, opts.media, persistAndFanOut);
+        const endEnv = this.turnStore.writeEnd(chatId, turnId, 'complete', { last_seq: seq, stop_reason: 'end_turn' });
+        turnBus.emit(chatId, turnId, endEnv);
+        turnBus.close(chatId, turnId);
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isAbort = msg.includes('aborted') || msg.includes('AbortError');
+        const status = isAbort ? 'stopped' : 'error';
+        const endEnv = this.turnStore.writeEnd(chatId, turnId, status, { last_seq: seq, error: msg });
+        turnBus.emit(chatId, turnId, endEnv);
+        turnBus.close(chatId, turnId);
+        throw err;
+      }
+    })();
+
+    return { turnId, response };
   }
 
   async run(chatId: string, userText: string, userMedia?: MediaAttachment[], onEvent?: import('./types.js').AgentEventCallback): Promise<AgentResponse> {
