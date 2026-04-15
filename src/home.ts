@@ -33,6 +33,12 @@ import { BrowserController } from './browser/cdp.js';
 import type { HomeConfig } from './types.js';
 import { CommandHandler, type CommandContext } from './commands/handler.js';
 import { createEvobrewChatHandler, createHealthHandler, createStopHandler } from './routes/evobrew-bridge.js';
+import {
+  createTurnStartHandler,
+  createTurnStreamHandler,
+  createTurnStopHandler,
+  createPendingTurnsHandler,
+} from './routes/chat-turn.js';
 import { EngineEventListener } from './engine-events.js';
 
 // ─── Constants ──────────────────────────────────────────────
@@ -648,8 +654,20 @@ async function main(): Promise<void> {
   bridgeApp.post('/api/stop', createStopHandler(bridgeConfig));
   bridgeApp.get('/health', createHealthHandler({ agentName: AGENT_NAME, agent }));
 
+  // Resumable chat routes — turn-based protocol for backgrounding/reconnect
+  const chatTurnConfig = {
+    agentName: AGENT_NAME,
+    agent,
+    history,
+    token: bridgeToken || undefined,
+  };
+  bridgeApp.post('/api/chat/turn', createTurnStartHandler(chatTurnConfig));
+  bridgeApp.get('/api/chat/stream', createTurnStreamHandler(chatTurnConfig));
+  bridgeApp.post('/api/chat/stop-turn', createTurnStopHandler(chatTurnConfig));
+  bridgeApp.get('/api/chat/pending', createPendingTurnsHandler(chatTurnConfig));
+
   bridgeApp.listen(BRIDGE_PORT, () => {
-    console.log(`[home] Evobrew bridge listening on port ${BRIDGE_PORT} (/api/chat, /api/stop, /health)`);
+    console.log(`[home] Evobrew bridge listening on port ${BRIDGE_PORT} (/api/chat, /api/stop, /api/chat/turn, /api/chat/stream, /api/chat/pending, /api/chat/stop-turn, /health)`);
   });
 
   // ── Startup banner ──
