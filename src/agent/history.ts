@@ -5,7 +5,7 @@
  * Handles context window truncation with atomic tool-pair handling.
  */
 
-import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Anthropic message types (simplified for storage)
@@ -118,6 +118,20 @@ export class ConversationHistory {
         }
       }
       return records;
+    } catch {
+      return [];
+    }
+  }
+
+  /** List all chatIds stored for this namespace. */
+  listChatIds(): string[] {
+    try {
+      if (!existsSync(this.dir)) return [];
+      const safeNs = this.namespace.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const prefix = `${safeNs}__`;
+      return readdirSync(this.dir)
+        .filter(f => f.startsWith(prefix) && f.endsWith('.jsonl'))
+        .map(f => f.slice(prefix.length, -'.jsonl'.length));
     } catch {
       return [];
     }
