@@ -265,9 +265,9 @@ export class CronScheduler {
 
     if (dueJobs.length > 0) {
       // Pre-compute next run BEFORE firing to prevent double-fire
-      // (if a job takes >30s, the next tick would see it as still due)
+      // (if a job takes >30s, the next tick would see it as still due).
+      // One-shot 'at' jobs: disable here so the next tick won't re-queue.
       for (const job of dueJobs) {
-        // For one-shot jobs, disable immediately before firing to prevent re-fire race
         if (job.schedule.kind === 'at') {
           job.enabled = false;
         }
@@ -310,13 +310,10 @@ export class CronScheduler {
       job.state.consecutiveErrors++;
     }
 
-    // Compute next run
+    // Compute next run (already disabled in tick for 'at' jobs — just update state).
     job.state.nextRunAtMs = this.computeNextRun(job);
-
-    // For one-shot ('at') jobs, disable after firing
     if (job.schedule.kind === 'at') {
-      job.enabled = false;
-      console.log(`[scheduler] One-shot job ${job.id} fired and disabled`);
+      console.log(`[scheduler] One-shot job ${job.id} fired`);
     }
 
     // Persist
@@ -350,26 +347,29 @@ export class CronScheduler {
       case 'every': {
         const base = job.state.lastRunAtMs ?? Date.now();
         let next = base + schedule.everyMs;
-        // Align to anchor if set
+        // Align to anchor if set — use positive modulo (JS % is sign-of-dividend).
         if (schedule.anchorMs !== undefined) {
-          const offset = (next - schedule.anchorMs) % schedule.everyMs;
+          const diff = next - schedule.anchorMs;
+          const offset = ((diff % schedule.everyMs) + schedule.everyMs) % schedule.everyMs;
           if (offset !== 0) {
             next = next - offset + schedule.everyMs;
           }
         }
         // If next is in the past, fast-forward
-        while (next <= Date.now()) {
+        const now = Date.now();
+        while (next <= now) {
           next += schedule.everyMs;
         }
         return next;
       }
       case 'at': {
-        // One-shot: parse ISO string
         const atMs = new Date(schedule.at).getTime();
-        // If the at-time is in the past, return far-future to prevent re-fire
-        // (the job will be disabled after execution completes)
+        if (isNaN(atMs)) {
+          console.warn(`[scheduler] Invalid 'at' value "${schedule.at}" for job ${job.id}`);
+          return Date.now() + 365 * 24 * 60 * 60 * 1000;
+        }
         if (atMs <= Date.now()) {
-          return Date.now() + 365 * 24 * 60 * 60 * 1000; // 1 year from now
+          return Date.now() + 365 * 24 * 60 * 60 * 1000;
         }
         return atMs;
       }
