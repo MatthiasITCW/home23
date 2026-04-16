@@ -88,9 +88,9 @@ The Vibe service is scoped to the dashboard process and the active agent. That k
 
 ### 1. Thematic input
 
-Home23 reads the latest brain pulse brief from `instances/<agent>/brain/pulse-remarks.jsonl`, then distills a compact brain theme from self-understanding, current obsessions, recent insights, active goals, and top active memory.
+Home23 reads the latest brain pulse brief from `instances/<agent>/brain/pulse-remarks.jsonl`, then extracts direct brain anchors from top active memory, current obsessions, recent insights, and active goals.
 
-That brain theme is not turned into a literal subject. It is passed into CHAOS MODE as a subtle thematic layer.
+Those brain anchors are passed into CHAOS MODE as concrete conceptual guidance. They may surface as symbols, references, or depicted elements when they fit the random scene.
 
 ### 2. CHAOS MODE composition
 
@@ -168,12 +168,13 @@ New-style item shape:
   "caption": "final prompt or fallback caption",
   "prompt": "full final prompt sent to image generation",
   "thought": "same as prompt for tile/gallery compatibility",
-  "promptTemplate": "CHAOS MODE random category assembly plus brain theme",
+  "promptTemplate": "CHAOS MODE random category assembly plus brain anchors",
   "provider": "openai",
   "model": "gpt-image-1",
   "algorithm": "chaos-mode",
-  "brainTheme": "brain-derived thematic seed",
-  "themeThought": "brain-derived thematic seed",
+  "brainAnchors": ["direct brain concept", "current obsession", "top active memory"],
+  "brainTheme": null,
+  "themeThought": null,
   "themeSource": "brain-pulse"
 }
 ```
@@ -288,7 +289,7 @@ Verified during implementation:
   - triple-click on the Vibe header generated a new archive image during validation
 - post-fix direct API verification:
   - `POST /home23/api/vibe/generate` created `499b4294-6942-4a42-9819-986052bc4bb4`
-- `GET /home23/api/vibe/current` now returns that item as `latestItem` with `algorithm: "chaos-mode"` and a saved brain theme
+- `GET /home23/api/vibe/current` now returns that item as `latestItem` with `algorithm: "chaos-mode"` and saved brain anchors
 
 ## Dream Augmentation (added 2026-04-11)
 

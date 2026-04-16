@@ -512,7 +512,7 @@ function createImageProvider(runtime = {}) {
    * Saves locally, writes metadata JSON.
    */
   async function generateChaos(thought, opts = {}) {
-    const { sensorContext, dreamMotifs } = opts;
+    const { sensorContext, dreamMotifs, brainAnchors } = opts;
 
     // Step 2: Select subject with history guard
     const subject    = selectRandomSubject();
@@ -543,9 +543,16 @@ function createImageProvider(runtime = {}) {
       'hint of nostalgia','spark of creativity','whisper of adventure','echo of memories'];
     if (Math.random() < 0.4) contextHints.push(randomPick(atmosphereContexts));
 
-    // Brain-derived theme adds a subtle thematic layer (not the literal subject)
+    // Direct brain anchors can be referenced more literally than the old
+    // theme line when they harmonize with the random scene.
     const thoughtHint = thought && thought.length > 20
       ? `\nTheme (subtle inspiration, do not illustrate literally): ${thought.slice(0, 120)}`
+      : '';
+    const anchorList = Array.isArray(brainAnchors)
+      ? brainAnchors.filter(anchor => typeof anchor === 'string' && anchor.trim()).slice(0, 5)
+      : [];
+    const brainHint = anchorList.length
+      ? `\nBrain anchors (mine these concepts directly when they fit the scene; they may appear as symbols, references, or depicted elements): ${anchorList.join(' | ')}`
       : '';
 
     // Dream motifs adds symbolic texture pulled from recent dreams. They must
@@ -565,7 +572,7 @@ Subject: ${subject}
 Style: ${style}
 Lighting: ${lighting}
 Mood: ${mood}
-Composition: ${composition}${contextHints.length ? '\nContext: ' + contextHints.join(', ') : ''}${thoughtHint}${dreamHint}
+Composition: ${composition}${contextHints.length ? '\nContext: ' + contextHints.join(', ') : ''}${brainHint}${thoughtHint}${dreamHint}
 
 Combine these into a vivid, specific scene description. Respond in JSON format.`;
 
