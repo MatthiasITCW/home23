@@ -114,14 +114,30 @@ class LiveProblemsLoop {
       }
     }
 
+    // For dispatch_to_agent, skip the remediator call entirely when already
+    // dispatched — avoids 480 unnecessary HTTP calls + log entries + file
+    // writes over a 12h budget window. Just check budget expiry directly.
+    if (step.type === 'dispatch_to_agent' && p.dispatchedAt) {
+      const budgetHours = step.args?.budgetHours ?? 12;
+      const elapsedHours = (Date.now() - Date.parse(p.dispatchedAt)) / 3600000;
+      if (elapsedHours < budgetHours) return;  // agent still working
+      // Budget exceeded — advance past this step
+      this.logger.info?.(`[live-problems] ${p.id}: agent budget exhausted (${elapsedHours.toFixed(1)}h ≥ ${budgetHours}h)`);
+      this.store.recordRemediation(p.id, {
+        step: p.stepIndex, type: step.type,
+        outcome: 'failed', detail: `agent budget exhausted (${elapsedHours.toFixed(1)}h)`,
+      });
+      this.store.clearDispatch(p.id);
+      this.store.advanceRemediationStep(p.id);
+      return;
+    }
+
     const cooldownMin = step.cooldownMin ?? DEFAULT_STEP_COOLDOWN_MIN;
     const lastAt = p.lastRemediationAt ? Date.parse(p.lastRemediationAt) : 0;
     const sinceMin = lastAt ? (Date.now() - lastAt) / 60000 : Infinity;
-    if (sinceMin < cooldownMin && step.type !== 'dispatch_to_agent') {
+    if (sinceMin < cooldownMin) {
       return;   // in cooldown — let the next tick handle it
     }
-    // For dispatch_to_agent, cooldown gates re-entry but we pass it through
-    // to the remediator which itself no-ops with 'in_progress' until budget.
 
     // 3. Run the remediator
     this.logger.info?.(`[live-problems] ${p.id}: step ${p.stepIndex} → ${step.type}`);

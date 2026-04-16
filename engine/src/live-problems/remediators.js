@@ -24,8 +24,11 @@ const os = require('os');
 function isRestartableProcess(name) {
   if (!name || typeof name !== 'string') return false;
   if (!name.startsWith('home23-')) return false;
-  // Don't restart the engine itself from within the engine — lead to loops.
-  const self = process.env.HOME23_AGENT ? `home23-${process.env.HOME23_AGENT}` : null;
+  // Don't restart the engine itself from within the engine — leads to loops.
+  // HOME23_AGENT is set on the harness, INSTANCE_ID on the engine.
+  const self = process.env.HOME23_AGENT
+    ? `home23-${process.env.HOME23_AGENT}`
+    : process.env.INSTANCE_ID || null;
   if (self && name === self) return false;
   return true;
 }

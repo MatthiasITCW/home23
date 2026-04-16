@@ -4697,7 +4697,9 @@ Be specific, actionable, and maintain research continuity.`;
     };
     const saveLiveProblems = (data) => {
       const fs = require('fs');
-      fs.writeFileSync(liveProblemsFile(), JSON.stringify(data, null, 2));
+      const tmp = liveProblemsFile() + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+      fs.renameSync(tmp, liveProblemsFile());
     };
     const buildSnapshot = (problems) => {
       const now = Date.now();
@@ -4780,7 +4782,10 @@ Be specific, actionable, and maintain research continuity.`;
       const idx = list.findIndex(x => x.id === req.params.id);
       if (idx < 0) return res.status(404).json({ error: 'not found' });
       const body = req.body || {};
-      list[idx] = { ...list[idx], ...body, id: list[idx].id };
+      const ALLOWED = ['claim', 'verifier', 'remediation', 'seedOrigin'];
+      const update = {};
+      for (const key of ALLOWED) { if (body[key] !== undefined) update[key] = body[key]; }
+      list[idx] = { ...list[idx], ...update };
       saveLiveProblems({ problems: list });
       res.json({ problem: list[idx] });
     });

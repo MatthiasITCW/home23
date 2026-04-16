@@ -6298,6 +6298,13 @@ class Orchestrator {
   async stop() {
     this.logger.info('Stopping GPT-5.2 system...');
     this.running = false;
+
+    if (this.liveProblems) {
+      try { this.liveProblems.stop(); } catch {}
+    }
+    if (this.pulseRemarks) {
+      try { this.pulseRemarks.stop(); } catch {}
+    }
     
     // Cluster cleanup (if enabled)
     if (this.clusterOrchestrator) {

@@ -76,7 +76,9 @@ class LiveProblemStore {
   save() {
     try {
       const list = [...this.problems.values()];
-      fs.writeFileSync(this.filePath, JSON.stringify({ problems: list }, null, 2));
+      const tmp = this.filePath + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify({ problems: list }, null, 2));
+      fs.renameSync(tmp, this.filePath);
       try { this._lastLoadMtimeMs = fs.statSync(this.filePath).mtimeMs; } catch {}
     } catch (err) {
       this.logger.warn?.(`[live-problems] save failed: ${err.message}`);

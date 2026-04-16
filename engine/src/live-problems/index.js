@@ -65,6 +65,7 @@ function initLiveProblems({ brainDir, memory, logger, agentName, dashboardPort, 
      * }
      */
     briefSnapshot() {
+      store.reloadIfChanged();
       const all = store.all();
       const now = Date.now();
       const open = [];
