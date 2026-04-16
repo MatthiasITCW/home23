@@ -563,6 +563,8 @@ feeder:
       label: projects
     - path: /Users/jtr/life/
       label: jtr_life
+    - path: /Users/jtr/_JTR23_/release/home23/instances/jerry/workspace/sessions
+      label: conversation_sessions
   excludePatterns: []
 logging:
   level: info
