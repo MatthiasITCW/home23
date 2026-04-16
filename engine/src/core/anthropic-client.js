@@ -15,6 +15,10 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAnthropicApiKey, prepareSystemPrompt, isOAuthToken } = require('../services/anthropic-oauth-engine');
 
+function isAnthropicSamplingDeprecatedModel(model) {
+  return /^claude-opus-4-7(?:$|[-@])/.test(String(model || '').trim());
+}
+
 class AnthropicClient {
   /**
    * Initialize Anthropic client adapter
@@ -123,6 +127,10 @@ class AnthropicClient {
     }
   }
 
+  _usesAdaptiveThinking(model) {
+    return isAnthropicSamplingDeprecatedModel(model);
+  }
+
   /**
    * Main generation method (matches GPT5Client interface)
    * Translates Responses API format → Messages API format
@@ -173,10 +181,11 @@ class AnthropicClient {
 
       // Get model (with mapping)
       const model = this._getModelFromOptions(options);
+      const usesAdaptiveThinking = this._usesAdaptiveThinking(model);
 
-      // Determine temperature (CRITICAL: Anthropic requires temperature=1 when thinking is enabled)
+      // Pre-4.7 thinking required temperature=1. Opus 4.7 removes sampling parameters entirely.
       let temperature = options.temperature !== undefined ? options.temperature : this.temperature;
-      if (useExtendedThinking) {
+      if (useExtendedThinking && !usesAdaptiveThinking) {
         this.logger?.info?.('[AnthropicClient] Extended thinking enabled, forcing temperature=1', {
           originalTemp: temperature,
           useExtendedThinking
@@ -188,11 +197,14 @@ class AnthropicClient {
       const requestParams = {
         model,
         max_tokens: options.max_output_tokens || this.defaultMaxTokens,
-        temperature,
         system: systemPrompt,
         messages,
         stream: true
       };
+
+      if (!isAnthropicSamplingDeprecatedModel(model)) {
+        requestParams.temperature = temperature;
+      }
 
       // Add tools if provided
       if (tools && tools.length > 0) {
@@ -204,12 +216,22 @@ class AnthropicClient {
         }
       }
 
-      // Add extended thinking if appropriate
+      // Claude Opus 4.7 replaced extended thinking with adaptive thinking.
       if (useExtendedThinking) {
-        requestParams.thinking = {
-          type: 'enabled',
-          budget_tokens: 2000
-        };
+        if (usesAdaptiveThinking) {
+          requestParams.thinking = {
+            type: 'adaptive',
+            display: 'summarized'
+          };
+          requestParams.output_config = {
+            effort: options.reasoningEffort || 'high'
+          };
+        } else {
+          requestParams.thinking = {
+            type: 'enabled',
+            budget_tokens: 2000
+          };
+        }
       }
 
       this.logger?.info?.('[AnthropicClient] Starting generation', {
@@ -358,7 +380,6 @@ class AnthropicClient {
       const requestParams = {
         model,
         max_tokens: options.maxTokens || options.max_output_tokens || this.defaultMaxTokens,
-        temperature: options.temperature !== undefined ? options.temperature : this.temperature,
         system: prepareSystemPrompt(options.instructions, this.isOAuth),
         messages,
         tools: [{
@@ -368,6 +389,10 @@ class AnthropicClient {
         }],
         stream: true
       };
+
+      if (!isAnthropicSamplingDeprecatedModel(model)) {
+        requestParams.temperature = options.temperature !== undefined ? options.temperature : this.temperature;
+      }
 
       this.logger?.info?.('[AnthropicClient] Using native web_search tool', { model, query });
 

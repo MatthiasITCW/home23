@@ -22,6 +22,10 @@ function getAnthropicStealthHeaders() {
   };
 }
 
+function isAnthropicSamplingDeprecatedModel(model) {
+  return /^claude-opus-4-7(?:$|[-@])/.test(String(model || '').trim());
+}
+
 /**
  * UnifiedClient - Extends GPT5Client with multi-provider and MCP support
  * 
@@ -819,11 +823,14 @@ class UnifiedClient extends GPT5Client {
     const payload = {
       model: assignment.model,
       messages: messages, // Use messages as-is
-      max_tokens: finalMaxTokens, // REQUIRED by Anthropic
-      temperature: temperature,
-      top_p: topP,
-      top_k: topK
+      max_tokens: finalMaxTokens // REQUIRED by Anthropic
     };
+
+    if (!(providerName === 'Anthropic' && isAnthropicSamplingDeprecatedModel(assignment.model))) {
+      payload.temperature = temperature;
+      payload.top_p = topP;
+      payload.top_k = topK;
+    }
 
     // System prompt with ephemeral cache breakpoint for large prompts.
     // MiniMax + Anthropic both support cache_control: ephemeral (5-min TTL,

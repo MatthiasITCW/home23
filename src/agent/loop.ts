@@ -198,6 +198,10 @@ function getXaiServerToolNameFromItem(item: Record<string, unknown> | undefined)
   return null;
 }
 
+function isAnthropicSamplingDeprecatedModel(model: string): boolean {
+  return /^claude-opus-4-7(?:$|[-@])/.test(String(model || '').trim());
+}
+
 export class AgentLoop {
   private client: Anthropic;
   private model: string;
@@ -1490,15 +1494,21 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
           // then resolve the full Message at the end for tool-loop processing.
           // SDK: messages.stream() returns an iterable of server-sent events plus
           // a finalMessage() method that yields the fully-accumulated Message.
+          const omitSamplingParams = isAnthropicSamplingDeprecatedModel(this.model);
+          const requestParams: Record<string, unknown> = {
+            model: this.model,
+            max_tokens: this.maxTokens,
+            system: systemPrompt,
+            messages: messages as Anthropic.MessageParam[],
+            tools: tools as Anthropic.Tool[],
+            temperature: this.temperature,
+          };
+          if (omitSamplingParams) {
+            delete requestParams.temperature;
+          }
+
           const stream = this.client.messages.stream(
-            {
-              model: this.model,
-              max_tokens: this.maxTokens,
-              temperature: this.temperature,
-              system: systemPrompt,
-              messages: messages as Anthropic.MessageParam[],
-              tools: tools as Anthropic.Tool[],
-            },
+            requestParams as unknown as Anthropic.MessageCreateParams,
             { signal: ac.signal },
           );
 
