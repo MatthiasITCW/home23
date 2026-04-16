@@ -540,7 +540,7 @@ async function renderBrainStoragePanel() {
     const files = data.files || {};
     const backups = data.backups || [];
 
-    const mb = (b) => b == null ? '—' : `${(b / 1048576).toFixed(1)} MB`;
+    const mb = (b) => { if (b == null) return '—'; if (b < 1024) return `${b} B`; if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`; return `${(b / 1048576).toFixed(1)} MB`; };
     const ago = (iso) => { if (!iso) return '—'; const ms = Date.now() - new Date(iso).getTime(); if (ms < 60000) return `${Math.round(ms/1000)}s ago`; if (ms < 3600000) return `${Math.round(ms/60000)}m ago`; return `${Math.round(ms/3600000)}h ago`; };
 
     const mismatchWarn = data.mismatch
@@ -557,9 +557,9 @@ async function renderBrainStoragePanel() {
           <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:6px;">saved ${ago(snap?.savedAt)} · source: ${snap?.memorySource || '—'}</div>
         </div>
         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;">
-          <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">In memory (live)</div>
-          <div style="font-size:22px;color:#fff;">${mem?.nodes != null ? mem.nodes.toLocaleString() : '(dashboard process — n/a)'} nodes</div>
-          <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:2px;">${mem?.edges != null ? mem.edges.toLocaleString() + ' edges' : ''}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Last verified (engine)</div>
+          <div style="font-size:22px;color:#fff;">${snap?.nodeCount != null ? snap.nodeCount.toLocaleString() : '—'} nodes</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:2px;">${snap?.edgeCount != null ? snap.edgeCount.toLocaleString() + ' edges' : ''}</div>
         </div>
       </div>
       <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
