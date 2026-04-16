@@ -20,6 +20,7 @@ const DEFAULT_DREAM_LOOKBACK = 3;
 const MAX_DREAM_LOOKBACK = 10;
 const DREAM_TAIL_BYTES = 128 * 1024;
 const MAX_MOTIFS = 5;
+const DREAM_MOTIF_LLM_TIMEOUT_MS = 30_000;
 
 const DEFAULT_VIBE_CONFIG = Object.freeze({
   autoGenerate: true,
@@ -77,6 +78,21 @@ const MOTIF_STOPWORDS = new Set([
   'next','last','first','second','third','another','chapter','part','section','existence',
 ]);
 
+const DREAM_MOTIF_EXTRACTOR_SYSTEM = `You extract symbolic motifs from dream text for surreal image prompting.
+
+Return valid JSON only:
+{
+  "motifs": ["motif one", "motif two", "motif three"]
+}
+
+Rules:
+- Return 3 to 5 motifs.
+- Each motif must be 1 to 3 words.
+- Favor symbolic nouns or short evocative phrases, not plot summary.
+- Keep unusual or vivid words when they are visually useful.
+- These motifs are for texture, atmosphere, and materials, not the literal subject.
+- No commentary, no markdown, no extra keys.`;
+
 function toArray(value) {
   if (Array.isArray(value)) return value;
   if (value && typeof value === 'object') return Object.values(value);
@@ -123,6 +139,28 @@ function normalizeThought(text, maxLen = 200) {
 
 function isoNow() {
   return new Date().toISOString();
+}
+
+function normalizeDreamMotifList(raw) {
+  const source = Array.isArray(raw)
+    ? raw
+    : (Array.isArray(raw?.motifs) ? raw.motifs : []);
+  const motifs = [];
+  const seen = new Set();
+  for (const entry of source) {
+    const clean = String(entry || '')
+      .replace(/[*_`~"'[\]{}()<>]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    if (!clean) continue;
+    if (clean.split(/\s+/).length > 4) continue;
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    motifs.push(clean);
+    if (motifs.length >= MAX_MOTIFS) break;
+  }
+  return motifs;
 }
 
 function withTimeout(promise, ms, label) {
@@ -457,10 +495,13 @@ class Home23VibeService {
 
     let dreamMotifs = [];
     let sourceDreamCount = 0;
+    let dreamExtractionMethod = config.dreams.extraction;
     if (config.dreams.enabled) {
       const dreams = await this.getRecentDreams(config.dreams.lookback);
       sourceDreamCount = dreams.length;
-      dreamMotifs = this.extractDreamMotifs(dreams);
+      const extracted = await this.extractDreamMotifs(dreams, config.dreams.extraction);
+      dreamMotifs = extracted.motifs;
+      dreamExtractionMethod = extracted.method;
     }
 
     this.logger.info?.('[Home23 Vibe] Starting CHAOS MODE generation', {
@@ -469,6 +510,7 @@ class Home23VibeService {
       themeThought: themeThought?.slice(0, 120) || null,
       dreamMotifs,
       sourceDreamCount,
+      dreamExtractionMethod,
     });
 
     if (typeof this.imageProvider.generateChaos !== 'function') {
@@ -516,6 +558,7 @@ class Home23VibeService {
       themeThought: themeThought || null,
       dreamMotifs: dreamMotifs.length ? dreamMotifs : null,
       sourceDreamCount: sourceDreamCount || null,
+      dreamExtractionMethod: dreamMotifs.length ? dreamExtractionMethod : null,
     };
 
     await fsp.writeFile(
@@ -578,7 +621,35 @@ class Home23VibeService {
     }
   }
 
-  extractDreamMotifs(dreams) {
+  async extractDreamMotifs(dreams, method = 'heuristic') {
+    if (!Array.isArray(dreams) || dreams.length === 0) {
+      return { motifs: [], method: String(method).toLowerCase() === 'llm' ? 'llm' : 'heuristic' };
+    }
+    if (String(method).toLowerCase() !== 'llm') {
+      return {
+        motifs: this.extractDreamMotifsHeuristic(dreams),
+        method: 'heuristic',
+      };
+    }
+
+    try {
+      const motifs = await this.extractDreamMotifsWithLLM(dreams);
+      if (motifs.length) {
+        return { motifs, method: 'llm' };
+      }
+    } catch (error) {
+      this.logger.warn?.('[Home23 Vibe] LLM dream motif extraction failed, falling back to heuristic', {
+        error: error.message,
+      });
+    }
+
+    return {
+      motifs: this.extractDreamMotifsHeuristic(dreams),
+      method: 'heuristic-fallback',
+    };
+  }
+
+  extractDreamMotifsHeuristic(dreams) {
     if (!Array.isArray(dreams) || dreams.length === 0) return [];
     const counts = new Map();
     const phraseHits = new Map();
@@ -622,6 +693,35 @@ class Home23VibeService {
       merged.push(token);
     }
     return merged;
+  }
+
+  async extractDreamMotifsWithLLM(dreams) {
+    if (typeof this.imageProvider?.callPromptEngine !== 'function') {
+      throw new Error('Image provider does not expose callPromptEngine()');
+    }
+
+    const serializedDreams = dreams
+      .slice(-MAX_DREAM_LOOKBACK)
+      .map((dream, index) => {
+        const content = String(dream.content || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 1200);
+        return `Dream ${index + 1}:\n${content}`;
+      })
+      .join('\n\n');
+
+    const response = await withTimeout(
+      this.imageProvider.callPromptEngine(
+        DREAM_MOTIF_EXTRACTOR_SYSTEM,
+        `Extract symbolic motifs from these recent dreams:\n\n${serializedDreams}`,
+        true
+      ),
+      DREAM_MOTIF_LLM_TIMEOUT_MS,
+      'Dream motif extraction'
+    );
+
+    return normalizeDreamMotifList(response);
   }
 
   async getLatestThoughtTheme() {

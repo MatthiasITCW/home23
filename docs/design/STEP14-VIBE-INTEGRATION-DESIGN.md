@@ -311,7 +311,7 @@ Heuristic (default):
 - Suppresses single tokens already present inside a chosen phrase.
 - Caps at 5 motifs per generation.
 
-LLM (placeholder, not yet wired): a tiny pre-pass via the same remote prompt engine to extract 3-5 motifs. The config slot exists but the UI option is disabled.
+LLM: a tiny pre-pass via the same remote prompt engine extracts 3-5 motifs as short symbolic phrases. If the pre-pass fails or returns unusable output, the vibe service falls back to the heuristic extractor automatically.
 
 ### Subject history tuning
 
@@ -329,7 +329,7 @@ dashboard:
     dreams:
       enabled: true
       lookback: 3          # 1..10
-      extraction: heuristic # heuristic | llm (llm is placeholder)
+      extraction: heuristic # heuristic | llm
 ```
 
 ### Manifest metadata additions
