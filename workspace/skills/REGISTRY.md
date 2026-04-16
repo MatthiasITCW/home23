@@ -1,6 +1,6 @@
 # Skills Registry
 
-Generated from live skill discovery. Total: 10 skills.
+Generated from live skill discovery. Total: 13 skills.
 
 ## autoresearch
 
@@ -36,6 +36,24 @@ Generated from live skill discovery. Total: 10 skills.
 - **Triggers:** take a screenshot | extract the page text | check if this page loads | inspect the rendered page
 - **Requires tools:** none
 - **Composes:** source-validation
+- **Depends on:** none
+
+## buddy-sings
+
+- **ID:** `buddy-sings`
+- **Type:** rich
+- **Runtime:** nodejs
+- **Category:** media
+- **Operational:** yes
+- **Has SKILL.md:** yes
+- **Has manifest:** yes
+- **Has scripts:** no
+- **Hooks:** beforeRun
+- **Description:** Let a Home23 companion sing in first person by turning persona context into a repeatable vocal identity and song prompt.
+- **Actions:** profile, sing
+- **Triggers:** let jerry sing | make the buddy sing | sing as the character | turn this persona into a song
+- **Requires tools:** none
+- **Composes:** minimax-music-gen
 - **Depends on:** none
 
 ## code-review
@@ -108,6 +126,42 @@ Generated from live skill discovery. Total: 10 skills.
 - **Triggers:** organize these notes | turn this into a framework | structure this research | make this a clean handoff
 - **Requires tools:** none
 - **Composes:** source-validation
+- **Depends on:** none
+
+## minimax-music-gen
+
+- **ID:** `minimax-music-gen`
+- **Type:** rich
+- **Runtime:** nodejs
+- **Category:** media
+- **Operational:** yes
+- **Has SKILL.md:** yes
+- **Has manifest:** yes
+- **Has scripts:** no
+- **Hooks:** beforeRun
+- **Description:** Generate an original song, instrumental, or cover track when the ask is fundamentally 'make music from this idea'.
+- **Actions:** compose, draft-lyrics
+- **Triggers:** make me a song | generate a track | create an instrumental | make a cover from this audio
+- **Requires tools:** none
+- **Composes:** none
+- **Depends on:** none
+
+## minimax-music-playlist
+
+- **ID:** `minimax-music-playlist`
+- **Type:** rich
+- **Runtime:** nodejs
+- **Category:** media
+- **Operational:** yes
+- **Has SKILL.md:** yes
+- **Has manifest:** yes
+- **Has scripts:** no
+- **Hooks:** beforeRun
+- **Description:** Turn a taste brief into a custom multi-track playlist plan, then generate the tracks and optional cover art.
+- **Actions:** profile, plan, create
+- **Triggers:** make me a playlist | build a custom mixtape | generate a themed soundtrack | turn my taste into tracks
+- **Requires tools:** none
+- **Composes:** minimax-music-gen
 - **Depends on:** none
 
 ## source-validation
