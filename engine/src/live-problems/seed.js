@@ -1,0 +1,165 @@
+/**
+ * Seed invariants — problems we know are worth tracking for any Home23 agent.
+ *
+ * Called once on engine start. Upsert is idempotent: existing problems keep
+ * their runtime state (lastResult, stepIndex, etc.) — only the spec is refreshed
+ * so plans/thresholds can evolve without resetting progress.
+ *
+ * Per-agent seeds (e.g. the dashboard URL) are parameterized by agentName +
+ * dashboardPort so every agent gets a correct invariant without duplication.
+ */
+
+function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
+  const agent = agentName || process.env.HOME23_AGENT || 'agent';
+  const dashPort = dashboardPort || process.env.DASHBOARD_PORT || process.env.COSMO_DASHBOARD_PORT || '5002';
+  const harnessPort = bridgePort || process.env.BRIDGE_PORT || '5004';
+  const harnessProc = `home23-${agent}-harness`;
+  const dashProc = `home23-${agent}-dash`;
+
+  return [
+    {
+      id: 'health_log_fresh',
+      claim: 'iOS Health Shortcut writing ~/.health_log.jsonl within last 6h',
+      verifier: {
+        type: 'file_mtime',
+        args: { path: '~/.health_log.jsonl', maxAgeMin: 360 },
+      },
+      remediation: [
+        // Step 1: try to re-trigger the iOS Shortcut autonomously (if bridge configured).
+        { type: 'run_shortcut', args: { target: 'Health' }, cooldownMin: 30 },
+        // Step 2: hand to Jerry with full tools — shell probes, cron checks,
+        // sibling-bridge pattern cloning. 12h budget.
+        { type: 'dispatch_to_agent', args: { budgetHours: 12 }, cooldownMin: 15 },
+        // Step 3: last resort, ping jtr.
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'normal',
+            text: "Health log's been silent >6h. Shortcut didn't wake it up. Agent tried for 12h and couldn't fix it. Needs your eyes.",
+          },
+          cooldownMin: 360,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
+      id: 'disk_free_ok',
+      claim: 'Main data volume has at least 10 GiB free',
+      verifier: {
+        type: 'disk_free',
+        args: { mount: '/System/Volumes/Data', minGiB: 10 },
+      },
+      remediation: [
+        { type: 'exec_command', args: { name: 'clean_pm2_logs' }, cooldownMin: 60 },
+        { type: 'dispatch_to_agent', args: { budgetHours: 6 }, cooldownMin: 15 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'normal',
+            text: "Disk under 10 GiB. Agent cleaned logs and looked for space but couldn't get it back above threshold. Needs a real cleanup pass.",
+          },
+          cooldownMin: 720,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
+      id: `${agent}_harness_online`,
+      claim: `Harness process ${harnessProc} is running`,
+      verifier: {
+        type: 'pm2_status',
+        args: { name: harnessProc },
+      },
+      // Harness-down edge case: dispatch_to_agent REQUIRES the harness to be
+      // up (the agent *is* the harness). Leaving it out of this plan — if
+      // pm2 restart can't bring it back, jtr has to look.
+      remediation: [
+        { type: 'pm2_restart', args: { name: harnessProc }, cooldownMin: 5 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'alert',
+            text: `${harnessProc} wouldn't come back after a pm2 restart. Channels are down. Needs hands.`,
+          },
+          cooldownMin: 60,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
+      id: `${agent}_dashboard_ping`,
+      claim: `Dashboard HTTP responding on :${dashPort}`,
+      verifier: {
+        type: 'http_ping',
+        args: { url: `http://127.0.0.1:${dashPort}/home23/agents.json`, timeoutMs: 4000 },
+      },
+      remediation: [
+        { type: 'pm2_restart', args: { name: dashProc }, cooldownMin: 5 },
+        { type: 'dispatch_to_agent', args: { budgetHours: 2 }, cooldownMin: 15 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'alert',
+            text: `Dashboard ${dashProc} unreachable. pm2 restart and agent diagnosis both failed.`,
+          },
+          cooldownMin: 60,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
+      id: 'brain_graph_populated',
+      claim: 'Brain graph has at least 100 nodes in memory',
+      verifier: {
+        type: 'graph_not_empty',
+        args: { minNodes: 100 },
+      },
+      // Give agent a 4h budget to investigate the persistence path before
+      // escalating. Brain graph problems are often recoverable (stale cache,
+      // pending write, etc.) but sometimes need fresh eyes.
+      remediation: [
+        { type: 'dispatch_to_agent', args: { budgetHours: 4 }, cooldownMin: 15 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'alert',
+            text: 'Brain graph near-empty and the agent couldn\'t recover it. Persistence or load path is broken — please look.',
+          },
+          cooldownMin: 360,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
+      id: 'brain_node_count_stable',
+      claim: 'Brain node count has not regressed >10% below all-time high-water mark',
+      verifier: {
+        type: 'node_count_stable',
+        args: { dropThreshold: 0.1, minBaseline: 100 },
+      },
+      // Drops to this trigger are usually in-process (pruning bug, bad
+      // cluster sync, truncated save) — agent can investigate with shell
+      // + brain tools and often restore from backups/.
+      remediation: [
+        { type: 'dispatch_to_agent', args: { budgetHours: 4 }, cooldownMin: 15 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'alert',
+            text: 'Brain node count dropped >10% from high-water mark. Agent investigated but could not restore. Possible data loss — check backups/.',
+          },
+          cooldownMin: 360,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+  ];
+}
+
+function seedAll(store, opts) {
+  const seeds = defaultSeeds(opts || {});
+  for (const s of seeds) store.upsert(s);
+  return seeds.map(s => s.id);
+}
+
+module.exports = { seedAll, defaultSeeds };

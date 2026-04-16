@@ -1,0 +1,153 @@
+/**
+ * LiveProblemsLoop — verify → remediate → re-verify → escalate cadence.
+ *
+ * Ticks every VERIFY_INTERVAL_MS. For each tracked problem:
+ *   1. Run the verifier. Update lastResult.
+ *   2. If ok → mark resolved (if not already), stop.
+ *   3. If not ok → look at current remediation step:
+ *        - If step exists and cooldown elapsed, run it.
+ *        - If step succeeds, next tick will re-verify.
+ *        - If step is rejected or fails, advance stepIndex.
+ *   4. When stepIndex >= plan.length, the final remediation (usually
+ *      notify_jtr) has run and failed or was exhausted; mark escalated so we
+ *      don't loop the same plan.
+ *
+ * Escalation is opt-in per problem: the plan's last step is typically a
+ * `notify_jtr` remediator. If a problem has no plan, the loop just tracks
+ * state — jtr sees it in the dashboard but nothing else happens.
+ */
+
+const { runVerifier } = require('./verifiers');
+const { runRemediator } = require('./remediators');
+
+const DEFAULT_INTERVAL_MS = 90 * 1000;          // 1.5 min between ticks
+const DEFAULT_STEP_COOLDOWN_MIN = 10;           // cooldown per step if not specified
+const WARMUP_DELAY_MS = 20 * 1000;              // wait 20s after start before first tick
+
+class LiveProblemsLoop {
+  constructor({ store, logger, ctxProvider, intervalMs }) {
+    this.store = store;
+    this.logger = logger || { info() {}, warn() {}, error() {} };
+    this.ctxProvider = ctxProvider || (() => ({}));
+    this.intervalMs = intervalMs || DEFAULT_INTERVAL_MS;
+    this.running = false;
+    this.timer = null;
+    this._ticking = false;
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this.timer = setTimeout(() => this.tick(), WARMUP_DELAY_MS);
+    this.logger.info?.('[live-problems] loop started');
+  }
+
+  stop() {
+    this.running = false;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  _schedule() {
+    if (!this.running) return;
+    this.timer = setTimeout(() => this.tick(), this.intervalMs);
+  }
+
+  async tick() {
+    if (this._ticking) { this._schedule(); return; }
+    this._ticking = true;
+    try {
+      // Pick up external edits (dashboard UI writes the JSON directly from a
+      // separate process). If the file changed since our last load, refresh.
+      this.store.reloadIfChanged();
+      this.store.pruneResolved();
+      const all = this.store.all();
+      for (const p of all) {
+        if (p.state === 'resolved' || p.state === 'unverifiable') continue;
+        await this._processOne(p);
+      }
+    } catch (err) {
+      this.logger.warn?.(`[live-problems] tick error: ${err.message}`);
+    } finally {
+      this._ticking = false;
+      this._schedule();
+    }
+  }
+
+  async _processOne(p) {
+    const ctx = this.ctxProvider();
+    // 1. Verify
+    const result = await runVerifier(p.verifier, ctx);
+    this.store.recordVerification(p.id, result);
+    if (result.ok) {
+      // Problem resolved. If an agent was dispatched, clear dispatch state
+      // so a future re-opening starts fresh.
+      if (p.dispatchedAt) this.store.clearDispatch(p.id);
+      return;
+    }
+
+    // 2. Remediate if plan + cooldown allows
+    const plan = Array.isArray(p.remediation) ? p.remediation : [];
+    const step = plan[p.stepIndex || 0];
+    if (!step) {
+      // Plan exhausted. If the last step was notify_jtr, it has already fired.
+      // Mark escalated once so we don't keep trying.
+      if (!p.escalated && plan.length > 0) this.store.markEscalated(p.id);
+      return;
+    }
+
+    // ── Serial Tier-3 lock: at most one dispatch_to_agent in flight across
+    //    the whole store. If this problem is waiting to dispatch but another
+    //    is already in progress, skip this tick. (Keeps it simple; agent can
+    //    only diagnose one thing at a time without risking collisions.)
+    if (step.type === 'dispatch_to_agent' && !p.dispatchedAt) {
+      const otherDispatched = this.store.all().find(q => q.id !== p.id && q.dispatchedAt);
+      if (otherDispatched) {
+        this.logger.info?.(`[live-problems] ${p.id}: waiting — ${otherDispatched.id} holds Tier-3 lock`);
+        return;
+      }
+    }
+
+    const cooldownMin = step.cooldownMin ?? DEFAULT_STEP_COOLDOWN_MIN;
+    const lastAt = p.lastRemediationAt ? Date.parse(p.lastRemediationAt) : 0;
+    const sinceMin = lastAt ? (Date.now() - lastAt) / 60000 : Infinity;
+    if (sinceMin < cooldownMin && step.type !== 'dispatch_to_agent') {
+      return;   // in cooldown — let the next tick handle it
+    }
+    // For dispatch_to_agent, cooldown gates re-entry but we pass it through
+    // to the remediator which itself no-ops with 'in_progress' until budget.
+
+    // 3. Run the remediator
+    this.logger.info?.(`[live-problems] ${p.id}: step ${p.stepIndex} → ${step.type}`);
+    // Pass the full problem record so dispatch_to_agent has verifier spec etc.
+    const out = await runRemediator(step, { ...ctx, problem: p });
+    this.store.recordRemediation(p.id, {
+      step: p.stepIndex,
+      type: step.type,
+      outcome: out.outcome,
+      detail: out.detail,
+    });
+
+    if (out.outcome === 'dispatched') {
+      // Agent accepted the job. Record dispatch metadata; loop will wait out
+      // the budget without re-running the step.
+      this.store.recordDispatch(p.id, { turnId: out.turnId || null });
+    } else if (out.outcome === 'in_progress') {
+      // Agent is working; nothing to do. Cooldown marker already written via
+      // lastRemediationAt so the next tick won't spam the call.
+    } else if (out.outcome === 'success' && step.type === 'notify_jtr') {
+      // Escalation step succeeded — don't keep paging jtr.
+      this.store.markEscalated(p.id);
+      this.store.advanceRemediationStep(p.id);
+    } else if (out.outcome === 'rejected' || out.outcome === 'failed') {
+      // Clear dispatch state if this was the agent step failing past budget.
+      if (step.type === 'dispatch_to_agent') this.store.clearDispatch(p.id);
+      this.store.advanceRemediationStep(p.id);
+    }
+    // On 'success' for non-notify steps, leave stepIndex where it is. Next tick
+    // re-verifies; if the fix worked → resolved. If not, cooldown expires and
+    // we try the same step again until it rolls to the next one via failure.
+  }
+}
+
+module.exports = { LiveProblemsLoop, DEFAULT_INTERVAL_MS };

@@ -1,0 +1,232 @@
+/**
+ * LiveProblemStore — registry of actively-tracked problems with deterministic
+ * verifiers and ordered remediation plans.
+ *
+ * A live problem is a claim about current world state ("health log silent",
+ * "disk free < 10 GiB", "home23-jerry-harness down") that can be checked
+ * deterministically without an LLM. The pulse brief reads only CURRENT state
+ * from this store rather than letting stale assertions loop forever through
+ * thoughts.jsonl.
+ *
+ * Schema per problem:
+ * {
+ *   id: string (stable slug),
+ *   claim: string (human-readable),
+ *   verifier: { type, args },
+ *   remediation: [ { type, args, cooldownMin } ],      // ordered plan
+ *   state: 'open' | 'resolved' | 'chronic' | 'unverifiable',
+ *   seedOrigin: 'system' | 'curator' | 'user',
+ *   openedAt, firstSeenAt, resolvedAt,
+ *   lastCheckedAt, lastResult: { ok, detail, at },
+ *   stepIndex, lastRemediationAt, remediationLog: [ { step, outcome, at } ],
+ *   lastMentionedInPulseAt,
+ *   escalated: boolean,
+ *   escalatedAt,
+ * }
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const RESOLVED_KEEP_MS = 24 * 60 * 60 * 1000;   // keep resolved 24h so pulse can mention once
+const CHRONIC_AFTER_MS = 6 * 60 * 60 * 1000;    // open >6h with no progress → chronic
+
+class LiveProblemStore {
+  constructor({ brainDir, logger }) {
+    this.brainDir = brainDir;
+    this.logger = logger || { info() {}, warn() {}, error() {} };
+    this.filePath = path.join(brainDir, 'live-problems.json');
+    this.problems = new Map();
+    this._lastLoadMtimeMs = 0;
+    this.load();
+  }
+
+  load() {
+    try {
+      if (!fs.existsSync(this.filePath)) return;
+      const stat = fs.statSync(this.filePath);
+      this._lastLoadMtimeMs = stat.mtimeMs;
+      const raw = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+      const list = raw.problems || [];
+      this.problems.clear();
+      for (const p of list) this.problems.set(p.id, p);
+      this.logger.info?.(`[live-problems] loaded ${this.problems.size} problems`);
+    } catch (err) {
+      this.logger.warn?.(`[live-problems] load failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Reload from disk if the file has been modified since the last load.
+   * Called at the top of each tick so external edits (dashboard UI, hand-edits
+   * to live-problems.json) are picked up without an engine restart.
+   */
+  reloadIfChanged() {
+    try {
+      if (!fs.existsSync(this.filePath)) return false;
+      const stat = fs.statSync(this.filePath);
+      if (stat.mtimeMs === this._lastLoadMtimeMs) return false;
+      this.load();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  save() {
+    try {
+      const list = [...this.problems.values()];
+      fs.writeFileSync(this.filePath, JSON.stringify({ problems: list }, null, 2));
+      try { this._lastLoadMtimeMs = fs.statSync(this.filePath).mtimeMs; } catch {}
+    } catch (err) {
+      this.logger.warn?.(`[live-problems] save failed: ${err.message}`);
+    }
+  }
+
+  all() {
+    return [...this.problems.values()];
+  }
+
+  open() {
+    return this.all().filter(p => p.state === 'open' || p.state === 'chronic');
+  }
+
+  get(id) {
+    return this.problems.get(id);
+  }
+
+  upsert(problem) {
+    if (!problem.id) throw new Error('problem.id required');
+    const existing = this.problems.get(problem.id);
+    const now = new Date().toISOString();
+    if (existing) {
+      // Preserve runtime state fields when caller re-declares spec
+      this.problems.set(problem.id, {
+        ...existing,
+        ...problem,
+        firstSeenAt: existing.firstSeenAt || now,
+      });
+    } else {
+      this.problems.set(problem.id, {
+        state: problem.verifier ? 'open' : 'unverifiable',
+        seedOrigin: problem.seedOrigin || 'system',
+        firstSeenAt: now,
+        openedAt: now,
+        stepIndex: 0,
+        remediationLog: [],
+        escalated: false,
+        ...problem,
+      });
+    }
+    this.save();
+    return this.problems.get(problem.id);
+  }
+
+  remove(id) {
+    const had = this.problems.delete(id);
+    if (had) this.save();
+    return had;
+  }
+
+  recordVerification(id, result) {
+    const p = this.problems.get(id);
+    if (!p) return;
+    const now = new Date().toISOString();
+    p.lastCheckedAt = now;
+    p.lastResult = { ...result, at: now };
+    if (result.ok) {
+      if (p.state !== 'resolved') {
+        p.state = 'resolved';
+        p.resolvedAt = now;
+        p.stepIndex = 0;
+        this.logger.info?.(`[live-problems] resolved: ${id}`);
+      }
+    } else {
+      // Re-open if previously resolved
+      if (p.state === 'resolved') {
+        p.state = 'open';
+        p.openedAt = now;
+        p.resolvedAt = null;
+        p.stepIndex = 0;
+        p.escalated = false;
+      }
+      // Promote to chronic if open too long with no remediation progress
+      if (p.state === 'open') {
+        const openedMs = Date.parse(p.openedAt || p.firstSeenAt || now);
+        if (Date.now() - openedMs > CHRONIC_AFTER_MS) p.state = 'chronic';
+      }
+    }
+    this.save();
+  }
+
+  recordRemediation(id, entry) {
+    const p = this.problems.get(id);
+    if (!p) return;
+    const now = new Date().toISOString();
+    p.lastRemediationAt = now;
+    p.remediationLog = (p.remediationLog || []).concat([{ ...entry, at: now }]);
+    // Keep log bounded
+    if (p.remediationLog.length > 50) p.remediationLog = p.remediationLog.slice(-50);
+    this.save();
+  }
+
+  advanceRemediationStep(id) {
+    const p = this.problems.get(id);
+    if (!p) return;
+    p.stepIndex = (p.stepIndex || 0) + 1;
+    // Reset cooldown marker — a fresh step shouldn't inherit the previous
+    // step's timestamp. Without this, advancing from step 0 (just tried) to
+    // step 1 (never tried) would leave step 1 in cooldown for no reason.
+    p.lastRemediationAt = null;
+    this.save();
+  }
+
+  recordDispatch(id, { turnId } = {}) {
+    const p = this.problems.get(id);
+    if (!p) return;
+    p.dispatchedAt = new Date().toISOString();
+    p.dispatchedTurnId = turnId || null;
+    this.save();
+  }
+
+  clearDispatch(id) {
+    const p = this.problems.get(id);
+    if (!p) return;
+    delete p.dispatchedAt;
+    delete p.dispatchedTurnId;
+    this.save();
+  }
+
+  markEscalated(id) {
+    const p = this.problems.get(id);
+    if (!p) return;
+    p.escalated = true;
+    p.escalatedAt = new Date().toISOString();
+    this.save();
+  }
+
+  markMentionedInPulse(id) {
+    const p = this.problems.get(id);
+    if (!p) return;
+    p.lastMentionedInPulseAt = new Date().toISOString();
+    this.save();
+  }
+
+  /** Drop resolved problems past the keep window. */
+  pruneResolved() {
+    const now = Date.now();
+    let removed = 0;
+    for (const [id, p] of this.problems) {
+      if (p.state !== 'resolved') continue;
+      const at = Date.parse(p.resolvedAt || p.lastCheckedAt || 0);
+      if (!at || now - at > RESOLVED_KEEP_MS) {
+        this.problems.delete(id);
+        removed++;
+      }
+    }
+    if (removed > 0) this.save();
+    return removed;
+  }
+}
+
+module.exports = { LiveProblemStore, RESOLVED_KEEP_MS, CHRONIC_AFTER_MS };

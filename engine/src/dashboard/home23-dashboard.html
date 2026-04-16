@@ -56,6 +56,82 @@
     <span class="h23-pulse-notifs" id="pulse-actions" style="cursor:pointer;display:none;" onclick="openActionsPanel()">
       <span id="pulse-actions-badge">⚡ 0</span>
     </span>
+    <span class="h23-pulse-sep" id="pulse-problems-sep" style="display:none;">·</span>
+    <span class="h23-pulse-notifs" id="pulse-problems" style="cursor:pointer;display:none;" onclick="openProblemsPanel()" title="Live problems — verifier-backed, auto-remediated">
+      <span id="pulse-problems-badge">🩺 0</span>
+    </span>
+    <span class="h23-pulse-sep" id="pulse-brain-sep" style="display:none;">·</span>
+    <span class="h23-pulse-notifs" id="pulse-brain" style="cursor:pointer;display:none;" onclick="openBrainStoragePanel()" title="Brain storage — disk vs memory counts, backups">
+      <span id="pulse-brain-badge">🧠 —</span>
+    </span>
+  </div>
+
+  <!-- Brain Storage panel -->
+  <div class="h23-log-overlay" id="brain-storage-overlay" onclick="if(event.target===this)closeBrainStoragePanel()">
+    <div class="h23-log-overlay-panel" style="max-width:860px;">
+      <div class="h23-log-overlay-header">
+        <span class="h23-brainlog-title">🧠 Brain Storage</span>
+        <span style="font-size:11px;color:rgba(255,255,255,0.4);margin-left:10px;">Disk truth vs live memory. Mismatch = silent data loss. Should always match.</span>
+        <button class="h23-log-overlay-close" onclick="closeBrainStoragePanel()" style="margin-left:auto;">&#10005;</button>
+      </div>
+      <div class="h23-log-overlay-body">
+        <div id="brain-storage-content" style="padding:14px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Problems panel -->
+  <div class="h23-log-overlay" id="problems-overlay" onclick="if(event.target===this)closeProblemsPanel()">
+    <div class="h23-log-overlay-panel" style="max-width:960px;">
+      <div class="h23-log-overlay-header">
+        <span class="h23-brainlog-title">🩺 Live Problems</span>
+        <span style="font-size:11px;color:rgba(255,255,255,0.4);margin-left:10px;">Ground truth — auto-verified every ~90s, auto-remediated before escalation.</span>
+        <button class="h23-log-overlay-close" onclick="closeProblemsPanel()" style="margin-left:auto;">&#10005;</button>
+      </div>
+      <div class="h23-log-overlay-body">
+        <div id="problems-list" style="padding:12px;"></div>
+        <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.1);display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button onclick="tickProblemsNow()" style="background:rgba(0,122,255,0.2);border:1px solid rgba(0,122,255,0.4);color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;">Re-verify now</button>
+          <button onclick="openProblemEditor(null)" style="background:rgba(52,199,89,0.2);border:1px solid rgba(52,199,89,0.4);color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;">+ Add problem</button>
+          <span style="color:rgba(255,255,255,0.4);font-size:12px;margin-left:auto;">Seeded problems have <code style="background:rgba(255,255,255,0.05);padding:1px 4px;border-radius:3px;">seedOrigin: system</code> — editing the spec is fine, they'll re-seed with defaults on engine restart.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Problem editor dialog -->
+  <div class="h23-log-overlay" id="problem-editor-overlay" onclick="if(event.target===this)closeProblemEditor()">
+    <div class="h23-log-overlay-panel" style="max-width:720px;">
+      <div class="h23-log-overlay-header">
+        <span class="h23-brainlog-title" id="problem-editor-title">Edit Problem</span>
+        <button class="h23-log-overlay-close" onclick="closeProblemEditor()" style="margin-left:auto;">&#10005;</button>
+      </div>
+      <div class="h23-log-overlay-body">
+        <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+          <label style="font-size:12px;color:rgba(255,255,255,0.6);">ID (stable slug)
+            <input id="pe-id" type="text" style="width:100%;margin-top:4px;padding:6px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#fff;font-size:13px;font-family:var(--font-mono,monospace);">
+          </label>
+          <label style="font-size:12px;color:rgba(255,255,255,0.6);">Claim (human-readable)
+            <input id="pe-claim" type="text" style="width:100%;margin-top:4px;padding:6px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#fff;font-size:13px;">
+          </label>
+          <label style="font-size:12px;color:rgba(255,255,255,0.6);">Verifier (JSON: <code style="background:rgba(255,255,255,0.05);padding:1px 4px;border-radius:3px;">{"type":"file_mtime","args":{"path":"~/.health_log.jsonl","maxAgeMin":360}}</code>)
+            <textarea id="pe-verifier" rows="4" style="width:100%;margin-top:4px;padding:6px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#fff;font-size:12px;font-family:var(--font-mono,monospace);"></textarea>
+          </label>
+          <label style="font-size:12px;color:rgba(255,255,255,0.6);">Remediation plan (JSON array of <code style="background:rgba(255,255,255,0.05);padding:1px 4px;border-radius:3px;">{type,args,cooldownMin}</code> steps, executed in order)
+            <textarea id="pe-remediation" rows="6" style="width:100%;margin-top:4px;padding:6px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#fff;font-size:12px;font-family:var(--font-mono,monospace);"></textarea>
+          </label>
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.03);padding:8px 10px;border-radius:6px;">
+            <div><b>Verifier types:</b> file_mtime, file_exists, pm2_status, http_ping, disk_free, graph_not_empty</div>
+            <div><b>Remediator types:</b> pm2_restart (home23-* only), run_shortcut, fetch_url, exec_command (clean_pm2_logs, clean_npm_cache), <b>dispatch_to_agent</b> (hands the problem to Jerry with full tools, args.budgetHours), notify_jtr</div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:6px;">
+            <button onclick="saveProblemEdit()" style="background:rgba(0,122,255,0.3);border:1px solid rgba(0,122,255,0.5);color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px;">Save</button>
+            <button id="pe-delete" onclick="deleteProblemFromEditor()" style="background:rgba(255,59,48,0.15);border:1px solid rgba(255,59,48,0.4);color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px;display:none;">Delete</button>
+            <span id="pe-status" style="align-self:center;font-size:12px;color:rgba(255,255,255,0.5);"></span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Autonomous actions panel (ACT: executions) -->

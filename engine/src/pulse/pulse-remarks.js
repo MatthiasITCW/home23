@@ -30,7 +30,11 @@ You're talking to jtr. He runs you. He's your guy. Talk to him directly, one to 
 
 Be cool. Be direct. Laid back by default. Turn it UP when something actually matters — a stuck loop, a failed action, a weird pattern, a win. Whimsical, weird metaphors welcome. Swear when you feel like it. You're not a customer service bot. Don't ask permission. Don't hedge.
 
-NEVER restate raw brain state as a list. Have a take. React. Comment. If everything's boring, say so, but say it with style. If something broke, call it out. If you did something cool, be proud about it (briefly — no bragging).
+NEVER restate raw brain state as a list. Have a take. React. Comment. If everything's boring, say so, but say it with style. If you did something cool, be proud about it (briefly — no bragging).
+
+GROUND TRUTH ONLY: The brief contains a LIVE PROBLEMS block that is the single source of truth about what's broken or stale right now. It is re-verified every ~90 seconds by the engine, and the engine has already attempted autonomous remediation. You are NEVER allowed to assert that something is broken/stale/down/missing unless it is in that block. If a thought in your brain says "X has been broken since Y" and X is not in LIVE PROBLEMS, that thought is stale — drop it, don't restate it. jtr has seen you loop on stale assertions before and it makes him wonder why you exist.
+
+STATUS CHANGES ONLY: If a live problem is still OPEN and you already mentioned it recently, stay silent on it — jtr knows, and repeating it is the exact failure mode you are designed to avoid. Only speak about an open problem on state change: newly opened, newly chronic, newly escalated, newly resolved. RESOLVED-just-now is worth one short acknowledgment.
 
 2-4 sentences. No preamble. No "I noticed that" or "It appears." Just talk.`;
 
@@ -61,7 +65,7 @@ function readJsonlTail(file, maxLines = 200) {
 }
 
 class PulseRemarks {
-  constructor({ config, logger, memory, goals, logsDir, workspaceDir, agentName }) {
+  constructor({ config, logger, memory, goals, logsDir, workspaceDir, agentName, liveProblems }) {
     this.config = config || {};
     this.logger = logger;
     this.memory = memory;
@@ -69,6 +73,7 @@ class PulseRemarks {
     this.logsDir = logsDir;           // brain/
     this.workspaceDir = workspaceDir; // workspace/
     this.agentName = agentName || process.env.HOME23_AGENT || 'agent';
+    this.liveProblems = liveProblems || null;
     this.unified = new UnifiedClient(config, logger);
 
     this.running = false;
@@ -487,6 +492,11 @@ class PulseRemarks {
     const insights = Array.isArray(snap.brainState?.consolidatedInsights)
       ? snap.brainState.consolidatedInsights : [];
 
+    // Live problems: the only source of truth about "things that are broken".
+    // Stale worry lifted out of thoughts.jsonl is explicitly kept OUT of the
+    // brief — if a problem isn't in liveProblems, it isn't a problem.
+    const liveProblems = this.liveProblems ? this.liveProblems.briefSnapshot() : null;
+
     return {
       cycle: snap.cycle,
       ts: snap.ts,
@@ -508,6 +518,7 @@ class PulseRemarks {
       })),
       synthesisAt: snap.brainState?.generatedAt || null,
       synthesisModel: snap.brainState?.model || null,
+      liveProblems,
     };
   }
 
@@ -695,8 +706,40 @@ class PulseRemarks {
       parts.push(`Sensors: ${brief.sensorSummary.join(' · ')}`);
     }
 
+    // ── Live problems: the ONLY sanctioned place for "something is broken"
+    //    statements. If you want to say "X is broken / stale / down", it has
+    //    to be in this block. If it's not here, it's not a live problem and
+    //    you must not assert it as one. Resolved blocks are for acknowledgment
+    //    only, not re-litigation.
+    const lp = brief.liveProblems;
+    if (lp) {
+      parts.push('');
+      parts.push('--- LIVE PROBLEMS (verified just now — ground truth) ---');
+      if (lp.open.length === 0 && lp.chronic.length === 0 && lp.resolvedJustNow.length === 0) {
+        parts.push('No open problems. Everything the system tracks is green.');
+      } else {
+        for (const p of lp.open) {
+          const rem = p.lastRemediation ? ` · last fix-attempt: ${p.lastRemediation.type}=${p.lastRemediation.outcome}` : '';
+          parts.push(`  ❌ OPEN (${p.ageMin}m) [${p.id}] ${p.claim} — ${p.detail || '?'}${rem}${p.escalated ? ' · escalated' : ''}`);
+        }
+        for (const p of lp.chronic) {
+          parts.push(`  ⚠️  CHRONIC (${p.ageMin}m) [${p.id}] ${p.claim} — ${p.detail || '?'} · remediation plan exhausted${p.escalated ? ', jtr notified' : ''}`);
+        }
+        for (const p of lp.resolvedJustNow) {
+          parts.push(`  ✅ RESOLVED [${p.id}] ${p.claim} — came back at ${p.resolvedAt}`);
+        }
+      }
+      parts.push('--- end live problems ---');
+    }
+
     parts.push('');
     parts.push('Now: one remark to jtr. Your voice. Be real.');
+    parts.push('HARD RULES:');
+    parts.push('  1. You can ONLY claim something is broken/stale/down/missing if it is in the LIVE PROBLEMS block above. If your instinct is to say "X has been broken since Y" and X is not in that block, X is not broken. Drop it.');
+    parts.push('  2. Do NOT re-mention OPEN problems that were already raised in recent cycles unless the state changed (new remediation attempt, promoted to chronic). Silence is correct for stable-open issues — jtr already knows.');
+    parts.push('  3. RESOLVED-just-now is worth one-line acknowledgment, max one remark per resolution.');
+    parts.push('  4. CHRONIC means the autonomous plan is done and jtr has been (or will be) notified. Don\'t keep nagging the channel about it — it\'s on the board.');
+    parts.push('  5. If the brief is genuinely quiet (no new signals, no state changes), say so in one line and stop.');
     parts.push('IMPORTANT: If everything in this brief is something you have already commented on recently (the "repeats already filtered out" line), or if there is genuinely nothing new, just SAY THAT briefly. One line. Do not invent novelty. Do not re-state the same point. Do not loop.');
 
     return { systemPrompt, userMessage: parts.join('\n') };
@@ -765,6 +808,17 @@ class PulseRemarks {
       if (h) this._remarkedSignals.set(h, expiresAt);
     }
     this._saveRemarkedSignals();
+
+    // Flag live-problems mentioned in this brief so the next brief knows
+    // jtr has heard about them recently.
+    if (this.liveProblems && brief.liveProblems) {
+      const ids = [
+        ...(brief.liveProblems.open || []).map(p => p.id),
+        ...(brief.liveProblems.chronic || []).map(p => p.id),
+        ...(brief.liveProblems.resolvedJustNow || []).map(p => p.id),
+      ];
+      try { this.liveProblems.markMentioned(ids); } catch { /* best-effort */ }
+    }
   }
 }
 

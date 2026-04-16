@@ -717,6 +717,149 @@ async function main(): Promise<void> {
   bridgeApp.post('/api/stop', createStopHandler(bridgeConfig));
   bridgeApp.get('/health', createHealthHandler({ agentName: AGENT_NAME, agent }));
 
+  // ── Notify endpoint — the engine's live-problems loop calls this when
+  // autonomous remediation has been exhausted. Routes the message to the
+  // owner's default channel (Telegram DM for now). Bearer-token gated so
+  // only the local engine can fire it.
+  bridgeApp.post('/api/notify', async (req: any, res: any) => {
+    if (bridgeToken) {
+      const header = req.headers.authorization || '';
+      const provided = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (provided !== bridgeToken) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+    }
+    const { text, severity = 'normal', source = 'engine' } = req.body || {};
+    if (!text || typeof text !== 'string') {
+      res.status(400).json({ error: 'text required' });
+      return;
+    }
+
+    const ownerTelegramId = config.agent?.owner?.telegramId || null;
+    const sigil = severity === 'alert' ? '🚨' : severity === 'low' ? '·' : '⚠️';
+    const prefix = `${sigil} [${source}]`;
+    const delivered: string[] = [];
+    const failed: Array<{channel: string; error: string}> = [];
+
+    const telegramAdapter = adapterMap.get('telegram');
+    if (telegramAdapter && ownerTelegramId) {
+      try {
+        await telegramAdapter.send({
+          channel: 'telegram',
+          chatId: String(ownerTelegramId),
+          text: `${prefix} ${text}`,
+        });
+        delivered.push('telegram');
+      } catch (err) {
+        failed.push({ channel: 'telegram', error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    if (delivered.length === 0) {
+      res.status(503).json({
+        error: 'no channel delivered',
+        tried: failed,
+        hint: telegramAdapter ? 'owner.telegramId not configured' : 'telegram adapter not enabled',
+      });
+      return;
+    }
+    res.json({ ok: true, delivered, failed });
+  });
+
+  // ── Diagnose endpoint — Tier 3 of live-problems. Engine POSTs a problem
+  // here when the rigid remediation plan didn't resolve it. We launch a
+  // normal agent turn with a focused diagnostic mission and return the
+  // turnId immediately (fire-and-forget from the engine's POV; budget
+  // tracking lives in the engine's loop). The agent uses its standard
+  // toolbox: shell, files, cron, brain, web.
+  bridgeApp.post('/api/diagnose', async (req: any, res: any) => {
+    if (bridgeToken) {
+      const header = req.headers.authorization || '';
+      const provided = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (provided !== bridgeToken) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+    }
+    const { problem, budgetHours = 12 } = req.body || {};
+    if (!problem || !problem.id || !problem.claim) {
+      res.status(400).json({ error: 'problem with id+claim required' });
+      return;
+    }
+
+    // Dedicated chatId namespace so diagnostic runs don't collide with
+    // user chat or with each other.
+    const chatId = `diagnose:${problem.id}`;
+
+    // If the agent is already running something for this problem, short-circuit.
+    if (agent.isRunning(chatId)) {
+      res.status(409).json({ error: 'diagnosis already in progress for ' + problem.id });
+      return;
+    }
+
+    // Build the mission message. Explicit, structured, includes prior attempts
+    // so the agent doesn't repeat what's already been tried.
+    const priorAttempts = Array.isArray(problem.remediationLog) && problem.remediationLog.length > 0
+      ? problem.remediationLog.map((r: any, i: number) =>
+          `  ${i + 1}. step ${r.step} ${r.type}: ${r.outcome} — ${r.detail}`).join('\n')
+      : '  (none)';
+    const verifierSpec = problem.verifier
+      ? `${problem.verifier.type}(${JSON.stringify(problem.verifier.args || {})})`
+      : '(none)';
+
+    const mission = [
+      `SYSTEM DIAGNOSTIC REQUEST — Live Problem: ${problem.id}`,
+      '',
+      'The rigid remediation plan for this problem did not resolve it. You are being',
+      'handed this to diagnose and attempt a real fix using your full toolbox (shell,',
+      'files, cron, brain, web, subagent). You have autonomy to investigate root',
+      'cause, try fixes, and verify.',
+      '',
+      `Claim: ${problem.claim}`,
+      `Verifier: ${verifierSpec}`,
+      `  → this is how you know if the fix worked. Re-run the equivalent check`,
+      `    yourself after any attempted fix; only claim success if it passes.`,
+      '',
+      'Prior remediation attempts (already tried, do not repeat):',
+      priorAttempts,
+      '',
+      `Budget: ~${budgetHours}h wall clock. You don't need to rush, but don't loop either.`,
+      '',
+      'DO:',
+      '  - investigate the actual state of the system (shell, file reads, pings)',
+      '  - look for siblings that work (e.g. a related cron, a related bridge)',
+      '    and clone the pattern if that\'s the gap',
+      '  - write scripts, register crons, fix configs, restart processes as needed',
+      '  - verify with the verifier\'s check before declaring done',
+      '  - if you can\'t fix it (needs physical access, jtr\'s decision, unknown',
+      '    component), explain clearly why and what jtr would need to do',
+      '',
+      'DO NOT:',
+      '  - notify jtr — that happens automatically if you can\'t fix it within budget',
+      '  - do destructive operations without a verified need (no pm2 delete all,',
+      '    no rm -rf on user data, no force pushes)',
+      '  - pretend it\'s fixed when the verifier still fails',
+      '',
+      'End your session with 2-3 sentences describing what you did and whether the',
+      'verifier now passes. This goes into the live-problems remediation log.',
+    ].join('\n');
+
+    try {
+      const { turnId, response } = await agent.runWithTurn(chatId, mission);
+      // Detach. The engine tracks budget separately via wall clock.
+      response.catch((err: any) => {
+        console.error(`[diagnose] ${problem.id} turn ${turnId} error:`, err?.message || err);
+      });
+      console.log(`[diagnose] ${problem.id}: dispatched agent turn ${turnId}`);
+      res.json({ ok: true, turnId, chatId, problemId: problem.id, budgetHours });
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      console.error(`[diagnose] ${problem.id} dispatch error:`, m);
+      res.status(500).json({ error: m });
+    }
+  });
+
   // Resumable chat routes — turn-based protocol for backgrounding/reconnect
   const chatTurnConfig = {
     agentName: AGENT_NAME,

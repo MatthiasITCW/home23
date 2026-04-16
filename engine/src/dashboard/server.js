@@ -4599,6 +4599,220 @@ Be specific, actionable, and maintain research continuity.`;
       });
     });
 
+    // ── Brain Storage API (Tier 3.3) ──
+    // Surfaces the disk-side truth (sidecar snapshot, file sizes, last save
+    // age) next to the in-memory counts so any divergence is visible at a
+    // glance — no more silent data loss going unnoticed for hours.
+    this.app.get('/api/brain/storage', (req, res) => {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const brainDir = this.logsDir || '';
+
+        const fileMeta = (name) => {
+          const p = path.join(brainDir, name);
+          try {
+            const s = fs.statSync(p);
+            return { exists: true, bytes: s.size, mtime: s.mtime.toISOString() };
+          } catch {
+            return { exists: false };
+          }
+        };
+
+        let snapshot = null;
+        try {
+          const p = path.join(brainDir, 'brain-snapshot.json');
+          if (fs.existsSync(p)) snapshot = JSON.parse(fs.readFileSync(p, 'utf8'));
+        } catch { snapshot = null; }
+
+        let highWater = null;
+        try {
+          const p = path.join(brainDir, 'brain-high-water.json');
+          if (fs.existsSync(p)) highWater = JSON.parse(fs.readFileSync(p, 'utf8'));
+        } catch { highWater = null; }
+
+        // In-memory counts via orchestrator (may be null if dashboard runs
+        // in a separate process; cross-process instances will still see the
+        // snapshot counts for disk-side truth).
+        const memory = this.orchestrator?.memory;
+        const inMemory = memory?.nodes ? {
+          nodes: memory.nodes.size ?? memory.nodes.length ?? 0,
+          edges: memory.edges?.size ?? memory.edges?.length ?? 0,
+        } : null;
+
+        const files = {
+          state: fileMeta('state.json.gz'),
+          nodesSidecar: fileMeta('memory-nodes.jsonl.gz'),
+          edgesSidecar: fileMeta('memory-edges.jsonl.gz'),
+          snapshot: fileMeta('brain-snapshot.json'),
+        };
+
+        // Backups directory listing (names + bytes)
+        let backups = [];
+        try {
+          const backupsDir = path.join(brainDir, 'backups');
+          if (fs.existsSync(backupsDir)) {
+            backups = fs.readdirSync(backupsDir)
+              .filter(n => n.startsWith('backup-'))
+              .sort()
+              .map(name => {
+                const full = path.join(backupsDir, name);
+                try {
+                  const st = fs.statSync(full);
+                  return { name, mtime: st.mtime.toISOString() };
+                } catch { return { name }; }
+              });
+          }
+        } catch { /* ok */ }
+
+        res.json({
+          snapshot,
+          inMemory,
+          highWater,
+          files,
+          backups,
+          mismatch: snapshot && inMemory
+            ? (snapshot.nodeCount !== inMemory.nodes || snapshot.edgeCount !== inMemory.edges)
+            : false,
+        });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ── Live Problems API ──
+    // Ground-truth registry of things currently broken/stale with deterministic
+    // verifiers and autonomous remediation plans. The engine's live-problems
+    // loop re-verifies every ~90s and writes live-problems.json. This API
+    // reads/writes that file directly (dashboard is a separate process from
+    // the engine); the engine's store reloads on each tick so UI edits apply.
+    const liveProblemsFile = () => require('path').join(this.logsDir || '', 'live-problems.json');
+    const loadLiveProblems = () => {
+      try {
+        const fs = require('fs');
+        const file = liveProblemsFile();
+        if (!fs.existsSync(file)) return { problems: [] };
+        return JSON.parse(fs.readFileSync(file, 'utf8')) || { problems: [] };
+      } catch { return { problems: [] }; }
+    };
+    const saveLiveProblems = (data) => {
+      const fs = require('fs');
+      fs.writeFileSync(liveProblemsFile(), JSON.stringify(data, null, 2));
+    };
+    const buildSnapshot = (problems) => {
+      const now = Date.now();
+      const open = [], chronic = [], resolvedJustNow = [];
+      let resolved = 0, unverifiable = 0;
+      for (const p of problems) {
+        if (p.state === 'open' || p.state === 'chronic') {
+          const openedMs = p.openedAt ? Date.parse(p.openedAt) : now;
+          const ageMin = Math.max(0, Math.round((now - openedMs) / 60000));
+          const row = {
+            id: p.id, claim: p.claim, ageMin,
+            detail: p.lastResult?.detail || null,
+            state: p.state, escalated: !!p.escalated,
+            lastRemediation: (p.remediationLog || []).slice(-1)[0] || null,
+          };
+          if (p.state === 'chronic') chronic.push(row); else open.push(row);
+        } else if (p.state === 'resolved') {
+          resolved++;
+          const at = p.resolvedAt ? Date.parse(p.resolvedAt) : 0;
+          if (at && (now - at) < 30 * 60 * 1000) {
+            resolvedJustNow.push({ id: p.id, claim: p.claim, resolvedAt: p.resolvedAt });
+          }
+        } else if (p.state === 'unverifiable') {
+          unverifiable++;
+        }
+      }
+      return { open, chronic, resolvedJustNow,
+        counts: { open: open.length, chronic: chronic.length, resolved, unverifiable } };
+    };
+
+    this.app.get('/api/live-problems', (req, res) => {
+      const data = loadLiveProblems();
+      res.json({
+        available: true,
+        problems: data.problems || [],
+        snapshot: buildSnapshot(data.problems || []),
+      });
+    });
+
+    this.app.get('/api/live-problems/:id', (req, res) => {
+      const data = loadLiveProblems();
+      const p = (data.problems || []).find(x => x.id === req.params.id);
+      if (!p) return res.status(404).json({ error: 'not found' });
+      res.json({ problem: p });
+    });
+
+    this.app.post('/api/live-problems', (req, res) => {
+      const body = req.body || {};
+      if (!body.id || !body.claim) return res.status(400).json({ error: 'id + claim required' });
+      const data = loadLiveProblems();
+      const list = data.problems || [];
+      const id = String(body.id).trim();
+      const existingIdx = list.findIndex(x => x.id === id);
+      const nowIso = new Date().toISOString();
+      const base = existingIdx >= 0 ? list[existingIdx] : {
+        state: body.verifier ? 'open' : 'unverifiable',
+        seedOrigin: body.seedOrigin || 'user',
+        firstSeenAt: nowIso,
+        openedAt: nowIso,
+        stepIndex: 0,
+        remediationLog: [],
+        escalated: false,
+      };
+      const next = {
+        ...base,
+        id,
+        claim: String(body.claim).trim(),
+        verifier: body.verifier || null,
+        remediation: Array.isArray(body.remediation) ? body.remediation : [],
+        seedOrigin: body.seedOrigin || base.seedOrigin || 'user',
+      };
+      if (existingIdx >= 0) list[existingIdx] = next; else list.push(next);
+      saveLiveProblems({ problems: list });
+      res.json({ problem: next });
+    });
+
+    this.app.put('/api/live-problems/:id', (req, res) => {
+      const data = loadLiveProblems();
+      const list = data.problems || [];
+      const idx = list.findIndex(x => x.id === req.params.id);
+      if (idx < 0) return res.status(404).json({ error: 'not found' });
+      const body = req.body || {};
+      list[idx] = { ...list[idx], ...body, id: list[idx].id };
+      saveLiveProblems({ problems: list });
+      res.json({ problem: list[idx] });
+    });
+
+    this.app.delete('/api/live-problems/:id', (req, res) => {
+      const data = loadLiveProblems();
+      const list = data.problems || [];
+      const idx = list.findIndex(x => x.id === req.params.id);
+      if (idx < 0) return res.json({ removed: false });
+      list.splice(idx, 1);
+      saveLiveProblems({ problems: list });
+      res.json({ removed: true });
+    });
+
+    // Force an immediate tick by nudging the engine's file mtime — the loop
+    // picks up external edits on each tick. This endpoint doesn't literally
+    // force a tick (engine runs on its own cadence) but does ensure the next
+    // tick reloads from disk. For genuine instant verify, restart the engine.
+    this.app.post('/api/live-problems/tick', (req, res) => {
+      try {
+        const data = loadLiveProblems();
+        saveLiveProblems(data);   // rewrites file, bumps mtime → engine reloads
+        res.json({
+          ok: true,
+          note: 'file rewritten; engine will re-verify on its next tick (within ~90s)',
+          snapshot: buildSnapshot(data.problems || []),
+        });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     // ── Notifications API (thought-action queue) ──
     // Cognitive cycles can emit NOTIFY:<message> which appends to
     // notifications.jsonl. Dashboard shows pending count + list; acknowledging

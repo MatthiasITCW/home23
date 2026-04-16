@@ -247,11 +247,24 @@ function renderAgents(agents) {
                 style="font-size:12px;">
             </div>
           </div>
-          <div style="background:rgba(255,255,255,0.02);border:1px solid var(--glass-border);border-radius:8px;padding:14px 16px;opacity:0.5;">
-            <label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text-muted);margin:0;">
-              <input type="checkbox" disabled style="width:16px;height:16px;">
-              Discord <span style="font-size:11px;margin-left:8px;">coming soon</span>
-            </label>
+          <div style="background:rgba(255,255,255,0.02);border:1px solid var(--glass-border);border-radius:8px;padding:14px 16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#fff;margin:0;">
+                <input type="checkbox" id="edit-${a.name}-discord-enabled" ${a.channels?.discord?.enabled ? 'checked' : ''}
+                  style="width:16px;height:16px;accent-color:var(--accent-blue);cursor:pointer;">
+                Discord
+              </label>
+              <span style="font-size:11px;color:${a.channels?.discord?.enabled ? 'var(--accent-green)' : 'var(--text-muted)'};">${a.channels?.discord?.enabled ? 'Connected' : 'Not configured'}</span>
+            </div>
+            <div class="h23s-field" style="margin-bottom:10px;">
+              <input type="password" id="edit-${a.name}-discord-token" placeholder="${a.channels?.discord?.hasToken ? 'Token configured — paste new to replace' : 'Paste bot token from Discord Developer Portal'}"
+                style="font-size:12px;">
+            </div>
+            <div class="h23s-field" style="margin-bottom:0;">
+              <label style="font-size:11px;color:var(--text-muted);">Guild allowlist <span style="opacity:0.7;">— one per line: <code style="background:rgba(255,255,255,0.05);padding:1px 4px;border-radius:3px;">guild_id</code> (all users) or <code style="background:rgba(255,255,255,0.05);padding:1px 4px;border-radius:3px;">guild_id user1,user2</code> (restrict). Empty = DMs only.</span></label>
+              <textarea id="edit-${a.name}-discord-guilds" rows="3" placeholder="123456789012345678&#10;987654321098765432 11111,22222"
+                style="font-size:12px;font-family:var(--font-mono);width:100%;resize:vertical;">${formatGuildsForTextarea(a.channels?.discord?.guilds)}</textarea>
+            </div>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;">
@@ -291,9 +304,35 @@ async function stopAgent(name) {
   }
 }
 
+function formatGuildsForTextarea(guilds) {
+  if (!guilds || typeof guilds !== 'object') return '';
+  return Object.entries(guilds).map(([id, cfg]) => {
+    const users = Array.isArray(cfg?.users) && cfg.users.length ? ' ' + cfg.users.join(',') : '';
+    return `${id}${users}`;
+  }).join('\n');
+}
+
+function parseGuildsTextarea(text) {
+  const out = {};
+  if (!text) return out;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const [id, usersStr] = line.split(/\s+/, 2);
+    if (!/^\d+$/.test(id)) continue;
+    const users = usersStr ? usersStr.split(',').map(u => u.trim()).filter(Boolean) : undefined;
+    out[id] = users && users.length ? { requireMention: false, users } : { requireMention: false };
+  }
+  return out;
+}
+
 async function saveAgent(name) {
   const telegramEnabled = document.getElementById(`edit-${name}-telegram-enabled`)?.checked;
   const telegramToken = document.getElementById(`edit-${name}-telegram-token`)?.value?.trim();
+  const discordEnabled = document.getElementById(`edit-${name}-discord-enabled`)?.checked;
+  const discordToken = document.getElementById(`edit-${name}-discord-token`)?.value?.trim();
+  const discordGuildsText = document.getElementById(`edit-${name}-discord-guilds`)?.value ?? '';
+  const discordGuilds = parseGuildsTextarea(discordGuildsText);
 
   const body = {
     displayName: document.getElementById(`edit-${name}-displayName`)?.value,
@@ -305,6 +344,11 @@ async function saveAgent(name) {
     telegram: {
       enabled: telegramEnabled,
       ...(telegramToken ? { botToken: telegramToken } : {}),
+    },
+    discord: {
+      enabled: discordEnabled,
+      guilds: discordGuilds,
+      ...(discordToken ? { token: discordToken } : {}),
     },
   };
   const statusEl = document.getElementById(`agent-status-${name}`);
@@ -330,18 +374,23 @@ async function saveAgent(name) {
 }
 
 async function restartAgent(name) {
+  const statusEl = document.getElementById(`agent-status-${name}`);
   try {
-    await fetch(`${API}/agents/${name}/stop`, { method: 'POST' });
-    await new Promise(r => setTimeout(r, 1000));
-    await fetch(`${API}/agents/${name}/start`, { method: 'POST' });
-    const statusEl = document.getElementById(`agent-status-${name}`);
+    const res = await fetch(`${API}/agents/${name}/restart-harness`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
     if (statusEl) {
-      statusEl.textContent = 'Restarted';
+      statusEl.textContent = 'Harness restarted';
       statusEl.style.color = 'var(--accent-green)';
       setTimeout(() => { statusEl.textContent = ''; loadAgents(); }, 2000);
     }
   } catch (err) {
-    alert('Restart failed: ' + err.message);
+    if (statusEl) {
+      statusEl.textContent = 'Restart failed: ' + err.message;
+      statusEl.style.color = 'var(--accent-red)';
+    } else {
+      alert('Restart failed: ' + err.message);
+    }
   }
 }
 

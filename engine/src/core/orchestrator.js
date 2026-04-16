@@ -402,6 +402,25 @@ class Orchestrator {
   async start() {
     this.running = true;
 
+    // Live-problems registry + verifier/remediator loop. Boots before the
+    // pulse so the first remark already has live-problem state to read.
+    try {
+      if (!this.liveProblems) {
+        const { initLiveProblems } = require('../live-problems');
+        this.liveProblems = initLiveProblems({
+          brainDir: this.logsDir,
+          memory: this.memory,
+          logger: this.logger,
+          agentName: process.env.HOME23_AGENT || null,
+          dashboardPort: process.env.DASHBOARD_PORT || process.env.COSMO_DASHBOARD_PORT || null,
+          bridgePort: process.env.BRIDGE_PORT || null,
+        });
+        this.liveProblems.start();
+      }
+    } catch (e) {
+      this.logger.warn?.('live-problems start failed (non-fatal)', { error: e.message });
+    }
+
     // Start the pulse-remarks loop (Jerry's voice layer) once the orchestrator
     // is actually running. Lazy-loaded so engines without the pulse module
     // (if any) still boot cleanly.
@@ -416,6 +435,7 @@ class Orchestrator {
           logsDir: this.logsDir,
           workspaceDir: process.env.COSMO_WORKSPACE_PATH || null,
           agentName: process.env.HOME23_AGENT || null,
+          liveProblems: this.liveProblems,
         });
         this.pulseRemarks.start();
       }
@@ -5431,20 +5451,45 @@ class Orchestrator {
       const nodesWithEmbeddings = state.memory?.nodes?.filter(n => n.embedding).length || 0;
       const totalNodes = state.memory?.nodes?.length || 0;
 
-      // SAFEGUARD: Don't overwrite state with catastrophically fewer nodes
-      // Checks existing .gz file for node count; blocks save if drop exceeds 50%
+      // SAFEGUARD (sidecar-first): prefer brain-snapshot.json for the
+      // last-known-good node count. The sidecar is tiny and always readable,
+      // even when state.json.gz is in a broken shape OR exceeds V8's ~536 MB
+      // string limit (both of which silently make the existing-state read
+      // return 0 nodes, causing the original safeguard to fail open).
       try {
-        const existingState = await StateCompression.loadCompressed(statePath);
-        const existingNodes = existingState.memory?.nodes?.length || 0;
+        const { readSnapshot, writeSnapshot } = require('./brain-snapshot');
+        const sidecar = readSnapshot(this.logsDir);
+        let existingNodes = sidecar?.nodeCount ?? null;
+        let safeguardSource = sidecar ? 'sidecar' : null;
+
+        // Fall back to reading the state file only if no sidecar exists yet
+        // (first run, or migrated from pre-sidecar build).
+        let existingState = null;
+        if (existingNodes === null) {
+          existingState = await StateCompression.loadCompressed(statePath);
+          existingNodes = existingState.memory?.nodes?.length || 0;
+          safeguardSource = 'state-file';
+        }
 
         if (existingNodes > 100 && totalNodes < existingNodes * 0.5) {
           this.logger.error('REFUSING STATE SAVE — catastrophic node loss detected', {
             currentNodes: totalNodes,
             existingNodes,
+            safeguardSource,
             dropPercent: ((1 - totalNodes / existingNodes) * 100).toFixed(1),
             cycle: this.cycleCount
           });
           return; // Don't save, preserve the existing state
+        }
+
+        // If we didn't already load the state file (sidecar path), load it
+        // now so the feeder-merge logic below still has the data it needs.
+        if (!existingState) {
+          try {
+            existingState = await StateCompression.loadCompressed(statePath);
+          } catch {
+            existingState = { memory: { nodes: [], edges: [] } };
+          }
         }
 
         // Merge feeder-injected nodes: any nodes on disk that aren't in our memory get added
@@ -5481,21 +5526,126 @@ class Orchestrator {
         this.logger.warn('Could not read existing state for safeguard check', { error: error.message });
       }
 
-      // Save with compression (reduces 118MB → ~6-10MB)
-      const saveResult = await StateCompression.saveCompressed(statePath, state, {
-        compress: true,
-        pretty: false  // Compact JSON for better compression
-      });
-      
+      // ── MEMORY SIDECARS (Tier 2) ──
+      // Write memory.nodes + memory.edges as gzipped JSONL, streaming, so
+      // the monolithic state.json.gz never has to hold them as one giant
+      // JSON string (which hits V8's ~536 MB string limit and silently
+      // corrupts the brain). On verified success, replace them with empty
+      // arrays in the state object being serialized — state.json.gz then
+      // holds only the small-shape stuff (goals, journal, clusters, etc.)
+      // and is immune to scaling.
+      //
+      // If sidecar write fails validation, we LEAVE the original
+      // memory.nodes/edges in place and let the legacy monolithic save
+      // handle them — so nothing ever writes empty sidecar → empty state.
+      const { writeMemorySidecars } = require('./memory-sidecar');
+      let sidecarsWritten = null;
+      const origNodes = state.memory?.nodes;
+      const origEdges = state.memory?.edges;
+      const expectedNodes = Array.isArray(origNodes) ? origNodes.length : 0;
+      const expectedEdges = Array.isArray(origEdges) ? origEdges.length : 0;
+
+      if (expectedNodes > 0 || expectedEdges > 0) {
+        try {
+          sidecarsWritten = await writeMemorySidecars(this.logsDir, state.memory);
+          // Post-write invariant: the sidecars must contain exactly the
+          // counts we just tried to save. If they don't, abort the swap
+          // and fall through to the legacy monolithic save.
+          if (sidecarsWritten.nodes.count !== expectedNodes ||
+              sidecarsWritten.edges.count !== expectedEdges) {
+            this.logger.warn('Memory sidecar count mismatch — keeping inline arrays in state.json.gz', {
+              expectedNodes, wroteNodes: sidecarsWritten.nodes.count,
+              expectedEdges, wroteEdges: sidecarsWritten.edges.count,
+            });
+            sidecarsWritten = null;
+          } else {
+            // Swap the arrays out of the state object for the upcoming
+            // monolithic save. The original references stay live in
+            // this.memory so running cycles don't notice.
+            state.memory = { ...state.memory, nodes: [], edges: [] };
+          }
+        } catch (err) {
+          this.logger.warn('Memory sidecar write failed — keeping inline arrays in state.json.gz', {
+            error: err.message,
+          });
+          sidecarsWritten = null;
+        }
+      }
+
+      // Save with compression (reduces 118MB → ~6-10MB when memory is in
+      // sidecars; much larger with nodes/edges inline on the legacy path).
+      let saveResult;
+      try {
+        saveResult = await StateCompression.saveCompressed(statePath, state, {
+          compress: true,
+          pretty: false  // Compact JSON for better compression
+        });
+      } finally {
+        // Restore the real arrays in case anything else reads `state` after
+        // this point. (Defensive — current call tree doesn't, but will
+        // protect future callers.)
+        if (sidecarsWritten) {
+          state.memory.nodes = origNodes;
+          state.memory.edges = origEdges;
+        }
+      }
+
       this.logger.info('State saved (GPT-5.2)', {
         cycle: this.cycleCount,
         nodesWithEmbeddings,
         totalNodes,
         compressed: saveResult.compressed,
         size: `${(saveResult.size / (1024 * 1024)).toFixed(2)}MB`,
+        sidecars: sidecarsWritten
+          ? { nodes: sidecarsWritten.nodes.count, edges: sidecarsWritten.edges.count,
+              nodesMB: +(sidecarsWritten.nodes.bytes / 1048576).toFixed(2),
+              edgesMB: +(sidecarsWritten.edges.bytes / 1048576).toFixed(2) }
+          : 'inline (fallback)',
         ...(saveResult.ratio && { compressionRatio: saveResult.ratio })
       });
+
+      // Write the brain-snapshot sidecar as the new source of truth for
+      // the next save's safeguard check. Best-effort — snapshot failure
+      // must not block anything. Record sidecar sizes if we wrote them
+      // so the loader can validate integrity.
+      try {
+        const { writeSnapshot } = require('./brain-snapshot');
+        writeSnapshot(this.logsDir, {
+          savedAt: new Date().toISOString(),
+          cycle: this.cycleCount,
+          nodeCount: totalNodes,
+          edgeCount: expectedEdges,
+          fileSize: saveResult.size || 0,
+          memorySource: sidecarsWritten ? 'sidecar' : 'inline',
+          ...(sidecarsWritten && {
+            nodesSidecarBytes: sidecarsWritten.nodes.bytes,
+            edgesSidecarBytes: sidecarsWritten.edges.bytes,
+          }),
+        });
+      } catch { /* advisory — ignore */ }
       
+      // Coherent brain-backup snapshot: once per hour, copy the 4 brain
+      // files (state + both sidecars + brain-snapshot) into a timestamped
+      // backups/backup-<ts>/ directory, keep last 5. Runs in background so
+      // it never slows down the hot save path.
+      (async () => {
+        try {
+          const { maybeBackup } = require('./brain-backups');
+          const result = await maybeBackup(this.logsDir, {
+            intervalHours: 1,
+            retention: 5,
+            logger: this.logger,
+          });
+          // Only the creation log is noisy enough to surface; 'within-interval'
+          // skips are normal.
+          if (!result.created && result.reason && result.reason !== 'within-interval') {
+            this.logger?.warn?.('[brain-backup] skipped', { reason: result.reason });
+          }
+        } catch (err) {
+          this.logger?.warn?.('[brain-backup] task errored', { error: err.message });
+        }
+      })();
+
       // Rotate old backups (keep last 5)
       // Run in background to not slow down save
       StateCompression.rotateBackups(this.logsDir, 'state.backup', 5)
@@ -5515,10 +5665,30 @@ class Orchestrator {
 
   async loadState() {
     const statePath = path.join(this.logsDir, 'state.json');
+    this.logger?.info?.('[loadState] starting', { statePath });
 
     try {
       // Load state (handles both compressed and uncompressed)
       const state = await StateCompression.loadCompressed(statePath);
+      this.logger?.info?.('[loadState] loadCompressed returned', {
+        hasState: !!state,
+        topKeys: state ? Object.keys(state).slice(0, 6) : null,
+        memoryNodesLen: state?.memory?.nodes?.length,
+        memoryEdgesLen: state?.memory?.edges?.length,
+      });
+
+      // FAIL-LOUD: if the sidecar says we had N>0 nodes last save but the
+      // loader returned 0 (a silent empty-state fallback, e.g. V8 string
+      // limit or unreadable file), halt with a clear error rather than
+      // booting as a fresh brain and silently overwriting good data.
+      //
+      // Same check against the on-disk file size: if state.json.gz is
+      // non-trivially large but load returned 0 nodes, something is
+      // broken. Halt.
+      // NOTE: fail-loud check moved AFTER the Tier 2 sidecar load block.
+      // Running it here is wrong because state.json.gz carries empty
+      // memory.nodes/edges when sidecars are in use — the real counts
+      // arrive only after readMemorySidecars populates state.memory.
 
       this.cycleCount = state.cycleCount || 0;
       this.journal = state.journal || [];
@@ -5532,6 +5702,63 @@ class Orchestrator {
 
       if (state.clusterCoordinator && this.clusterCoordinator) {
         this.clusterCoordinator.import(state.clusterCoordinator);
+      }
+
+      // ── MEMORY SIDECARS (Tier 2) ──
+      // If memory-nodes.jsonl.gz + memory-edges.jsonl.gz exist, they are
+      // the authoritative source for the graph. state.memory.nodes/edges
+      // in state.json.gz will be empty arrays in that case.
+      //
+      // If the sidecars don't exist yet (pre-migration brain), the
+      // inline path below handles it — legacy behavior unchanged.
+      try {
+        const { sidecarsExist, readMemorySidecars } = require('./memory-sidecar');
+        if (state?.memory && sidecarsExist(this.logsDir)) {
+          this.logger?.info?.('Loading memory from sidecar files (Tier 2)');
+          // Replace any (empty/stub) inline arrays on state.memory with
+          // what the sidecars contain. The rest of loadState then proceeds
+          // through its existing paths — it doesn't care where the arrays
+          // came from.
+          const inlineNodes = [];
+          const inlineEdges = [];
+          const result = await readMemorySidecars(this.logsDir, {
+            onNode: (n) => { inlineNodes.push(n); },
+            onEdge: (e) => { inlineEdges.push(e); },
+          });
+          state.memory.nodes = inlineNodes;
+          state.memory.edges = inlineEdges;
+          this.logger?.info?.('Memory sidecars loaded', {
+            nodes: result.nodes.count,
+            edges: result.edges.count,
+            nodeParseErrors: result.nodes.parseErrors,
+            edgeParseErrors: result.edges.parseErrors,
+          });
+        }
+      } catch (err) {
+        this.logger?.warn?.('Memory sidecar load failed — falling back to inline arrays in state.json.gz', {
+          error: err.message,
+        });
+      }
+
+      // FAIL-LOUD (moved): now that state.memory reflects sidecar content
+      // (when present), verify we didn't load a catastrophically-empty brain.
+      // If the brain-snapshot sidecar says we had N≥100 nodes last save but
+      // the current load produced 0, halt — something is broken and silently
+      // booting as a fresh brain would let the engine overwrite good data.
+      try {
+        const { readSnapshot } = require('./brain-snapshot');
+        const sidecar = readSnapshot(this.logsDir);
+        const loadedNodes = state?.memory?.nodes?.length || 0;
+        const sidecarExpected = sidecar?.nodeCount ?? 0;
+        this.logger?.info?.('[loadState] fail-loud check', { loadedNodes, sidecarExpected });
+        if (sidecarExpected >= 100 && loadedNodes === 0) {
+          const msg = `BRAIN LOAD FAILED — brain-snapshot expected ${sidecarExpected} nodes but loader produced 0. Refusing to boot. Do NOT restart the engine without investigating — it will overwrite good data. Sidecars at memory-nodes.jsonl.gz / memory-edges.jsonl.gz are your authoritative data.`;
+          this.logger?.error?.(msg);
+          throw new Error(msg);
+        }
+      } catch (err) {
+        if (err?.message?.startsWith('BRAIN LOAD FAILED')) throw err;
+        // any other error = best-effort, don't let the check itself block load
       }
 
       // Load memory system from state
@@ -5563,24 +5790,29 @@ class Orchestrator {
             }
           }
           
-          // Load nodes and regenerate missing embeddings
+          // Load nodes synchronously — no blocking embed calls. Missing
+          // embeddings are regenerated lazily in a background task so the
+          // engine can boot in seconds even when thousands of nodes need
+          // new embeddings (e.g. after a brain restore that stripped them).
+          const missingEmbedIds = [];
           for (const nodeData of state.memory.nodes) {
-            // Check if node has embedding
-            if (!nodeData.embedding) {
-              this.logger.info('Regenerating missing embedding for node', { nodeId: nodeData.id });
-              try {
-                // Regenerate embedding for the node's concept
-                const embedding = await this.memory.embed(nodeData.concept);
-                if (embedding) {
-                  nodeData.embedding = embedding;
-                } else {
-                  this.logger.warn('Failed to regenerate embedding for node', { nodeId: nodeData.id });
-                }
-              } catch (error) {
-                this.logger.error('Error regenerating embedding', { nodeId: nodeData.id, error: error.message });
-              }
-            }
             this.memory.nodes.set(nodeData.id, nodeData);
+            if (!nodeData.embedding) {
+              missingEmbedIds.push(nodeData.id);
+            }
+          }
+
+          if (missingEmbedIds.length > 0) {
+            this.logger.info('Deferring embedding regeneration to background', {
+              count: missingEmbedIds.length,
+              totalNodes: state.memory.nodes.length,
+            });
+            // Fire-and-forget. The engine proceeds with load + normal cycles
+            // while this fills in embeddings over time. Semantic search
+            // quality improves as it progresses.
+            this._regenerateEmbeddingsInBackground(missingEmbedIds).catch(err => {
+              this.logger.warn('Background embedding regeneration crashed', { error: err.message });
+            });
           }
 
           // Load edges (convert from array format back to Map)
@@ -5809,10 +6041,78 @@ class Orchestrator {
         await this.migrateGoalsToTasks();
       }
     } catch (error) {
-      if (error.code !== 'ENOENT') {
-        this.logger.error('Load failed', { error: error.message });
+      // Log ALL load errors (info-level so it shows up even if error goes to
+      // a separate stream). Silent ENOENT swallowing masked tonight's brain-
+      // gone bug. Better to over-log than lose data.
+      this.logger?.info?.('[loadState] caught outer error', {
+        code: error?.code,
+        message: error?.message,
+        isFailLoud: !!(error?.message && error.message.startsWith('BRAIN LOAD FAILED')),
+      });
+      // Propagate BRAIN LOAD FAILED so the engine halts instead of running
+      // as an empty brain and silently overwriting the good state.
+      if (error?.message && error.message.startsWith('BRAIN LOAD FAILED')) {
+        throw error;
       }
     }
+    this.logger?.info?.('[loadState] exiting', {
+      memoryNodes: this.memory?.nodes?.size,
+      memoryEdges: this.memory?.edges?.size,
+      cycleCount: this.cycleCount,
+    });
+  }
+
+  /**
+   * Regenerate missing embeddings in the background, serially, with pacing.
+   *
+   * Invoked by loadState when a restored brain has nodes without embeddings
+   * (e.g. after an embedding-stripped restore to get under the V8 string
+   * limit). Runs outside the load path so the engine boots immediately.
+   *
+   * @param {Array<string|number>} nodeIds IDs of nodes missing embeddings
+   */
+  async _regenerateEmbeddingsInBackground(nodeIds) {
+    const BATCH_LOG = 200;
+    const PAUSE_EVERY = 50;
+    const PAUSE_MS = 50;   // yield to cognitive loop between batches
+
+    let done = 0, failed = 0, skipped = 0;
+    const total = nodeIds.length;
+    const startedAt = Date.now();
+
+    for (const id of nodeIds) {
+      const node = this.memory.nodes.get(id);
+      if (!node) { skipped++; continue; }
+      if (node.embedding) { skipped++; continue; }   // already filled (unlikely but cheap check)
+      if (!node.concept) { skipped++; continue; }
+
+      try {
+        const embedding = await this.memory.embed(node.concept);
+        if (embedding) {
+          node.embedding = embedding;
+          done++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+
+      if ((done + failed) % BATCH_LOG === 0) {
+        const elapsedMin = ((Date.now() - startedAt) / 60000).toFixed(1);
+        this.logger?.info?.('Background embedding regen progress', {
+          done, failed, skipped, total, elapsedMin,
+        });
+      }
+      if ((done + failed) % PAUSE_EVERY === 0) {
+        await new Promise(r => setTimeout(r, PAUSE_MS));
+      }
+    }
+
+    const elapsedMin = ((Date.now() - startedAt) / 60000).toFixed(1);
+    this.logger?.info?.('Background embedding regen complete', {
+      done, failed, skipped, total, elapsedMin,
+    });
   }
 
   /**

@@ -70,6 +70,16 @@ async function init() {
   updateActionsBadge();
   setInterval(updateActionsBadge, 15000);
 
+  // Live problems badge — polls every 20s. The engine verifies on its own
+  // cadence (~90s), so 20s is plenty fresh for the dashboard.
+  updateProblemsBadge();
+  setInterval(updateProblemsBadge, 20000);
+
+  // Brain storage badge — polls every 30s. Shows disk node count and flags
+  // mismatch between disk-side snapshot and in-memory state.
+  updateBrainStorageBadge();
+  setInterval(updateBrainStorageBadge, 30000);
+
   // Pulse tile (Jerry's voice). Tile text updates when a new remark lands;
   // rotating stat under it cycles every 8s.
   updatePulseTile();
@@ -270,6 +280,310 @@ async function openActionsPanel() {
 function closeActionsPanel() {
   const overlay = document.getElementById('actions-overlay');
   if (overlay) overlay.style.display = 'none';
+}
+
+// ── Live Problems (verifier-backed ground truth) ──
+let _liveProblems = { problems: [], snapshot: null };
+let _problemEditingId = null;
+
+async function updateProblemsBadge() {
+  try {
+    const r = await fetch(`${dashboardBaseUrl()}/api/live-problems`);
+    if (!r.ok) return;
+    const data = await r.json();
+    _liveProblems = data;
+    const el = document.getElementById('pulse-problems');
+    const sep = document.getElementById('pulse-problems-sep');
+    const badge = document.getElementById('pulse-problems-badge');
+    if (!el || !badge) return;
+    if (!data.available) {
+      el.style.display = 'none';
+      if (sep) sep.style.display = 'none';
+      return;
+    }
+    const s = data.snapshot || { counts: { open: 0, chronic: 0, resolved: 0 }, resolvedJustNow: [] };
+    const openCount = s.counts.open + s.counts.chronic;
+    const resolvedCount = (s.resolvedJustNow || []).length;
+    el.style.display = '';
+    if (sep) sep.style.display = '';
+    if (s.counts.chronic > 0) {
+      badge.textContent = `🩺 ${openCount} (${s.counts.chronic} chronic)`;
+      badge.style.color = '#ff6b6b';
+    } else if (openCount > 0) {
+      badge.textContent = `🩺 ${openCount}`;
+      badge.style.color = '#ffb347';
+    } else if (resolvedCount > 0) {
+      badge.textContent = `🩺 all clear ✓`;
+      badge.style.color = '#30d158';
+    } else {
+      badge.textContent = `🩺 ok`;
+      badge.style.color = 'rgba(255,255,255,0.45)';
+    }
+  } catch { /* silent */ }
+}
+
+async function openProblemsPanel() {
+  const overlay = document.getElementById('problems-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  await renderProblemsList();
+}
+
+function closeProblemsPanel() {
+  const overlay = document.getElementById('problems-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+async function renderProblemsList() {
+  const list = document.getElementById('problems-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:rgba(255,255,255,0.6);padding:20px;">Loading...</div>';
+  try {
+    const r = await fetch(`${dashboardBaseUrl()}/api/live-problems`);
+    const data = await r.json();
+    _liveProblems = data;
+    if (!data.available) {
+      list.innerHTML = '<div style="color:rgba(255,255,255,0.6);padding:20px;">Live-problems not available (engine not running or not wired).</div>';
+      return;
+    }
+    const problems = (data.problems || []).slice().sort((a, b) => {
+      const rank = { chronic: 0, open: 1, unverifiable: 2, resolved: 3 };
+      return (rank[a.state] ?? 9) - (rank[b.state] ?? 9);
+    });
+    if (problems.length === 0) {
+      list.innerHTML = '<div style="color:rgba(255,255,255,0.5);padding:20px;">No problems tracked. Add one below, or the engine will seed defaults on next start.</div>';
+      return;
+    }
+    list.innerHTML = problems.map(p => renderProblemCard(p)).join('');
+  } catch (err) {
+    list.innerHTML = `<div style="color:#ff6b6b;padding:20px;">Failed to load: ${err.message}</div>`;
+  }
+}
+
+function renderProblemCard(p) {
+  const stateColor = {
+    open: '#ffb347', chronic: '#ff6b6b', resolved: '#30d158', unverifiable: '#888',
+  }[p.state] || '#888';
+  const stateLabel = p.state.toUpperCase();
+  const ageMin = p.openedAt ? Math.max(0, Math.round((Date.now() - Date.parse(p.openedAt)) / 60000)) : null;
+  const last = p.lastResult ? `${p.lastResult.ok ? 'ok' : 'fail'}: ${escapeHtml(p.lastResult.detail || '')}` : 'not yet checked';
+  const lastChecked = p.lastCheckedAt ? ` · checked ${timeSinceSafe(p.lastCheckedAt)}` : '';
+  const recentRem = (p.remediationLog || []).slice(-3).reverse();
+  const stepsLabel = `step ${(p.stepIndex || 0)}/${(p.remediation || []).length}`;
+  return `<div style="background:rgba(255,255,255,0.03);border:1px solid ${stateColor}33;border-left:3px solid ${stateColor};border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <span style="color:${stateColor};font-weight:600;font-size:12px;letter-spacing:0.5px;">${stateLabel}${ageMin !== null && p.state !== 'resolved' ? ' · ' + ageMin + 'm' : ''}</span>
+      <span style="color:#fff;font-size:14px;flex:1;">${escapeHtml(p.claim)}</span>
+      <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;font-size:11px;color:rgba(255,255,255,0.5);">${escapeHtml(p.id)}</code>
+      <button onclick="openProblemEditor('${escapeAttr(p.id)}')" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;">edit</button>
+    </div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:6px;">
+      <span>verifier: <code style="background:rgba(255,255,255,0.04);padding:1px 4px;border-radius:3px;">${escapeHtml(p.verifier?.type || '—')}</code></span>
+      <span style="margin-left:12px;">last: ${last}${lastChecked}</span>
+      <span style="margin-left:12px;">remediation: ${stepsLabel}${p.escalated ? ' · <span style="color:#ff6b6b;">escalated</span>' : ''}</span>
+    </div>
+    ${recentRem.length > 0 ? `<div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:4px;">recent attempts: ${recentRem.map(r => `<span style="margin-right:10px;">${escapeHtml(r.type)}=${escapeHtml(r.outcome)}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
+function timeSinceSafe(iso) {
+  try { const ms = Date.now() - Date.parse(iso); const s = Math.round(ms / 1000); if (s < 60) return `${s}s ago`; const m = Math.round(s / 60); if (m < 60) return `${m}m ago`; return `${Math.round(m / 60)}h ago`; } catch { return '?'; }
+}
+
+async function tickProblemsNow() {
+  try {
+    const r = await fetch(`${dashboardBaseUrl()}/api/live-problems/tick`, { method: 'POST' });
+    if (r.ok) await renderProblemsList();
+  } catch { /* silent */ }
+}
+
+function openProblemEditor(id) {
+  _problemEditingId = id;
+  const title = document.getElementById('problem-editor-title');
+  const pid = document.getElementById('pe-id');
+  const claim = document.getElementById('pe-claim');
+  const verifier = document.getElementById('pe-verifier');
+  const rem = document.getElementById('pe-remediation');
+  const del = document.getElementById('pe-delete');
+  const status = document.getElementById('pe-status');
+  if (status) status.textContent = '';
+  if (id) {
+    const p = (_liveProblems.problems || []).find(x => x.id === id);
+    if (!p) return;
+    title.textContent = `Edit: ${p.id}`;
+    pid.value = p.id; pid.disabled = true;
+    claim.value = p.claim || '';
+    verifier.value = JSON.stringify(p.verifier || {}, null, 2);
+    rem.value = JSON.stringify(p.remediation || [], null, 2);
+    del.style.display = '';
+  } else {
+    title.textContent = 'Add Problem';
+    pid.value = ''; pid.disabled = false;
+    claim.value = '';
+    verifier.value = '{\n  "type": "file_mtime",\n  "args": { "path": "~/.health_log.jsonl", "maxAgeMin": 360 }\n}';
+    rem.value = '[\n  { "type": "notify_jtr", "args": { "text": "Something\'s wrong — check." }, "cooldownMin": 360 }\n]';
+    del.style.display = 'none';
+  }
+  document.getElementById('problem-editor-overlay').style.display = 'flex';
+}
+
+function closeProblemEditor() {
+  const ov = document.getElementById('problem-editor-overlay');
+  if (ov) ov.style.display = 'none';
+  _problemEditingId = null;
+}
+
+async function saveProblemEdit() {
+  const pid = document.getElementById('pe-id').value.trim();
+  const claim = document.getElementById('pe-claim').value.trim();
+  const verifierText = document.getElementById('pe-verifier').value.trim();
+  const remText = document.getElementById('pe-remediation').value.trim();
+  const status = document.getElementById('pe-status');
+  if (!pid || !claim) { status.textContent = 'id + claim required'; status.style.color = '#ff6b6b'; return; }
+  let verifier, remediation;
+  try { verifier = verifierText ? JSON.parse(verifierText) : null; } catch (e) { status.textContent = 'verifier JSON invalid: ' + e.message; status.style.color = '#ff6b6b'; return; }
+  try { remediation = remText ? JSON.parse(remText) : []; } catch (e) { status.textContent = 'remediation JSON invalid: ' + e.message; status.style.color = '#ff6b6b'; return; }
+  try {
+    const method = _problemEditingId ? 'PUT' : 'POST';
+    const url = _problemEditingId
+      ? `${dashboardBaseUrl()}/api/live-problems/${encodeURIComponent(_problemEditingId)}`
+      : `${dashboardBaseUrl()}/api/live-problems`;
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: pid, claim, verifier, remediation, seedOrigin: 'user' }),
+    });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error || `HTTP ${res.status}`; status.style.color = '#ff6b6b'; return; }
+    status.textContent = 'saved'; status.style.color = '#30d158';
+    await renderProblemsList();
+    setTimeout(closeProblemEditor, 600);
+  } catch (err) {
+    status.textContent = 'save failed: ' + err.message; status.style.color = '#ff6b6b';
+  }
+}
+
+async function deleteProblemFromEditor() {
+  if (!_problemEditingId) return;
+  if (!confirm(`Delete problem "${_problemEditingId}"? If it's a seeded invariant it will come back on next engine start.`)) return;
+  try {
+    await fetch(`${dashboardBaseUrl()}/api/live-problems/${encodeURIComponent(_problemEditingId)}`, { method: 'DELETE' });
+    await renderProblemsList();
+    closeProblemEditor();
+  } catch { /* silent */ }
+}
+
+// ── Brain Storage (disk vs memory truth) ──
+let _brainStorage = null;
+
+async function updateBrainStorageBadge() {
+  try {
+    const r = await fetch(`${dashboardBaseUrl()}/api/brain/storage`);
+    if (!r.ok) return;
+    const data = await r.json();
+    _brainStorage = data;
+    const el = document.getElementById('pulse-brain');
+    const sep = document.getElementById('pulse-brain-sep');
+    const badge = document.getElementById('pulse-brain-badge');
+    if (!el || !badge) return;
+
+    const snapNodes = data.snapshot?.nodeCount;
+    if (snapNodes == null) {
+      el.style.display = 'none';
+      if (sep) sep.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+    if (sep) sep.style.display = '';
+
+    const ageMs = data.snapshot?.savedAt ? (Date.now() - new Date(data.snapshot.savedAt).getTime()) : null;
+    const ageStr = ageMs == null ? '?' : (ageMs < 60000 ? `${Math.round(ageMs/1000)}s` : `${Math.round(ageMs/60000)}m`);
+
+    if (data.mismatch) {
+      badge.textContent = `🧠 ${snapNodes} ⚠️ mismatch`;
+      badge.style.color = '#ff6b6b';
+    } else {
+      badge.textContent = `🧠 ${snapNodes.toLocaleString()} · saved ${ageStr} ago`;
+      badge.style.color = 'rgba(255,255,255,0.55)';
+    }
+  } catch { /* silent */ }
+}
+
+async function openBrainStoragePanel() {
+  const overlay = document.getElementById('brain-storage-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  await renderBrainStoragePanel();
+}
+
+function closeBrainStoragePanel() {
+  const overlay = document.getElementById('brain-storage-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+async function renderBrainStoragePanel() {
+  const content = document.getElementById('brain-storage-content');
+  if (!content) return;
+  content.innerHTML = '<div style="color:rgba(255,255,255,0.6);padding:20px;">Loading...</div>';
+  try {
+    const r = await fetch(`${dashboardBaseUrl()}/api/brain/storage`);
+    const data = await r.json();
+    _brainStorage = data;
+
+    const snap = data.snapshot;
+    const mem = data.inMemory;
+    const hw = data.highWater;
+    const files = data.files || {};
+    const backups = data.backups || [];
+
+    const mb = (b) => b == null ? '—' : `${(b / 1048576).toFixed(1)} MB`;
+    const ago = (iso) => { if (!iso) return '—'; const ms = Date.now() - new Date(iso).getTime(); if (ms < 60000) return `${Math.round(ms/1000)}s ago`; if (ms < 3600000) return `${Math.round(ms/60000)}m ago`; return `${Math.round(ms/3600000)}h ago`; };
+
+    const mismatchWarn = data.mismatch
+      ? `<div style="background:rgba(255,107,107,0.15);border:1px solid rgba(255,107,107,0.4);border-radius:6px;padding:10px 14px;margin-bottom:14px;color:#ff6b6b;">⚠️ MISMATCH: disk says ${snap?.nodeCount} nodes, memory says ${mem?.nodes}. Something is wrong — do NOT restart the engine until investigated.</div>`
+      : '';
+
+    content.innerHTML = `
+      ${mismatchWarn}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;">
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">On disk (snapshot)</div>
+          <div style="font-size:22px;color:#fff;">${(snap?.nodeCount ?? '—').toLocaleString()} nodes</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:2px;">${(snap?.edgeCount ?? '—').toLocaleString()} edges · cycle ${snap?.cycle ?? '—'}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:6px;">saved ${ago(snap?.savedAt)} · source: ${snap?.memorySource || '—'}</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;">
+          <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">In memory (live)</div>
+          <div style="font-size:22px;color:#fff;">${mem?.nodes != null ? mem.nodes.toLocaleString() : '(dashboard process — n/a)'} nodes</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-top:2px;">${mem?.edges != null ? mem.edges.toLocaleString() + ' edges' : ''}</div>
+        </div>
+      </div>
+      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Files</div>
+        <div style="font-family:var(--font-mono,monospace);font-size:12px;color:rgba(255,255,255,0.75);line-height:1.6;">
+          <div>state.json.gz            · ${mb(files.state?.bytes)}</div>
+          <div>memory-nodes.jsonl.gz    · ${mb(files.nodesSidecar?.bytes)}</div>
+          <div>memory-edges.jsonl.gz    · ${mb(files.edgesSidecar?.bytes)}</div>
+          <div>brain-snapshot.json      · ${mb(files.snapshot?.bytes)}</div>
+        </div>
+      </div>
+      ${hw ? `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">High-water mark</div>
+        <div style="font-size:14px;color:#fff;">${hw.maxNodeCount.toLocaleString()} nodes</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:4px;">last hit ${ago(hw.lastSeen)}. Drop-detector opens a live problem if current falls &gt;10% below.</div>
+      </div>` : ''}
+      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Rolling backups (${backups.length})</div>
+        ${backups.length === 0 ? '<div style="font-size:12px;color:rgba(255,255,255,0.45);">No backups yet — first one gets created after ~1 hour of successful saves.</div>' : `<div style="font-family:var(--font-mono,monospace);font-size:12px;color:rgba(255,255,255,0.7);line-height:1.5;">${backups.map(b => `<div>${b.name}</div>`).join('')}</div>`}
+      </div>
+    `;
+  } catch (err) {
+    content.innerHTML = `<div style="color:#ff6b6b;padding:20px;">Failed to load: ${err.message}</div>`;
+  }
 }
 
 // ── Notifications (thought-action queue) ──

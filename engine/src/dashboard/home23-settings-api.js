@@ -277,8 +277,10 @@ function createSettingsRouter(home23Root) {
 
   router.get('/agents', (req, res) => {
     const primary = getPrimaryAgent();
+    const secretsForDisplay = loadYaml(path.join(home23Root, 'config', 'secrets.yaml'));
     const agents = discoverAgents().map(name => {
       const config = loadYaml(path.join(home23Root, 'instances', name, 'config.yaml'));
+      const agentSec = secretsForDisplay.agents?.[name] || {};
       return {
         name,
         displayName: config.agent?.displayName || name,
@@ -292,7 +294,11 @@ function createSettingsRouter(home23Root) {
         isPrimary: name === primary,
         channels: {
           telegram: { enabled: !!config.channels?.telegram?.enabled },
-          discord: { enabled: !!config.channels?.discord?.enabled },
+          discord: {
+            enabled: !!config.channels?.discord?.enabled,
+            hasToken: !!agentSec.discord?.token,
+            guilds: config.channels?.discord?.guilds || {},
+          },
         },
         hasTelegram: !!config.channels?.telegram?.enabled,
       };
@@ -523,9 +529,27 @@ function createSettingsRouter(home23Root) {
     }
     if (discord !== undefined) {
       if (!config.channels) config.channels = {};
+      if (!config.channels.discord) config.channels.discord = {};
       if (discord.enabled !== undefined) {
-        if (!config.channels.discord) config.channels.discord = {};
         config.channels.discord.enabled = discord.enabled;
+        if (discord.enabled) {
+          if (!config.channels.discord.streaming) config.channels.discord.streaming = 'partial';
+          if (!config.channels.discord.groupPolicy) config.channels.discord.groupPolicy = 'restricted';
+          if (config.channels.discord.threadBindings === undefined) config.channels.discord.threadBindings = true;
+        }
+      }
+      if (discord.guilds !== undefined) {
+        config.channels.discord.guilds = discord.guilds || {};
+      } else if (!config.channels.discord.guilds) {
+        config.channels.discord.guilds = {};
+      }
+      if (discord.token) {
+        const secretsPath = path.join(home23Root, 'config', 'secrets.yaml');
+        const secrets = loadYaml(secretsPath);
+        if (!secrets.agents) secrets.agents = {};
+        if (!secrets.agents[agentName]) secrets.agents[agentName] = {};
+        secrets.agents[agentName].discord = { token: discord.token };
+        saveYaml(secretsPath, secrets);
       }
     }
 
@@ -600,6 +624,21 @@ function createSettingsRouter(home23Root) {
       const names = [`home23-${agentName}`, `home23-${agentName}-dash`, `home23-${agentName}-feeder`, `home23-${agentName}-harness`];
       execSync(`pm2 start ${ecosystemPath} --only ${names.join(',')}`, { cwd: home23Root, stdio: 'pipe', timeout: 30000 });
       res.json({ ok: true, status: 'running' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Restart just the harness — used after channel/model/token changes.
+  // Doing this via the /stop+/start flow kills the dashboard serving the request,
+  // so we shell out pm2 in detached mode and target harness only.
+  router.post('/agents/:name/restart-harness', (req, res) => {
+    const agentName = req.params.name;
+    const harnessProc = `home23-${agentName}-harness`;
+    try {
+      const { execSync } = require('child_process');
+      execSync(`pm2 restart ${harnessProc} --update-env`, { stdio: 'pipe', timeout: 15000 });
+      res.json({ ok: true, restarted: harnessProc });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
