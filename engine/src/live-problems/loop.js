@@ -62,8 +62,14 @@ class LiveProblemsLoop {
       this.store.reloadIfChanged();
       this.store.pruneResolved();
       const all = this.store.all();
+      const RESOLVED_REVERIFY_MS = 10 * 60 * 1000;  // re-verify resolved every 10 min
       for (const p of all) {
-        if (p.state === 'resolved' || p.state === 'unverifiable') continue;
+        if (p.state === 'unverifiable') continue;
+        if (p.state === 'resolved') {
+          // Re-verify periodically to catch regressions + keep timestamps fresh
+          const lastMs = p.lastCheckedAt ? Date.parse(p.lastCheckedAt) : 0;
+          if (Date.now() - lastMs < RESOLVED_REVERIFY_MS) continue;
+        }
         await this._processOne(p);
       }
     } catch (err) {
