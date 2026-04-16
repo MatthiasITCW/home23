@@ -136,6 +136,10 @@ export interface HomeConfig {
       provider?: string;
       model?: string;
     };
+    musicGeneration?: {
+      provider?: string;
+      model?: string;
+    };
   };
 
   providers?: Record<string, unknown>;

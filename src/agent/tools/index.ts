@@ -11,7 +11,7 @@ import { shellTool } from './shell.js';
 import { readFileTool, writeFileTool, editFileTool, listFilesTool, searchFilesTool } from './files.js';
 import { webBrowseTool, webSearchTool } from './web.js';
 import { brainSearchTool, brainQueryTool, brainStatusTool, brainMemoryGraphTool, brainSynthesizeTool, brainPgsTool } from './brain.js';
-import { generateImageTool, ttsTool } from './media.js';
+import { generateImageTool, generateMusicTool, ttsTool } from './media.js';
 import { cronScheduleTool, cronListTool, cronDeleteTool, cronEnableTool, cronDisableTool, cronUpdateTool } from './cron.js';
 import { selfUpdateTool, selfReadTool } from './identity.js';
 import { spawnAgentTool } from './subagent.js';
@@ -104,6 +104,7 @@ export function createToolRegistry(): ToolRegistry {
   registry.register(brainSynthesizeTool);
   registry.register(brainPgsTool);
   registry.register(generateImageTool);
+  registry.register(generateMusicTool);
   registry.register(ttsTool);
   registry.register(cronScheduleTool);
   registry.register(cronListTool);

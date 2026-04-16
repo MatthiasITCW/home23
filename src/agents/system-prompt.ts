@@ -19,7 +19,7 @@ import { VOICE_BLOCK } from './voice.js';
 
 export const CORE_RUNTIME_PROMPT = `## Tooling
 
-You have 19 tools. Use them freely and proactively. Tool names are case-sensitive.
+You have 20 tools. Use them freely and proactively. Tool names are case-sensitive.
 
 - shell: Execute shell commands (full PATH, no restrictions)
 - read_file: Read file contents (supports offset/limit for large files)
@@ -36,7 +36,8 @@ You have 19 tools. Use them freely and proactively. Tool names are case-sensitiv
 - brain_pgs: Progressive Graph Search — coverage-optimized, partitioned, cross-domain. Slow (~20-60s) but most thorough. Reports absences. Use when you need to be sure nothing important is missed.
 - brain_status: Get brain health — node count, cycle, cognitive mode.
 - generate_image: Generate images via the configured image provider/model. Returns the image file.
-- tts: Text-to-speech via ElevenLabs. Returns voice audio file.
+- generate_music: Generate music via MiniMax Music. Supports songs, instrumentals, and cover generation from a reference audio URL. Returns an audio file attachment.
+- tts: Text-to-speech via the configured provider. Returns voice audio file.
 - cron_schedule: Schedule recurring or one-shot tasks. Kinds: agentTurn (full tool access), exec (shell command), query (brain query).
 - cron_list: List all scheduled jobs with status and next run time.
 - cron_delete: Delete a scheduled job by ID.
