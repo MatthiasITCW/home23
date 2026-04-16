@@ -21,6 +21,8 @@ const MAX_DREAM_LOOKBACK = 10;
 const DREAM_TAIL_BYTES = 128 * 1024;
 const MAX_MOTIFS = 5;
 const DREAM_MOTIF_LLM_TIMEOUT_MS = 30_000;
+const PULSE_TAIL_BYTES = 256 * 1024;
+const BRAIN_THEME_TIMEOUT_MS = 20_000;
 
 const DEFAULT_VIBE_CONFIG = Object.freeze({
   autoGenerate: true,
@@ -93,6 +95,16 @@ Rules:
 - These motifs are for texture, atmosphere, and materials, not the literal subject.
 - No commentary, no markdown, no extra keys.`;
 
+const BRAIN_THEME_EXTRACTOR_SYSTEM = `You distill a brain snapshot into one short thematic seed for surreal image prompting.
+
+Rules:
+- Return plain text only. No JSON, no labels, no quotation marks.
+- Maximum 140 characters.
+- Evoke mood, texture, atmosphere, symbolism, or emotional weather.
+- Do NOT mention software, dashboards, bugs, APIs, ports, metrics, files, or product names literally.
+- Translate operational material into symbolic or atmospheric language.
+- Do NOT describe a concrete subject. This is thematic guidance only.`;
+
 function toArray(value) {
   if (Array.isArray(value)) return value;
   if (value && typeof value === 'object') return Object.values(value);
@@ -163,6 +175,24 @@ function normalizeDreamMotifList(raw) {
   return motifs;
 }
 
+function normalizeThemeLine(text, maxLen = 140) {
+  const clean = String(text || '')
+    .replace(/[*_`~"]/g, ' ')
+    .replace(/^brain theme:\s*/i, '')
+    .replace(/^theme:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean.length > maxLen ? `${clean.slice(0, maxLen).trim()}...` : clean;
+}
+
+function truncateList(values, limit = 4, maxLen = 160) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map(value => normalizeThought(value, maxLen))
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 function withTimeout(promise, ms, label) {
   return Promise.race([
     promise,
@@ -213,6 +243,10 @@ class Home23VibeService {
 
   get dreamsPath() {
     return path.join(this.home23Root, 'instances', this.agentName, 'brain', 'dreams.jsonl');
+  }
+
+  get pulseRemarksPath() {
+    return path.join(this.home23Root, 'instances', this.agentName, 'brain', 'pulse-remarks.jsonl');
   }
 
   async ensureDirs() {
@@ -491,7 +525,7 @@ class Home23VibeService {
 
   async generateNow() {
     const config = this.getConfig();
-    const themeThought = await this.getLatestThoughtTheme();
+    const brainTheme = await this.getLatestBrainTheme();
 
     let dreamMotifs = [];
     let sourceDreamCount = 0;
@@ -507,7 +541,7 @@ class Home23VibeService {
     this.logger.info?.('[Home23 Vibe] Starting CHAOS MODE generation', {
       agent: this.agentName,
       algorithm: 'chaos-mode',
-      themeThought: themeThought?.slice(0, 120) || null,
+      brainTheme: brainTheme?.slice(0, 120) || null,
       dreamMotifs,
       sourceDreamCount,
       dreamExtractionMethod,
@@ -518,7 +552,7 @@ class Home23VibeService {
     }
 
     const image = await withTimeout(
-      this.imageProvider.generateChaos(themeThought || '', { dreamMotifs }),
+      this.imageProvider.generateChaos(brainTheme || '', { dreamMotifs }),
       120_000,
       'Image generation'
     );
@@ -539,7 +573,7 @@ class Home23VibeService {
     await fsp.copyFile(image.localPath, imagePath);
 
     const prompt = String(image.prompt || '').trim();
-    const caption = prompt || themeThought || 'CHAOS MODE';
+    const caption = prompt || brainTheme || 'CHAOS MODE';
     const item = {
       id,
       agentName: this.agentName,
@@ -550,12 +584,14 @@ class Home23VibeService {
       prompt,
       thought: prompt || null,
       promptTemplate: dreamMotifs.length
-        ? 'CHAOS MODE random category assembly plus latest-thought theme plus dream motifs'
-        : 'CHAOS MODE random category assembly plus latest-thought theme',
+        ? 'CHAOS MODE random category assembly plus brain theme plus dream motifs'
+        : 'CHAOS MODE random category assembly plus brain theme',
       provider: image.provider,
       model: image.model,
       algorithm: dreamMotifs.length ? 'chaos-mode-dream-augmented' : 'chaos-mode',
-      themeThought: themeThought || null,
+      brainTheme: brainTheme || null,
+      themeThought: brainTheme || null,
+      themeSource: brainTheme ? 'brain-pulse' : null,
       dreamMotifs: dreamMotifs.length ? dreamMotifs : null,
       sourceDreamCount: sourceDreamCount || null,
       dreamExtractionMethod: dreamMotifs.length ? dreamExtractionMethod : null,
@@ -575,7 +611,7 @@ class Home23VibeService {
       agent: this.agentName,
       imagePath,
       algorithm: 'chaos-mode',
-      themeThought: themeThought?.slice(0, 80) || null,
+      brainTheme: brainTheme?.slice(0, 80) || null,
     });
 
     return this.enrichItem(item);
@@ -724,15 +760,95 @@ class Home23VibeService {
     return normalizeDreamMotifList(response);
   }
 
-  async getLatestThoughtTheme() {
-    const recentThoughts = await this.getRecentThoughts(1).catch(() => []);
-    const latest = recentThoughts[0] || null;
-    return normalizeThought(
-      latest?.thought
-        || latest?.content
-        || latest?.text
-        || ''
-    );
+  async getLatestPulseRemark() {
+    if (!fs.existsSync(this.pulseRemarksPath)) return null;
+    try {
+      const stats = await fsp.stat(this.pulseRemarksPath);
+      const start = Math.max(0, stats.size - PULSE_TAIL_BYTES);
+      const handle = await fsp.open(this.pulseRemarksPath, 'r');
+      try {
+        const length = stats.size - start;
+        const buffer = Buffer.alloc(length);
+        await handle.read(buffer, 0, length, start);
+        const text = buffer.toString('utf8');
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        const usable = start === 0 ? lines : lines.slice(1);
+        const last = usable[usable.length - 1];
+        if (!last) return null;
+        return JSON.parse(last);
+      } finally {
+        await handle.close();
+      }
+    } catch (error) {
+      this.logger.warn?.('[Home23 Vibe] Failed to read pulse remarks', { error: error.message });
+      return null;
+    }
+  }
+
+  buildBrainThemeInput(pulse) {
+    const brief = pulse?.brief || {};
+    const self = brief.selfUnderstanding || {};
+    const goals = brief.goals || {};
+    const topActive = Array.isArray(brief.brain?.topActive) ? brief.brain.topActive : [];
+    const insights = Array.isArray(brief.insights) ? brief.insights : [];
+
+    return {
+      summary: normalizeThought(self.summary || '', 220),
+      obsessions: truncateList(self.currentObsessions, 4, 120),
+      insights: truncateList(insights.map(item => item?.title || item?.excerpt || ''), 4, 120),
+      goals: truncateList(goals.activeDescriptions, 4, 120),
+      topActive: truncateList(topActive.map(item => item?.concept || ''), 4, 120),
+    };
+  }
+
+  heuristicBrainTheme(signal) {
+    const parts = [
+      signal.obsessions?.[0],
+      signal.insights?.[0],
+      signal.goals?.[0],
+      signal.topActive?.[0],
+      signal.summary,
+    ].filter(Boolean);
+    return normalizeThemeLine(parts[0] || '');
+  }
+
+  async getLatestBrainTheme() {
+    const pulse = await this.getLatestPulseRemark();
+    if (!pulse) return '';
+
+    const signal = this.buildBrainThemeInput(pulse);
+    const hasSignal = signal.summary
+      || signal.obsessions.length
+      || signal.insights.length
+      || signal.goals.length
+      || signal.topActive.length;
+    if (!hasSignal) return '';
+
+    if (typeof this.imageProvider?.callPromptEngine !== 'function') {
+      return this.heuristicBrainTheme(signal);
+    }
+
+    const userPrompt = [
+      signal.summary ? `Self-understanding: ${signal.summary}` : '',
+      signal.obsessions.length ? `Current obsessions:\n- ${signal.obsessions.join('\n- ')}` : '',
+      signal.insights.length ? `Recent insights:\n- ${signal.insights.join('\n- ')}` : '',
+      signal.goals.length ? `Active goals:\n- ${signal.goals.join('\n- ')}` : '',
+      signal.topActive.length ? `Top active memory:\n- ${signal.topActive.join('\n- ')}` : '',
+    ].filter(Boolean).join('\n\n');
+
+    try {
+      const response = await withTimeout(
+        this.imageProvider.callPromptEngine(BRAIN_THEME_EXTRACTOR_SYSTEM, userPrompt, false),
+        BRAIN_THEME_TIMEOUT_MS,
+        'Brain theme extraction'
+      );
+      return normalizeThemeLine(response) || this.heuristicBrainTheme(signal);
+    } catch (error) {
+      this.logger.warn?.('[Home23 Vibe] Brain theme extraction failed, falling back to heuristic', {
+        error: error.message,
+      });
+      return this.heuristicBrainTheme(signal);
+    }
   }
 }
 

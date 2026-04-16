@@ -312,7 +312,7 @@
       lightboxImage.src = item.url;
       lightboxCaption.textContent = item.caption || 'Untitled vibe';
       lightboxSeed.textContent = [
-        item.themeThought ? `Theme thought: ${item.themeThought}` : '',
+        (item.brainTheme || item.themeThought) ? `Brain theme: ${item.brainTheme || item.themeThought}` : '',
         item.algorithm ? `Algorithm: ${item.algorithm}` : '',
         item.seed?.concept ? `Legacy seed: ${item.seed.concept}` : '',
         item.recentThought ? `Legacy thought tone: ${item.recentThought}` : ''
@@ -359,7 +359,7 @@
             <img src="${item.url}" alt="Vibe image ${index + 1}" loading="lazy">
             <div class="h23-vg-card-body">
               <div class="h23-vg-caption">${item.caption || 'Untitled vibe'}</div>
-              <div class="h23-vg-seed">${item.themeThought || item.seed?.concept || ''}</div>
+              <div class="h23-vg-seed">${item.brainTheme || item.themeThought || item.seed?.concept || ''}</div>
               <div class="h23-vg-date">${formatDate(item.generatedAt)}</div>
             </div>
           </article>

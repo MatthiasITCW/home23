@@ -543,7 +543,7 @@ function createImageProvider(runtime = {}) {
       'hint of nostalgia','spark of creativity','whisper of adventure','echo of memories'];
     if (Math.random() < 0.4) contextHints.push(randomPick(atmosphereContexts));
 
-    // Brain thought adds a subtle thematic layer (not the literal subject)
+    // Brain-derived theme adds a subtle thematic layer (not the literal subject)
     const thoughtHint = thought && thought.length > 20
       ? `\nTheme (subtle inspiration, do not illustrate literally): ${thought.slice(0, 120)}`
       : '';

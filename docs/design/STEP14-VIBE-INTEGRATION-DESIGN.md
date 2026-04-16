@@ -88,9 +88,9 @@ The Vibe service is scoped to the dashboard process and the active agent. That k
 
 ### 1. Thematic input
 
-Home23 reads the latest thought via `DashboardServer.getRecentThoughts(1)`.
+Home23 reads the latest brain pulse brief from `instances/<agent>/brain/pulse-remarks.jsonl`, then distills a compact brain theme from self-understanding, current obsessions, recent insights, active goals, and top active memory.
 
-That thought is not turned into a literal subject. It is passed into CHAOS MODE as a subtle thematic layer.
+That brain theme is not turned into a literal subject. It is passed into CHAOS MODE as a subtle thematic layer.
 
 ### 2. CHAOS MODE composition
 
@@ -168,11 +168,13 @@ New-style item shape:
   "caption": "final prompt or fallback caption",
   "prompt": "full final prompt sent to image generation",
   "thought": "same as prompt for tile/gallery compatibility",
-  "promptTemplate": "CHAOS MODE random category assembly plus latest-thought theme",
+  "promptTemplate": "CHAOS MODE random category assembly plus brain theme",
   "provider": "openai",
   "model": "gpt-image-1",
   "algorithm": "chaos-mode",
-  "themeThought": "latest thought excerpt"
+  "brainTheme": "brain-derived thematic seed",
+  "themeThought": "brain-derived thematic seed",
+  "themeSource": "brain-pulse"
 }
 ```
 
@@ -286,11 +288,11 @@ Verified during implementation:
   - triple-click on the Vibe header generated a new archive image during validation
 - post-fix direct API verification:
   - `POST /home23/api/vibe/generate` created `499b4294-6942-4a42-9819-986052bc4bb4`
-  - `GET /home23/api/vibe/current` now returns that item as `latestItem` with `algorithm: "chaos-mode"` and `themeThought`
+- `GET /home23/api/vibe/current` now returns that item as `latestItem` with `algorithm: "chaos-mode"` and a saved brain theme
 
 ## Dream Augmentation (added 2026-04-11)
 
-The CHAOS MODE random pools produced visually coherent but aesthetically same-y output over time — 82 evocative subjects × fixed styles/moods/lighting with weak in-memory dedup and only a single latest-thought theme line. The next iteration adds a symbolic layer harvested from the agent's own dream output.
+The CHAOS MODE random pools produced visually coherent but aesthetically same-y output over time — 82 evocative subjects × fixed styles/moods/lighting with weak in-memory dedup and only a single brain-theme line. The next iteration adds a symbolic layer harvested from the agent's own dream output.
 
 ### What it does
 
