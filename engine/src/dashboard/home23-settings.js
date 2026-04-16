@@ -3132,9 +3132,13 @@ function renderAssignments(data) {
   const providers = data.providers || {};
   const effective = data.effective || {};
 
-  // Group keys for readability
+  // Group keys for readability. pulseVoice has its own dedicated UI
+  // (provider + model + prompt editor) so exclude it from the generic
+  // assignment grid to avoid confusing duplication.
+  const EXCLUDED_FROM_GRID = new Set(['pulseVoice', 'pulseVoice.remark']);
   const groups = {};
   for (const key of Object.keys(effective)) {
+    if (EXCLUDED_FROM_GRID.has(key)) continue;
     const g = assignmentGroup(key);
     if (!groups[g]) groups[g] = [];
     groups[g].push(key);
