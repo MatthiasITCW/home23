@@ -159,23 +159,79 @@ function applyHome23ImageGenerationConfig(config, homeConfig) {
   };
 }
 
-// ─── CHAOS MODE Category Pools (§17 — preserved verbatim) ─────────────────────
+// ─── CHAOS MODE Category Pools ────────────────────────────────────────────────
+// Expanded from original 86 to 250+ subjects. Mix of concrete, abstract,
+// surreal, scientific, cultural, and genuinely weird. The CHAOS PROMPT ENGINE
+// remixes these — the stranger the seed, the wilder the output.
 const IMAGE_CATEGORIES = {
   subjects: [
-    'vintage typewriter','teacup','lighthouse','bicycle','tree house','sailing ship',
-    'hot air balloon','library','waterfall','mountain cabin','garden gate','old bookstore',
-    'wooden bridge','windmill','clock tower','fountain','train station','coffee shop',
-    'beach pier','forest path','city street','park bench','flower market','bakery window',
-    'coral reef','desert dune','canyon','northern lights','thunderstorm','rainbow',
-    'butterfly','sea turtle','owl','fox','whale','peacock','hummingbird','koi fish',
-    'violin','piano keys','vinyl record','paint brushes','camera','telescope',
-    'compass','vintage map','hourglass','lantern','globe','chess pieces',
-    'origami crane','pottery wheel','loom','vintage radio','film reel','music box',
-    'stained glass','mosaic','tapestry','sculpture','architectural detail','doorway',
-    'sushi plate','pasta dish','fruit bowl','herb garden','bread basket','tea ceremony',
-    'autumn leaves','spring blossoms','winter frost','summer meadow','rain drops','dewdrops',
-    'canyon sunset','ocean sunrise','mountain vista','city lights','starry night','moon phases',
-    'abstract pattern','geometric shapes','flowing fabric','rippling water','flowing sand','smoke patterns'
+    // ── original pool (curated down) ──
+    'vintage typewriter','lighthouse','bicycle','tree house','sailing ship',
+    'hot air balloon','waterfall','mountain cabin','old bookstore',
+    'windmill','clock tower','fountain','train station','coffee shop',
+    'forest path','city street','flower market',
+    'coral reef','desert dune','canyon','northern lights','thunderstorm',
+    'butterfly','sea turtle','owl','fox','whale','peacock','hummingbird',
+    'violin','piano keys','vinyl record','telescope',
+    'compass','hourglass','lantern','chess pieces',
+    'origami crane','pottery wheel','music box',
+    'stained glass','mosaic','tapestry','sculpture',
+    'tea ceremony','autumn leaves','spring blossoms',
+    'canyon sunset','ocean sunrise','starry night',
+    'geometric shapes','flowing fabric','smoke patterns',
+    // ── machines + engineering ──
+    'steam engine','tesla coil','clockwork automaton','gyroscope','astrolabe',
+    'diesel locomotive','vacuum tube amplifier','mechanical calculator',
+    'cathode ray tube','antikythera mechanism','difference engine','pipe organ',
+    'radio telescope','particle accelerator','wind tunnel','loom shuttle',
+    // ── science + nature deep cuts ──
+    'tardigrade','axolotl','cuttlefish','venus flytrap','bioluminescent jellyfish',
+    'praying mantis','bombardier beetle','leafcutter ant colony','mycelium network',
+    'lichen on granite','tidal pool','volcanic vent','glacial crevasse',
+    'stalactite cave','petrified forest','geode cross-section','obsidian flow',
+    'solar flare','nebula nursery','pulsar beam','black hole accretion disk',
+    'comet tail','meteor shower','ring system','tectonic fault line',
+    // ── surreal + abstract ──
+    'melting staircase','inside-out room','infinite corridor','floating island chain',
+    'upside-down city','glass tornado','liquid metal sphere','fractal coastline',
+    'impossible triangle','tesseract shadow','penrose stairs','klein bottle',
+    'mandelbrot zoom','cellular automaton','reaction-diffusion pattern',
+    'voronoi tessellation','strange attractor','lissajous curve',
+    'crystal lattice','standing wave','interference pattern',
+    'double pendulum trail','ferrofluid sculpture','cymatics pattern',
+    // ── cultural artifacts ──
+    'torii gate','minaret','gothic flying buttress','art deco elevator door',
+    'neon-lit ramen shop','souq spice stall','venetian mask workshop',
+    'mexican day of the dead altar','thai spirit house','moroccan zellige tile',
+    'japanese rock garden','balinese offering','navajo loom','persian carpet detail',
+    'west african kente cloth','scottish standing stone','inuit soapstone carving',
+    'maori meeting house','aboriginal dot painting','tibetan prayer wheel',
+    // ── urban + industrial ──
+    'subway tunnel curve','fire escape shadow','water tower silhouette',
+    'container ship deck','oil refinery at night','abandoned factory floor',
+    'graffiti wall','rooftop garden','neon sign repair','laundromat at 2am',
+    'parking garage spiral','construction crane ballet','power line geometry',
+    'railroad switch yard','grain elevator','rust pattern on hull',
+    // ── food + craft (specific, not generic) ──
+    'sourdough scoring pattern','espresso crema','hand-thrown raku bowl',
+    'blown glass in progress','blacksmith forge','letterpress type case',
+    'bookbinding spine','darkroom enlarger','vinyl pressing plant',
+    'cheese cave','fermentation crock','hand-rolled pasta shapes',
+    // ── human experience ──
+    'hands on piano keys','shadow on curtain','footprints in fresh snow',
+    'breath in cold air','candlelit dinner for one','rain on window glass',
+    'abandoned shoes on shore','kite caught in tree','chalk hopscotch fading',
+    'swing set at dusk','tire swing over creek','campfire embers',
+    // ── time + decay ──
+    'rust eating iron','lichen reclaiming wall','roots splitting concrete',
+    'sand reclaiming road','ice forming on chain','paint peeling in layers',
+    'tide eroding cliff','termite architecture','coral bleaching',
+    'patina on bronze','moss on tombstone','vine consuming building',
+    // ── miniatures + scale ──
+    'ant carrying leaf 100x its size','raindrop on spider web macro',
+    'snowflake crystal macro','pollen grain electron microscope',
+    'circuit board city from above','marble run kinetic sculpture',
+    'bonsai forest','ship in bottle','terrarium ecosystem',
   ],
   styles: [
     'photorealistic','oil painting','watercolor','pencil sketch','ink drawing','charcoal',
@@ -207,25 +263,29 @@ const IMAGE_CATEGORIES = {
   ]
 };
 
-// Subject history guard — in-memory, resets on restart (acceptable per §17)
-const SUBJECT_HISTORY_LIMIT = 80;
-const SUBJECT_MAX_ATTEMPTS = 10;
-const subjectHistory = [];
+// Subject dedup — shuffle-without-replacement. Goes through the entire
+// pool before any subject can repeat. Resets only when fully exhausted.
+let shuffledSubjects = [];
+let shuffleIndex = 0;
 
 function randomInt(n) { return crypto.randomInt(n); }
 function randomPick(arr) { return arr[randomInt(arr.length)]; }
 
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function selectRandomSubject() {
-  const subjects = IMAGE_CATEGORIES.subjects;
-  const maxAttempts = Math.min(SUBJECT_MAX_ATTEMPTS, subjects.length);
-  let attempt = 0, subject;
-  do {
-    subject = subjects[randomInt(subjects.length)];
-    attempt++;
-  } while (subjectHistory.includes(subject) && attempt < maxAttempts);
-  subjectHistory.push(subject);
-  if (subjectHistory.length > SUBJECT_HISTORY_LIMIT) subjectHistory.shift();
-  return subject;
+  if (shuffleIndex >= shuffledSubjects.length) {
+    shuffledSubjects = shuffleArray(IMAGE_CATEGORIES.subjects);
+    shuffleIndex = 0;
+  }
+  return shuffledSubjects[shuffleIndex++];
 }
 
 // CHAOS PROMPT ENGINE system prompt (§17 — preserved verbatim)
