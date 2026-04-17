@@ -278,6 +278,47 @@ class Orchestrator {
       this.logger?.error?.('[closer-migration] failed', { error: err.message, stack: err.stack });
     }
 
+    // One-shot un-archive hook: HOME23_UNARCHIVE_GOALS=goal_id1,goal_id2,...
+    // restores the named goals to status='active' and attaches a
+    // legacyFallback doneWhen derived from their description so they pass
+    // the gate. Used to recover from the 2026-04-17 llm-invalid archive
+    // wave. Idempotent — goals that are not archived are skipped.
+    try {
+      const unArchiveList = (process.env.HOME23_UNARCHIVE_GOALS || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      if (unArchiveList.length > 0) {
+        const { applyLegacyFallback } = require('../goals/done-when-gate');
+        const dwCfg = this.config?.architecture?.goals?.doneWhen || {};
+        let restored = 0;
+        for (const id of unArchiveList) {
+          // Pull from archivedGoals back to live goals.
+          const idx = (this.goals.archivedGoals || []).findIndex(g => g?.id === id);
+          if (idx < 0) {
+            this.logger?.warn?.('[un-archive] goal not found in archivedGoals', { id });
+            continue;
+          }
+          const goal = this.goals.archivedGoals.splice(idx, 1)[0];
+          goal.status = 'active';
+          goal.archivedAt = null;
+          goal.archiveReason = null;
+          // Synthesize a legacyFallback doneWhen.
+          const patched = applyLegacyFallback(
+            { description: goal.description, doneWhen: undefined },
+            { autoSynthesizeLegacy: true, ...dwCfg }
+          );
+          goal.doneWhen = patched.doneWhen;
+          goal._legacyDoneWhenSynthesized = true;
+          goal.progress = 0;
+          this.goals.goals.set(goal.id, goal);
+          restored++;
+          this.logger?.info?.('[un-archive] restored', { id, description: goal.description.slice(0, 80) });
+        }
+        this.logger?.info?.('[un-archive] complete', { restored, requested: unArchiveList.length });
+      }
+    } catch (err) {
+      this.logger?.error?.('[un-archive] failed', { error: err.message, stack: err.stack });
+    }
+
     // Wire the doneWhen verifier environment.
     try {
       const path = require('path');

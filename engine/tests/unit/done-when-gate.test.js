@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const { validateDoneWhen, DEFAULT_VAGUENESS_CONFIG } = require('../../src/goals/done-when-gate');
+const { validateDoneWhen, validateDoneWhenResilient, DEFAULT_VAGUENESS_CONFIG } = require('../../src/goals/done-when-gate');
 
 describe('done-when-gate', () => {
   const knownTypes = ['file_exists', 'file_created_after', 'memory_node_tagged',
@@ -69,5 +69,49 @@ describe('done-when-gate', () => {
     }, { knownTypes });
     expect(r.valid).to.equal(false);
     expect(r.reason).to.match(/path/i);
+  });
+});
+
+describe('validateDoneWhenResilient', () => {
+  const knownTypes = ['file_exists', 'file_created_after', 'memory_node_tagged',
+                      'memory_node_matches', 'output_count_since', 'judged'];
+
+  it('keeps valid criteria and drops invalid ones', () => {
+    const r = validateDoneWhenResilient({
+      version: 1,
+      criteria: [
+        { type: 'file_exists', path: 'outputs/good.md' },
+        { type: 'judged' }, // missing required criterion text
+        { type: 'memory_node_tagged', tag: 'resolved:x' }
+      ]
+    }, { knownTypes, ...DEFAULT_VAGUENESS_CONFIG });
+    expect(r.valid).to.equal(true);
+    expect(r.cleaned.criteria).to.have.length(2);
+    expect(r.cleaned.criteria[0].type).to.equal('file_exists');
+    expect(r.cleaned.criteria[1].type).to.equal('memory_node_tagged');
+    expect(r.dropped).to.have.length(1);
+    expect(r.dropped[0].index).to.equal(1);
+  });
+
+  it('rejects when ALL criteria are invalid', () => {
+    const r = validateDoneWhenResilient({
+      version: 1,
+      criteria: [
+        { type: 'judged' },                        // missing criterion
+        { type: 'file_exists' },                   // missing path
+        { type: 'astrology_says_yes' }             // unknown type
+      ]
+    }, { knownTypes, ...DEFAULT_VAGUENESS_CONFIG });
+    expect(r.valid).to.equal(false);
+    expect(r.reason).to.match(/all criteria invalid/i);
+  });
+
+  it('returns valid with no drops when everything passes', () => {
+    const r = validateDoneWhenResilient({
+      version: 1,
+      criteria: [{ type: 'file_exists', path: 'outputs/x.md' }]
+    }, { knownTypes });
+    expect(r.valid).to.equal(true);
+    expect(r.dropped).to.deep.equal([]);
   });
 });

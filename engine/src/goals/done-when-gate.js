@@ -21,6 +21,32 @@ const REQUIRED_FIELDS = {
   judged: ['criterion'],
 };
 
+/**
+ * Resilient variant: instead of rejecting a whole doneWhen when one
+ * criterion is invalid, returns a cleaned block containing only the
+ * valid criteria. If NONE are valid, returns { valid: false, reason }.
+ * Primary use: LLM-produced doneWhen blocks where a hallucinated
+ * placeholder criterion shouldn't blow away the good ones.
+ */
+function validateDoneWhenResilient(dw, opts = {}) {
+  if (!dw || typeof dw !== 'object') return { valid: false, reason: 'missing doneWhen' };
+  if (!Array.isArray(dw.criteria) || dw.criteria.length === 0) {
+    return { valid: false, reason: 'empty doneWhen.criteria' };
+  }
+  const cleaned = [];
+  const dropped = [];
+  for (let i = 0; i < dw.criteria.length; i++) {
+    const single = { ...dw, criteria: [dw.criteria[i]] };
+    const r = validateDoneWhen(single, opts);
+    if (r.valid) cleaned.push(dw.criteria[i]);
+    else dropped.push({ index: i, reason: r.reason });
+  }
+  if (cleaned.length === 0) {
+    return { valid: false, reason: `all criteria invalid: ${dropped.map(d => d.reason).join('; ')}` };
+  }
+  return { valid: true, cleaned: { ...dw, criteria: cleaned }, dropped };
+}
+
 function validateDoneWhen(dw, opts = {}) {
   const knownTypes = opts.knownTypes || Object.keys(REQUIRED_FIELDS);
   const minLen = opts.minCriterionLength ?? DEFAULT_VAGUENESS_CONFIG.minCriterionLength;
@@ -89,4 +115,10 @@ function applyLegacyFallback(goalData, config = {}) {
   };
 }
 
-module.exports = { validateDoneWhen, applyLegacyFallback, DEFAULT_VAGUENESS_CONFIG, REQUIRED_FIELDS };
+module.exports = {
+  validateDoneWhen,
+  validateDoneWhenResilient,
+  applyLegacyFallback,
+  DEFAULT_VAGUENESS_CONFIG,
+  REQUIRED_FIELDS,
+};

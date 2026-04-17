@@ -94,7 +94,7 @@ function planMigration(goalsMap) {
   return plan;
 }
 
-const { validateDoneWhen } = require('../done-when-gate');
+const { validateDoneWhen, validateDoneWhenResilient } = require('../done-when-gate');
 
 async function askLlmForDoneWhen(description, llmClient) {
   const systemPrompt =
@@ -180,16 +180,23 @@ async function applyMigration(plan, goalsSystem, opts = {}) {
       receipt.actions.push({ action: 'archive-llm-decline', id: item.id, reason: reply?.reason });
       continue;
     }
-    const v = validateDoneWhen(reply.doneWhen);
+    // Resilient validation: if ≥1 criterion is valid, keep those and drop
+    // the invalid ones rather than throwing away the whole doneWhen to a
+    // single LLM JSON hiccup.
+    const v = validateDoneWhenResilient(reply.doneWhen);
     if (!v.valid) {
       goalsSystem.archiveGoal(item.id, `no-concrete-done-when (llm-invalid: ${v.reason})`);
       receipt.applied.archive++;
       receipt.actions.push({ action: 'archive-llm-invalid', id: item.id, reason: v.reason });
       continue;
     }
-    goalsSystem._applyRetrofit(item.id, reply.doneWhen);
+    goalsSystem._applyRetrofit(item.id, v.cleaned);
     receipt.applied.llmRetrofit++;
-    receipt.actions.push({ action: 'llm-retrofit', id: item.id });
+    receipt.actions.push({
+      action: 'llm-retrofit',
+      id: item.id,
+      ...(v.dropped && v.dropped.length ? { droppedCriteria: v.dropped } : {})
+    });
   }
 
   receipt.finishedAt = new Date().toISOString();
