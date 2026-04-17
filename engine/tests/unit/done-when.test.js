@@ -128,4 +128,77 @@ describe('done-when primitives', () => {
       expect(result.note).to.match(/unknown/i);
     });
   });
+
+  describe('judged', () => {
+    function mockLlm(verdict, reason = 'ok') {
+      return {
+        calls: [],
+        async chat({ messages }) {
+          this.calls.push(messages);
+          return { content: JSON.stringify({ verdict, reason }) };
+        }
+      };
+    }
+
+    it('calls LLM when judgedVerdict is null, caches the result', async () => {
+      const env = makeEnv();
+      env.llmClient = mockLlm('pass');
+      const crit = {
+        type: 'judged',
+        criterion: 'An output file exists with at least 3 examples.',
+        judgeModel: 'gpt-5-mini',
+        judgedAt: null,
+        judgedVerdict: null
+      };
+      const r1 = await checkCriterion(crit, env);
+      expect(r1.passed).to.equal(true);
+      expect(env.llmClient.calls).to.have.length(1);
+      expect(crit.judgedVerdict).to.equal('pass');
+      expect(crit.judgedAt).to.be.a('number');
+
+      // Second call within TTL → no new LLM call
+      const r2 = await checkCriterion(crit, env);
+      expect(r2.passed).to.equal(true);
+      expect(env.llmClient.calls).to.have.length(1);
+    });
+
+    it('treats fail verdict as passed=false', async () => {
+      const env = makeEnv();
+      env.llmClient = mockLlm('fail', 'missing examples');
+      const crit = {
+        type: 'judged',
+        criterion: 'An output file exists with at least 3 examples.',
+        judgedAt: null,
+        judgedVerdict: null
+      };
+      const r = await checkCriterion(crit, env);
+      expect(r.passed).to.equal(false);
+      expect(r.note).to.match(/fail/i);
+    });
+
+    it('re-runs LLM after TTL elapses', async () => {
+      const env = makeEnv();
+      env.llmClient = mockLlm('pass');
+      const crit = {
+        type: 'judged',
+        criterion: 'An output file exists with at least 3 examples.',
+        judgedAt: Date.now() - 25 * 60 * 60 * 1000,
+        judgedVerdict: 'pass'
+      };
+      const r = await checkCriterion(crit, env);
+      expect(env.llmClient.calls).to.have.length(1);
+      expect(r.passed).to.equal(true);
+    });
+
+    it('handles malformed LLM output as fail with a note', async () => {
+      const env = makeEnv();
+      env.llmClient = {
+        async chat() { return { content: 'not json' }; }
+      };
+      const crit = { type: 'judged', criterion: 'anything at all, concrete enough', judgedAt: null, judgedVerdict: null };
+      const r = await checkCriterion(crit, env);
+      expect(r.passed).to.equal(false);
+      expect(r.note).to.match(/parse|invalid/i);
+    });
+  });
 });

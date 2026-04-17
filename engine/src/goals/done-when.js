@@ -16,6 +16,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const JUDGE_TTL_MS = 24 * 60 * 60 * 1000;
+
 function resolveSafe(baseDir, relPath) {
   const full = path.resolve(baseDir, relPath);
   const rel = path.relative(baseDir, full);
@@ -82,12 +84,58 @@ async function checkOutputCountSince(crit, env) {
   return { passed: count >= gte, note: `count=${count} gte=${gte}` };
 }
 
+async function checkJudged(crit, env) {
+  const cachedValid = crit.judgedVerdict && crit.judgedAt
+    && (Date.now() - Number(crit.judgedAt) < JUDGE_TTL_MS);
+  if (cachedValid) {
+    return {
+      passed: crit.judgedVerdict === 'pass',
+      note: `cached verdict=${crit.judgedVerdict}`,
+      judgedAt: crit.judgedAt,
+    };
+  }
+  if (!env.llmClient) {
+    return { passed: false, note: 'no llmClient available' };
+  }
+  const prompt = [
+    { role: 'system', content:
+      'You are a strict verifier. Given a goal success criterion, decide whether the criterion is currently satisfied by observable artifacts in the environment. Return ONLY JSON: {"verdict":"pass"|"fail","reason":"<one sentence>"}.' },
+    { role: 'user', content:
+      `Criterion: ${crit.criterion}\n\nRespond with JSON only.` }
+  ];
+  let verdict, reason;
+  try {
+    const resp = await env.llmClient.chat({
+      model: crit.judgeModel || 'gpt-5-mini',
+      messages: prompt,
+      max_completion_tokens: 200,
+      temperature: 0.1,
+    });
+    const parsed = JSON.parse((resp.content || '').trim());
+    verdict = parsed.verdict;
+    reason = parsed.reason;
+  } catch (err) {
+    return { passed: false, note: `judge parse error: ${err.message}` };
+  }
+  if (verdict !== 'pass' && verdict !== 'fail') {
+    return { passed: false, note: `judge invalid verdict: ${verdict}` };
+  }
+  crit.judgedAt = Date.now();
+  crit.judgedVerdict = verdict;
+  return {
+    passed: verdict === 'pass',
+    note: `verdict=${verdict} reason=${reason}`,
+    judgedAt: crit.judgedAt,
+  };
+}
+
 const DISPATCH = {
   file_exists: checkFileExists,
   file_created_after: checkFileCreatedAfter,
   memory_node_tagged: checkMemoryNodeTagged,
   memory_node_matches: checkMemoryNodeMatches,
   output_count_since: checkOutputCountSince,
+  judged: checkJudged,
 };
 
 async function checkCriterion(crit, env) {
@@ -100,4 +148,4 @@ async function checkCriterion(crit, env) {
   }
 }
 
-module.exports = { checkCriterion, DISPATCH };
+module.exports = { checkCriterion, DISPATCH, JUDGE_TTL_MS };
