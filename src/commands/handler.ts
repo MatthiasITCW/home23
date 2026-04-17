@@ -475,7 +475,7 @@ export class CommandHandler {
 
     // Fire-and-forget — runs in background with isolated chat history
     const cronChatId = `cron-${job.id}`;
-    this.ctx.agent.run(cronChatId, job.payload.message).catch(err => {
+    this.ctx.agent.run(cronChatId, job.payload.message ?? '').catch(err => {
       console.error('[extract] Manual extraction failed:', err);
     });
 

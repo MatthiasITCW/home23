@@ -556,6 +556,30 @@ async function main(): Promise<void> {
         if (job.payload.kind === 'agentTurn') {
           // Full AgentLoop — 19 tools, isolated chat history per job
           const timeoutMs = (job.payload.timeoutSeconds ?? 900) * 1000;
+
+          // Resolve message: prefer messagePath if set (and readable), else inline message.
+          let resolvedMessage = job.payload.message ?? '';
+          if (job.payload.messagePath) {
+            const abs = job.payload.messagePath.startsWith('/')
+              ? job.payload.messagePath
+              : resolve(PROJECT_ROOT, job.payload.messagePath);
+            try {
+              resolvedMessage = readFileSync(abs, 'utf-8');
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              const durationMs = Date.now() - startMs;
+              return {
+                status: 'error',
+                error: `Cannot read messagePath "${job.payload.messagePath}": ${errMsg}`,
+                durationMs,
+              };
+            }
+          }
+          if (!resolvedMessage.trim()) {
+            const durationMs = Date.now() - startMs;
+            return { status: 'error', error: 'agentTurn payload has neither message nor readable messagePath', durationMs };
+          }
+
           let timeoutId: ReturnType<typeof setTimeout>;
           const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => {
@@ -566,7 +590,7 @@ async function main(): Promise<void> {
           });
 
           try {
-            const agentPromise = agent.run(cronChatId, job.payload.message);
+            const agentPromise = agent.run(cronChatId, resolvedMessage);
             const result = await Promise.race([agentPromise, timeoutPromise]);
             clearTimeout(timeoutId!);
             const durationMs = Date.now() - startMs;

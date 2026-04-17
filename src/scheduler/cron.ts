@@ -21,7 +21,7 @@ export type ScheduleSpec =
   | { kind: 'at'; at: string };
 
 export type JobPayload =
-  | { kind: 'agentTurn'; message: string; model?: string; timeoutSeconds?: number }
+  | { kind: 'agentTurn'; message?: string; messagePath?: string; model?: string; timeoutSeconds?: number; sessionHistory?: 'persistent' | 'fresh' }
   | { kind: 'exec'; command: string; timeoutSeconds?: number }
   | { kind: 'query'; message: string; mode?: string; model?: string; timeoutSeconds?: number }
   | { kind: 'systemEvent'; text: string };
