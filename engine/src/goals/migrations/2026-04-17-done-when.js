@@ -7,6 +7,7 @@
  */
 
 const AUDIT_TUMOR_PATTERNS = [
+  // From jerry's diagnosis (verbatim phrasings):
   /verified output evidence schema/i,
   /state snapshot capture at handoff/i,
   /modify audit script to enumerate/i,
@@ -18,6 +19,24 @@ const AUDIT_TUMOR_PATTERNS = [
   /enforcement boundary for incomplete cycles/i,
   /audit schema with four parallel/i,
   /audit conclusions treating zero as negative evidence/i,
+
+  // Tightened — catch LLM-paraphrased variants of the same self-audit patterns.
+  // Scoped to Home23-internal audit targets (schema/script/enumeration/coroutine/
+  // receipt/cognitive-state/memory-storage/capture-points). Does NOT match
+  // external-subject research like "audit CRDT libraries against an invariant".
+  /\baudit schema\b/i,
+  /\baudit script\b/i,
+  /\baudit coroutine\b/i,
+  /audit.*\b(cognitive state|memory storage|existing conclusions|existing reports)\b/i,
+  /audit.*\bcapture points\b/i,
+  /audit.*\benumeration\b/i,
+  /\baudit entries\b/i,
+  /\bevidence schema\b/i,
+  /\bcheckpoint receipt/i,
+  /\bevidence taxonomy\b/i,
+  /\bevidence marker/i,
+  /\bpersistent artifact.*audit/i,
+  /enforcement boundary.*audit/i,
 ];
 
 const KOAN_PATTERNS = [

@@ -19,6 +19,35 @@ describe('migration planner', () => {
     expect(plan.archive[0].reason).to.equal('audit-tumor-purge-2026-04-17');
   });
 
+  it('catches LLM-paraphrased audit-tumor variants', () => {
+    const goals = mkGoals([
+      { description: 'Design the enforcement boundary that automatically converts incomplete cycles into flagged audit entries rather than silent failures.' },
+      { description: 'Design audit schema that emits four parallel count columns at each state transition.' },
+      { description: 'Audit all existing conclusions/reports that treat zero results as negative evidence.' },
+      { description: "Audit which cognitive state components (memories, learned context, reflections) are being persisted vs. lost." },
+      { description: 'Extend the audit script to compute and log content hashes of expected outputs.' },
+      { description: 'Design audit coroutine state machine with explicit transitions between queued→running→partial→blocked states.' },
+      { description: 'Audit existing memory storage to identify where state mutations occur, then retrofit evidence object pattern.' },
+      { description: "Define 'persistent artifact' criteria (file age, hash verification) and incorporate into the audit enumeration logic." },
+      { description: "Map the agent's internal state variables and define audit capture points for each state mutation." },
+    ]);
+    const plan = planMigration(goals);
+    expect(plan.archive).to.have.length(9);
+    for (const a of plan.archive) {
+      expect(a.reason).to.equal('audit-tumor-purge-2026-04-17');
+    }
+  });
+
+  it('does NOT match external-subject research that happens to use the word "audit"', () => {
+    const goals = mkGoals([
+      { description: 'Systematic Audit of CRDT Implementations Against the Monoid Invariant—Empirically verify whether existing CRDT libraries inadvertently violate the invariant in edge cases.' },
+      { description: 'Audit the 19th-century newspaper archives at SCRLA and Kean Library for February 1980 coverage of the transit strike.' },
+    ]);
+    const plan = planMigration(goals);
+    expect(plan.archive).to.have.length(0);
+    expect(plan.llmRetrofit).to.have.length(2);
+  });
+
   it('marks philosophical-koan goals for archive with no-concrete reason', () => {
     const goals = mkGoals([
       { description: 'What strange loop have you walked today?' },
