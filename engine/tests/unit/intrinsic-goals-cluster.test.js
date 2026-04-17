@@ -3,6 +3,11 @@ const { expect } = require('chai');
 const { IntrinsicGoalSystem } = require('../../src/goals/intrinsic-goals');
 const { GoalAllocator } = require('../../src/cluster/goal-allocator');
 
+// Scope-patched stub doneWhen so legacy cluster tests pass the addGoal gate
+// without threading the field through 18 call sites. The patch is scoped
+// inside the describe() block below so it does not leak into other test files.
+const STUB_DONE_WHEN = { version: 1, criteria: [{ type: 'file_exists', path: 'stub.md' }] };
+
 const baseConfig = {
   goals: {
     intrinsicEnabled: true,
@@ -77,6 +82,20 @@ function createGoalSystem(instanceId, sharedStore, configOverride = {}) {
 }
 
 describe('IntrinsicGoalSystem (cluster coordination)', () => {
+  let _origAddGoal;
+  before(() => {
+    _origAddGoal = IntrinsicGoalSystem.prototype.addGoal;
+    IntrinsicGoalSystem.prototype.addGoal = function (goalData) {
+      if (goalData && !goalData.doneWhen) {
+        goalData = { ...goalData, doneWhen: STUB_DONE_WHEN };
+      }
+      return _origAddGoal.call(this, goalData);
+    };
+  });
+  after(() => {
+    if (_origAddGoal) IntrinsicGoalSystem.prototype.addGoal = _origAddGoal;
+  });
+
   it('allocates distinct goals across instances', async () => {
     const shared = createSharedStateStore();
 

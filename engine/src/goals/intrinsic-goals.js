@@ -1,5 +1,6 @@
 const { UnifiedClient } = require('../core/unified-client');
 const { cosmoEvents } = require('../realtime/event-emitter');
+const { validateDoneWhen } = require('./done-when-gate');
 
 /**
  * Helper function to safely convert any date representation to epoch milliseconds
@@ -328,6 +329,18 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
       return null;
     }
 
+    // doneWhen gate: every goal must declare a concrete termination criterion.
+    const dwCfg = this.config?.doneWhen || {};
+    const dwResult = validateDoneWhen(goalData?.doneWhen, dwCfg);
+    if (!dwResult.valid) {
+      this.logger?.warn('⚠️  Rejected goal without valid doneWhen', {
+        reason: dwResult.reason,
+        description: (goalData?.description || '').slice(0, 80)
+      });
+      this._rejectedAtGateCount24h = (this._rejectedAtGateCount24h || 0) + 1;
+      return null;
+    }
+
     if (this.goals.size >= this.config.maxGoals) {
       // Prune lowest priority goal
       this.pruneLowPriorityGoal();
@@ -338,7 +351,9 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
       description: goalData.description,
       reason: goalData.reason || 'Self-discovered',
       uncertainty: goalData.uncertainty || 0.5,
-      source: goalData.source || 'manual',
+      source: typeof goalData.source === 'object'
+        ? { origin: goalData.source.origin || 'unknown', ...goalData.source }
+        : { origin: 'unknown', label: goalData.source || 'manual' },
       priority: this.calculatePriority(goalData.uncertainty || 0.5),
       progress: 0,
       status: 'active',  // NEW: 'active', 'completed', 'archived'
@@ -352,7 +367,8 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
       claimCount: 0,
       claim_count: 0,
       lastClaimedAt: null,
-      
+      doneWhen: goalData.doneWhen,
+
       // Context isolation: execution context for independent goal processing
       executionContext: goalData.executionContext || this.inferExecutionContext(goalData)
     };
