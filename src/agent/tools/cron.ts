@@ -193,7 +193,13 @@ export const cronListTool: ToolDefinition = {
         : s.kind === 'every' ? `every ${(Number(s.everyMs) / 1000)}s`
         : s.kind === 'at' ? `at ${s.at}`
         : String(s.kind);
-      const deliver = j.delivery ? `→ ${j.delivery.channel}:${j.delivery.to || '(none)'}` : '';
+      const deliver = j.delivery
+        ? (j.delivery.profile
+          ? `→ profile:${j.delivery.profile}`
+          : j.delivery.channels && j.delivery.channels.length > 0
+          ? `→ ${j.delivery.channels.map(c => `${c.channel}:${c.to}`).join(',')}`
+          : `→ ${j.delivery.channel}:${j.delivery.to || '(none)'}`)
+        : '';
       const errs = j.state.consecutiveErrors > 0 ? ` [${j.state.consecutiveErrors} errors]` : '';
       const lastStatus = j.state.lastStatus ? ` last:${j.state.lastStatus}` : '';
       return `[${j.id}] ${j.name} — ${status}, ${sched}, next: ${nextRun} ${deliver}${errs}${lastStatus}`;
@@ -391,8 +397,8 @@ export const cronUpdateTool: ToolDefinition = {
     if (input.cron_expr || input.every_ms) {
       ctx.scheduler.enableJob(id); // triggers recompute
     } else {
-      // Just persist the changes
-      ctx.scheduler.addJob(job); // addJob re-sets + persists
+      // Persist changes without touching nextRunAtMs
+      ctx.scheduler.saveJob(job);
     }
 
     return { content: `Updated job "${job.name}" (${id}):\n${changes.join('\n')}` };

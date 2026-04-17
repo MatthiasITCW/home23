@@ -245,6 +245,18 @@ export class CronScheduler {
     console.log(`[scheduler] Job added: ${job.id} (${job.name}), next run: ${new Date(job.state.nextRunAtMs).toISOString()}`);
   }
 
+  /** Persist an existing job without recomputing nextRunAtMs. Use for non-schedule edits. */
+  saveJob(job: CronJob): void {
+    if (!this.jobs.has(job.id)) {
+      console.warn(`[scheduler] saveJob called for unknown id ${job.id} — delegating to addJob`);
+      this.addJob(job);
+      return;
+    }
+    this.jobs.set(job.id, job);
+    this.saveJobs();
+    console.log(`[scheduler] Job saved: ${job.id} (${job.name})`);
+  }
+
   removeJob(id: string): void {
     const deleted = this.jobs.delete(id);
     if (deleted) {
