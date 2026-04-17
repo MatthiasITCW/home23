@@ -97,16 +97,50 @@ function planMigration(goalsMap) {
 const { validateDoneWhen } = require('../done-when-gate');
 
 async function askLlmForDoneWhen(description, llmClient) {
-  const prompt = [
-    { role: 'system', content:
-      'You produce a concrete, verifiable termination criterion for an AI-system research goal. Output ONLY JSON — either {"doneWhen": {"version": 1, "criteria": [ ... ]}} or {"decline": true, "reason": "<one sentence>"}. Allowed criterion types: file_exists, file_created_after, memory_node_tagged, memory_node_matches, output_count_since, judged. Prefer file_exists in outputs/. If the goal is too vague to have a concrete output, decline.' },
-    { role: 'user', content: `Goal: ${description}\n\nRespond with JSON only.` }
-  ];
-  const resp = await llmClient.chat({
-    model: 'gpt-5-mini', messages: prompt, max_completion_tokens: 400, temperature: 0.2
-  });
+  const systemPrompt =
+    'You produce a concrete, verifiable termination criterion for an AI-system research goal. ' +
+    'Output ONLY JSON — either {"doneWhen": {"version": 1, "criteria": [ ... ]}} or ' +
+    '{"decline": true, "reason": "<one sentence>"}. Allowed criterion types: file_exists, ' +
+    'file_created_after, memory_node_tagged, memory_node_matches, output_count_since, judged. ' +
+    'Prefer file_exists in outputs/. If the goal is too vague to have a concrete output, decline.';
+  const userPrompt = `Goal: ${description}\n\nRespond with JSON only.`;
+
+  // Support two client shapes: UnifiedClient-style generate({instructions, messages, ...})
+  // and simple test-mock chat({messages}) that bundles system+user into messages.
+  let content;
   try {
-    const parsed = JSON.parse((resp.content || '').trim());
+    if (typeof llmClient.generate === 'function') {
+      const resp = await llmClient.generate({
+        model: 'gpt-5-mini',
+        instructions: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        max_completion_tokens: 400,
+        reasoningEffort: 'low',
+      });
+      content = resp.content;
+    } else if (typeof llmClient.chat === 'function') {
+      const resp = await llmClient.chat({
+        model: 'gpt-5-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_completion_tokens: 400,
+        temperature: 0.2,
+      });
+      content = resp.content;
+    } else {
+      return { decline: true, reason: 'llmClient has no generate or chat method' };
+    }
+  } catch (err) {
+    return { decline: true, reason: `llm call failed: ${err.message}` };
+  }
+
+  try {
+    const raw = (content || '').trim();
+    // Strip potential code fences.
+    const stripped = raw.replace(/^```(?:json)?\n?|```$/g, '').trim();
+    const parsed = JSON.parse(stripped);
     return parsed;
   } catch (err) {
     return { decline: true, reason: `parse error: ${err.message}` };

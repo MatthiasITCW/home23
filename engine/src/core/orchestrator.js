@@ -237,7 +237,11 @@ class Orchestrator {
       const migDir = path.join(this.logsDir, 'migrations');
       fs.mkdirSync(migDir, { recursive: true });
       const currentVer = this.goals.getSchemaVersion?.() ?? 0;
-      if (currentVer < 1) {
+      const forceRerun = process.env.HOME23_FORCE_MIGRATION_RERUN === '1';
+      if (currentVer < 1 || forceRerun) {
+        if (forceRerun) {
+          this.logger?.warn?.('[closer-migration] HOME23_FORCE_MIGRATION_RERUN=1 — re-running migration on already-migrated brain');
+        }
         const plan = planMigration(this.goals.goals);
         const dryPath = path.join(migDir, '2026-04-17-done-when-dryrun.json');
         fs.writeFileSync(dryPath, JSON.stringify(plan, null, 2));
@@ -257,7 +261,7 @@ class Orchestrator {
           } catch (err) {
             this.logger?.warn?.('[closer-migration] backup failed, continuing', { error: err.message });
           }
-          const receipt = await applyMigration(plan, this.goals, { llmClient: this.gpt5 });
+          const receipt = await applyMigration(plan, this.goals, { llmClient: this.goals?.gpt5 });
           const recPath = path.join(migDir, '2026-04-17-done-when-applied.json');
           fs.writeFileSync(recPath, JSON.stringify(receipt, null, 2));
           this.goals.setSchemaVersion?.(1);
