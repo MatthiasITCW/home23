@@ -1841,7 +1841,34 @@ class Orchestrator {
       // list. Cheap file tail + prompt injection.
       const recentRoleBlock = this._buildRecentRoleBlock(role.id, 4);
 
-      const rolePromptWithDiagnosis = focusDirective + role.prompt + recentRoleBlock + footerDiagnosis;
+      // Role-level pre-turn dedup: if the current goal topic is already
+      // answered by an answer-tagged memory node (pinned or accumulated),
+      // inject a prefix telling the role to propose something NEW or
+      // NO_ACTION. Closes the perseveration loop Jerry's diagnosis flagged
+      // at the role level — dedup-before-spawn only gated agent spawns.
+      let roleDedupPrefix = '';
+      if (process.env.HOME23_ROLE_DEDUP_DISABLE !== '1') {
+        try {
+          const { computeRoleDedupPrefix } = require('../cognition/role-dedup-prefix');
+          const threshold = Number(process.env.HOME23_ROLE_DEDUP_THRESHOLD) || undefined;
+          const r = await computeRoleDedupPrefix({
+            goal: currentGoal, memory: this.memory, threshold, logger: this.logger
+          });
+          if (r.prefix) {
+            roleDedupPrefix = r.prefix;
+            this._roleDedupInjectionsCount24h = (this._roleDedupInjectionsCount24h || 0) + 1;
+            this.logger?.info?.('[role-dedup] injecting prefix', {
+              cycle: this.cycleCount, role: role.id,
+              matchId: r.match.id, similarity: Number(r.match.similarity).toFixed(3),
+              tag: r.match.tag
+            });
+          }
+        } catch (err) {
+          this.logger?.warn?.('[role-dedup] failed (non-fatal)', { error: err.message });
+        }
+      }
+
+      const rolePromptWithDiagnosis = focusDirective + role.prompt + recentRoleBlock + roleDedupPrefix + footerDiagnosis;
 
       const superposition = await this.quantum.generateSuperposition(
         rolePromptWithDiagnosis,
@@ -2852,6 +2879,11 @@ class Orchestrator {
         if (typeof this.goals.setHallucinationsDiscardedCount === 'function') {
           this.goals.setHallucinationsDiscardedCount(
             this._hallucinationsDiscardedCount24h || 0
+          );
+        }
+        if (typeof this.goals.setRoleDedupInjectionsCount === 'function') {
+          this.goals.setRoleDedupInjectionsCount(
+            this._roleDedupInjectionsCount24h || 0
           );
         }
 
