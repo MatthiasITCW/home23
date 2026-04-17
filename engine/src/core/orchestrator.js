@@ -319,6 +319,19 @@ class Orchestrator {
       this.logger?.error?.('[un-archive] failed', { error: err.message, stack: err.stack });
     }
 
+    // One-shot canonical-node pinning. HOME23_PIN_CANONICAL_NODES=1
+    // seeds answer-tagged memory nodes so dedup-before-spawn has real
+    // targets. Idempotent (skips when the tag already exists).
+    if (process.env.HOME23_PIN_CANONICAL_NODES === '1') {
+      try {
+        const { pinCanonicalNodes } = require('../memory/pin-canonical-nodes');
+        const r = await pinCanonicalNodes({ memory: this.memory, logger: this.logger });
+        this.logger?.info?.('[pin-canonical] complete', r);
+      } catch (err) {
+        this.logger?.warn?.('[pin-canonical] failed', { error: err.message });
+      }
+    }
+
     // Wire the doneWhen verifier environment.
     try {
       const path = require('path');
@@ -2188,6 +2201,28 @@ class Orchestrator {
         });
       }
 
+      // Hallucinated tool-call gate: if the thought contains bare-text
+      // [TOOL_CALL: name] syntax, the agent *thinks* it's invoking tools
+      // but isn't — the text is inert. Discard rather than let it pollute
+      // the journal. Jerry's 2026-04-17 "surprises you" diagnosis called
+      // out cycle 2898's triple fake-tool-call as a canonical example.
+      if (process.env.HOME23_HALLUCINATION_GATE_DISABLE !== '1') {
+        try {
+          const { hasHallucinatedToolCall } = require('../cognition/hallucinated-tool-call-detector');
+          if (hasHallucinatedToolCall(thought.hypothesis)) {
+            this.logger?.info?.('[hallucination-discard] tool-call syntax in thought text — discarded', {
+              cycle: this.cycleCount,
+              role: role.id,
+              preview: String(thought.hypothesis || '').slice(0, 120)
+            });
+            this._hallucinationsDiscardedCount24h = (this._hallucinationsDiscardedCount24h || 0) + 1;
+            return;
+          }
+        } catch (err) {
+          this.logger?.warn?.('[hallucination-discard] parser failed', { error: err.message });
+        }
+      }
+
       // Critic-verdict gate: tagless critic outputs are prose-poem noise,
       // not critiques. Discard them so they don't pollute the journal or
       // the thought stream. Jerry's 2026-04-17 diagnosis (cycle 1181
@@ -2812,6 +2847,11 @@ class Orchestrator {
         if (typeof this.goals.setCriticOutputsDiscardedCount === 'function') {
           this.goals.setCriticOutputsDiscardedCount(
             this._criticOutputsDiscardedCount24h || 0
+          );
+        }
+        if (typeof this.goals.setHallucinationsDiscardedCount === 'function') {
+          this.goals.setHallucinationsDiscardedCount(
+            this._hallucinationsDiscardedCount24h || 0
           );
         }
 
