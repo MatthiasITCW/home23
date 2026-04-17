@@ -186,12 +186,34 @@ class StrategicGoalsTracker {
             tracking
           });
         } else if (tracking.cyclesIgnored >= this.escalationThreshold) {
-          // Needs escalation
-          updates.needsEscalation.push({
-            goalId,
-            cyclesIgnored: tracking.cyclesIgnored,
-            tracking
-          });
+          // Progress-gated escalation (Jerry's "what surprises you"
+          // 2026-04-17 fix). Pure-ignore goals that accumulate
+          // cyclesIgnored with ZERO progress signal are the immortal-18
+          // pattern: the escalator boosts priority, protecting them from
+          // low-priority archive, which is how they survived 1,145 goal
+          // creations. Only escalate when there's an actual hint that
+          // the goal has any traction — either doneWhen partial
+          // satisfaction (progress > 0) or a memory breadcrumb attached.
+          const hasProgressSignal =
+            Number(goal?.progress || 0) > 0 ||
+            Boolean(goal?.dedupedTo) ||
+            (goal?.pursuitCount || 0) > 0;
+          if (hasProgressSignal) {
+            updates.needsEscalation.push({
+              goalId,
+              cyclesIgnored: tracking.cyclesIgnored,
+              tracking
+            });
+          } else {
+            // No traction at all. Stay stalled; let auto-archive handle it.
+            updates.stalled.push({
+              goalId,
+              reason: 'no-progress-signal',
+              cyclesIgnored: tracking.cyclesIgnored,
+              tracking,
+              suppressedEscalation: true
+            });
+          }
         } else {
           updates.stalled.push({
             goalId,
