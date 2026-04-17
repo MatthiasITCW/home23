@@ -1698,9 +1698,13 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
       active: Array.from(this.goals.entries()),
       completed: this.completedGoals,
       archived: this.archivedGoals || [],
-      nextGoalId: this.nextGoalId
+      nextGoalId: this.nextGoalId,
+      schemaVersion: this.schemaVersion || 0
     };
   }
+
+  getSchemaVersion() { return this.schemaVersion || 0; }
+  setSchemaVersion(v) { this.schemaVersion = v; }
 
   /**
    * Import goals from persistence
@@ -1783,11 +1787,13 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
     if (data.nextGoalId) {
       this.nextGoalId = data.nextGoalId;
     }
+    this.schemaVersion = data.schemaVersion || 0;
 
     this.logger?.info('Goals imported', {
       active: this.goals.size,
       completed: this.completedGoals.length,
-      archived: (this.archivedGoals || []).length
+      archived: (this.archivedGoals || []).length,
+      schemaVersion: this.schemaVersion
     });
   }
 

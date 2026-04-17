@@ -195,23 +195,99 @@ class Orchestrator {
     await this.crashRecovery.initialize();
     
     // Phase A: Attempt recovery if crash detected
+    //
+    // Checkpoints are intentionally tiny (scalars + 100-entry journal) — the
+    // authoritative brain lives in state.json.gz + memory-nodes/edges.jsonl.gz
+    // sidecars, saved every cycle. So we ALWAYS call loadState() to restore
+    // the full graph, and use the checkpoint only to overlay fresher scalars
+    // (cycleCount/journal/lastSummarization) if the most recent sidecar save
+    // lagged behind the most recent checkpoint. Skipping loadState() on
+    // checkpoint recovery boots with memory=0 and is the root cause of the
+    // 2026-04-17 jerry incident.
+    let recoveredState = null;
     if (this.crashRecovery.crashDetected) {
       this.logger.warn('🔄 Crash detected, attempting recovery from checkpoint...');
-      const recoveredState = await this.crashRecovery.recover();
+      recoveredState = await this.crashRecovery.recover();
       if (recoveredState) {
-        this.logger.info('✅ State recovered from checkpoint');
-        // Import recovered state
-        this.cycleCount = recoveredState.cycleCount || 0;
-        this.journal = recoveredState.journal || [];
-        this.lastSummarization = recoveredState.lastSummarization || 0;
+        this.logger.info('✅ Checkpoint scalars recovered — will load full brain from state.json.gz + sidecars next');
       } else {
         this.logger.warn('⚠️  No checkpoint available, loading from state file');
-        await this.loadState();
       }
-    } else {
-      await this.loadState();
     }
-    
+    await this.loadState();
+    if (recoveredState) {
+      // Overlay checkpoint scalars only when they are strictly fresher than
+      // what loadState() just restored. Never regress backward.
+      if (typeof recoveredState.cycleCount === 'number' && recoveredState.cycleCount > (this.cycleCount || 0)) {
+        this.cycleCount = recoveredState.cycleCount;
+      }
+      if (Array.isArray(recoveredState.journal) && recoveredState.journal.length > (this.journal?.length || 0)) {
+        this.journal = recoveredState.journal;
+      }
+      if (typeof recoveredState.lastSummarization === 'number' && recoveredState.lastSummarization > (this.lastSummarization || 0)) {
+        this.lastSummarization = recoveredState.lastSummarization;
+      }
+    }
+
+    // ── doneWhen migration (schema v0 → v1) ──
+    try {
+      const { planMigration, applyMigration } = require('../goals/migrations/2026-04-17-done-when');
+      const fs = require('fs');
+      const path = require('path');
+      const migDir = path.join(this.logsDir, 'migrations');
+      fs.mkdirSync(migDir, { recursive: true });
+      const currentVer = this.goals.getSchemaVersion?.() ?? 0;
+      if (currentVer < 1) {
+        const plan = planMigration(this.goals.goals);
+        const dryPath = path.join(migDir, '2026-04-17-done-when-dryrun.json');
+        fs.writeFileSync(dryPath, JSON.stringify(plan, null, 2));
+        this.logger?.info?.('[closer-migration] dry-run written', {
+          path: dryPath,
+          archive: plan.archive.length,
+          retrofit: plan.retrofit.length,
+          llmRetrofit: plan.llmRetrofit.length,
+          skipped: plan.skipped.length,
+        });
+        if (process.env.HOME23_APPLY_MIGRATION === '1') {
+          try {
+            const { maybeBackup } = require('./brain-backups');
+            await maybeBackup(this.logsDir, {
+              intervalHours: 0, retention: 10, logger: this.logger, force: true,
+            });
+          } catch (err) {
+            this.logger?.warn?.('[closer-migration] backup failed, continuing', { error: err.message });
+          }
+          const receipt = await applyMigration(plan, this.goals, { llmClient: this.gpt5 });
+          const recPath = path.join(migDir, '2026-04-17-done-when-applied.json');
+          fs.writeFileSync(recPath, JSON.stringify(receipt, null, 2));
+          this.goals.setSchemaVersion?.(1);
+          this.logger?.info?.('[closer-migration] applied', {
+            path: recPath,
+            applied: receipt.applied,
+            deferred: receipt.deferred,
+          });
+        } else {
+          this.logger?.info?.('[closer-migration] dry-run only; set HOME23_APPLY_MIGRATION=1 to apply');
+        }
+      }
+    } catch (err) {
+      this.logger?.error?.('[closer-migration] failed', { error: err.message, stack: err.stack });
+    }
+
+    // Wire the doneWhen verifier environment.
+    try {
+      const path = require('path');
+      this.goals.setDoneWhenEnv({
+        memory: this.memory,
+        logger: this.logger,
+        outputsDir: path.join(this.logsDir, 'outputs'),
+        brainDir: this.logsDir,
+        llmClient: this.gpt5,
+      });
+    } catch (err) {
+      this.logger?.warn?.('[closer] setDoneWhenEnv failed', { error: err.message });
+    }
+
     // Phase A: Initialize telemetry
     await this.telemetry.initialize();
     this.telemetry.emitLifecycleEvent('initialized');
