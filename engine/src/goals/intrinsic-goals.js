@@ -1,6 +1,7 @@
 const { UnifiedClient } = require('../core/unified-client');
 const { cosmoEvents } = require('../realtime/event-emitter');
 const { validateDoneWhen } = require('./done-when-gate');
+const { checkDoneWhen } = require('./done-when');
 
 /**
  * Helper function to safely convert any date representation to epoch milliseconds
@@ -1421,6 +1422,42 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
     }
 
     return elevated;
+  }
+
+  // ── doneWhen closer primitive ──
+
+  setDoneWhenEnv(env) {
+    this.doneWhenEnv = env;
+  }
+
+  getGoal(id) {
+    return this.goals.get(id);
+  }
+
+  async refreshProgressFromDoneWhen() {
+    if (!this.doneWhenEnv) {
+      this.logger?.debug?.('[closer] no doneWhen env, skipping refresh');
+      return { refreshed: 0 };
+    }
+    let refreshed = 0;
+    for (const goal of this.goals.values()) {
+      if (goal.status === 'completed' || goal.status === 'archived') continue;
+      if (!goal.doneWhen) continue;
+      const r = await checkDoneWhen(goal, this.doneWhenEnv);
+      const prev = goal.progress;
+      goal.progress = r.total > 0 ? r.satisfied / r.total : 0;
+      if (goal.progress === 1 && goal.status !== 'completed') {
+        this.completeGoal(goal.id, 'doneWhen satisfied');
+        this._completedViaDoneWhenCount24h = (this._completedViaDoneWhenCount24h || 0) + 1;
+      }
+      refreshed++;
+      if (goal.progress !== prev) {
+        this.logger?.info?.('[closer] goal progress updated', {
+          id: goal.id, prev, next: goal.progress, satisfied: r.satisfied, total: r.total
+        });
+      }
+    }
+    return { refreshed };
   }
 
   /**

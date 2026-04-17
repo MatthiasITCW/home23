@@ -49,3 +49,46 @@ describe('addGoal gate (doneWhen required)', () => {
     expect(goal).to.equal(null);
   });
 });
+
+describe('progress computed from doneWhen', () => {
+  const path = require('path');
+  const fs = require('fs');
+  const os = require('os');
+
+  it('flips to completed when all criteria satisfied', async () => {
+    const sys = mkSystem();
+    const outputsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'closer-'));
+    sys.setDoneWhenEnv({ outputsDir, memory: { nodes: new Map() } });
+
+    const goal = sys.addGoal({
+      description: 'Write the correlation view sketch',
+      doneWhen: { version: 1, criteria: [{ type: 'file_exists', path: 'correlation.md' }] }
+    });
+    expect(goal).to.not.equal(null);
+    expect(goal.progress).to.equal(0);
+
+    fs.writeFileSync(path.join(outputsDir, 'correlation.md'), '# ok');
+    await sys.refreshProgressFromDoneWhen();
+
+    const g = sys.getGoal(goal.id);
+    expect(g.progress).to.equal(1);
+    expect(g.status).to.equal('completed');
+  });
+
+  it('latches completed — verifier does not revert after file deleted', async () => {
+    const sys = mkSystem();
+    const outputsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'closer-'));
+    sys.setDoneWhenEnv({ outputsDir, memory: { nodes: new Map() } });
+    const goal = sys.addGoal({
+      description: 'Write the correlation view sketch',
+      doneWhen: { version: 1, criteria: [{ type: 'file_exists', path: 'x.md' }] }
+    });
+    const f = path.join(outputsDir, 'x.md');
+    fs.writeFileSync(f, 'x');
+    await sys.refreshProgressFromDoneWhen();
+    expect(sys.getGoal(goal.id).status).to.equal('completed');
+    fs.unlinkSync(f);
+    await sys.refreshProgressFromDoneWhen();
+    expect(sys.getGoal(goal.id).status).to.equal('completed'); // still
+  });
+});
