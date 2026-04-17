@@ -333,6 +333,8 @@ providers:
     enabled: true
   minimax:
     enabled: true
+  xai:
+    enabled: true
   local:
     enabled: false
     defaultModel: qwen3.5:4b
