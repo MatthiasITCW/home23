@@ -7,8 +7,11 @@ function mkSystem(opts = {}) {
     debug: () => {}, info(...a) { this.infoCalls.push(a); },
     warn(...a) { this.warnCalls.push(a); }, error: () => {}
   };
+  // Disable legacy fallback by default in tests — we want strict gate
+  // semantics here. Individual tests can override via opts.doneWhenCfg.
+  const doneWhenCfg = { autoSynthesizeLegacy: false, ...(opts.doneWhenCfg || {}) };
   const config = {
-    goals: { maxGoals: 100, doneWhen: opts.doneWhenCfg || {} },
+    goals: { maxGoals: 100, doneWhen: doneWhenCfg },
     roleSystem: {}
   };
   const sys = new IntrinsicGoalSystem(config, logger);

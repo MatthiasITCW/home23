@@ -1,6 +1,6 @@
 const { UnifiedClient } = require('../core/unified-client');
 const { cosmoEvents } = require('../realtime/event-emitter');
-const { validateDoneWhen } = require('./done-when-gate');
+const { validateDoneWhen, applyLegacyFallback } = require('./done-when-gate');
 const { checkDoneWhen } = require('./done-when');
 
 /**
@@ -332,6 +332,13 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
 
     // doneWhen gate: every goal must declare a concrete termination criterion.
     const dwCfg = this.config?.doneWhen || {};
+    goalData = applyLegacyFallback(goalData, dwCfg);
+    if (goalData?._legacyDoneWhenSynthesized) {
+      this._legacyDoneWhenSynthesizedCount = (this._legacyDoneWhenSynthesizedCount || 0) + 1;
+      this.logger?.debug?.('[closer] legacy-synthesized doneWhen', {
+        description: (goalData?.description || '').slice(0, 80)
+      });
+    }
     const dwResult = validateDoneWhen(goalData?.doneWhen, dwCfg);
     if (!dwResult.valid) {
       this.logger?.warn('⚠️  Rejected goal without valid doneWhen', {

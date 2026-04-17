@@ -525,13 +525,25 @@ Create 2-4 meaningful campaigns. Skip goals that don't fit well.
     for (const group of groups) {
       if (group.goalIds.length < 2) continue;
       
-      // Create synthesis goal
+      // Create synthesis goal. doneWhen ties to an output document tying
+      // the parent goals together — the synthesis is "done" when that doc
+      // exists and a judge confirms it covers the theme.
+      const themeLabel = (group.theme || group.synthesisDescription || 'synthesis').toString();
       const synthesisGoal = {
         description: group.synthesisDescription,
         reason: `Synthesis of ${group.goalIds.length} mature goals: ${group.insights}`,
         uncertainty: 0.7,
-        source: 'goal_synthesis',
-        parentGoals: group.goalIds
+        source: { origin: 'goal_synthesis', label: 'goal_synthesis' },
+        parentGoals: group.goalIds,
+        doneWhen: {
+          version: 1,
+          criteria: [{
+            type: 'judged',
+            criterion: `An output file exists in outputs/ that synthesizes the theme "${themeLabel.slice(0, 200)}" and contains at least 3 distinct findings drawn from the parent goals.`,
+            judgeModel: 'gpt-5-mini',
+            judgedAt: null, judgedVerdict: null
+          }]
+        }
       };
       
       const newGoal = this.goals.addGoal(synthesisGoal);

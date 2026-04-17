@@ -65,4 +65,28 @@ function validateDoneWhen(dw, opts = {}) {
   return { valid: true };
 }
 
-module.exports = { validateDoneWhen, DEFAULT_VAGUENESS_CONFIG, REQUIRED_FIELDS };
+/**
+ * Legacy fallback: synthesize a minimal judged doneWhen from a goal's
+ * description so pre-closer call sites keep working while we migrate them
+ * one by one. Off switch: set goals.doneWhen.autoSynthesizeLegacy = false.
+ */
+function applyLegacyFallback(goalData, config = {}) {
+  if (!goalData || goalData.doneWhen) return goalData;
+  if (config.autoSynthesizeLegacy === false) return goalData;
+  const desc = String(goalData.description || '').slice(0, 300);
+  return {
+    ...goalData,
+    doneWhen: {
+      version: 1,
+      criteria: [{
+        type: 'judged',
+        criterion: `The goal "${desc}" is satisfied when a memory node or output file in outputs/ documents its resolution with at least one concrete finding.`,
+        judgeModel: 'gpt-5-mini',
+        judgedAt: null, judgedVerdict: null
+      }]
+    },
+    _legacyDoneWhenSynthesized: true,
+  };
+}
+
+module.exports = { validateDoneWhen, applyLegacyFallback, DEFAULT_VAGUENESS_CONFIG, REQUIRED_FIELDS };

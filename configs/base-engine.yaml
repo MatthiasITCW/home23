@@ -239,6 +239,32 @@ architecture:
       minGoalsForCampaign: 3
       campaignDuration: 30
       synthesisThreshold: 3
+    doneWhen:
+      # Closer primitive: every goal must declare a termination criterion.
+      # addGoal() gate validates presence + non-vagueness. When a caller
+      # omits doneWhen and autoSynthesizeLegacy=true, the gate synthesizes
+      # a minimal judged criterion from the description so legacy call
+      # sites continue to work. Flip to false once all call sites are
+      # updated to supply their own concrete criteria.
+      autoSynthesizeLegacy: true
+      minCriterionLength: 40
+      judgeModel: gpt-5-mini
+      judgeTTLMs: 86400000
+      vaguenessAnchors:
+        - file
+        - output
+        - memory
+        - node
+        - count
+        - exists
+        - at least
+        - contains
+        - written
+        - published
+        - produced
+        - delivered
+        - ships
+        - emits
   thermodynamic:
     surpriseEnabled: true
     freeEnergyTarget: 0.5
@@ -583,6 +609,12 @@ feeder:
       label: jerry_memory_snapshots
     - path: /Users/jtr/_JTR23_/release/home23/instances/jerry/workspace/cron
       label: jerry_cron_docs
+    - path: /Users/jtr/_JTR23_/cosmo-home_2.3/workspace/memory
+      label: legacy_cosmo23_memory
+    - path: /Users/jtr/_JTR23_/cosmo-home_2.3/workspace/memory/sessions
+      label: legacy_cosmo23_sessions
+    - path: /Users/jtr/jtrbrain-feed
+      label: legacy_jtrbrain_feed
   excludePatterns:
     - "**/node_modules/**"
     - "**/dist/**"
