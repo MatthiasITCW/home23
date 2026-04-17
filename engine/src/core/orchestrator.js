@@ -1489,6 +1489,12 @@ class Orchestrator {
       // This prevents newly discovered goals from being immediately archived
       const rotationConfig = this.config.architecture.goals.rotation;
       if (rotationConfig?.enabled && this.cycleCount % rotationConfig.checkInterval === 0) {
+        // Recompute progress from doneWhen before rotation evaluates completion.
+        try {
+          await this.goals.refreshProgressFromDoneWhen?.();
+        } catch (err) {
+          this.logger?.warn?.('[closer] refreshProgressFromDoneWhen failed', { error: err.message });
+        }
         const rotationResults = this.goals.performGoalRotation(rotationConfig);
         
         if (rotationResults.completed > 0 || rotationResults.archived > 0) {
@@ -2726,7 +2732,16 @@ class Orchestrator {
 
       const cycleDuration = Date.now() - cycleStart.getTime();
       this.logger.info(`✓ Cycle completed in ${cycleDuration}ms (GPT-5.2)`);
-      
+
+      // Closer-status snapshot — primary signal for watching the doneWhen
+      // primitive actually close goals after the 2026-04-17 migration.
+      try {
+        const closer = this.goals.getCloserStatus?.();
+        if (closer) this.logger?.info?.('[closer-status]', closer);
+      } catch (err) {
+        this.logger?.warn?.('[closer-status] failed', { error: err.message });
+      }
+
       // Phase A: Take resource snapshot
       const resourceSnapshot = this.resourceMonitor.snapshot();
       

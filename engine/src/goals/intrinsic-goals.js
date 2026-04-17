@@ -1441,6 +1441,39 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
     return this.goals.get(id);
   }
 
+  getCloserStatus() {
+    const now = Date.now();
+    const today = new Date().toISOString().slice(0, 10);
+    if (this._counterDay !== today) {
+      this._counterDay = today;
+      this._rejectedAtGateCount24h = 0;
+      this._completedViaDoneWhenCount24h = 0;
+    }
+    const JUDGE_TTL_MS = 24 * 60 * 60 * 1000;
+    let activeTotal = 0, withDoneWhen = 0, dueForJudgeRecheck = 0, stalled = 0;
+    let legacySynthesized = 0;
+    for (const g of this.goals.values()) {
+      if (g.status !== 'active' && g.status !== undefined) continue;
+      activeTotal++;
+      if (g.doneWhen?.criteria?.length) withDoneWhen++;
+      if (g._legacyDoneWhenSynthesized) legacySynthesized++;
+      for (const c of (g.doneWhen?.criteria || [])) {
+        if (c.type === 'judged' && (!c.judgedAt || (now - Number(c.judgedAt) > JUDGE_TTL_MS))) {
+          dueForJudgeRecheck++;
+          break;
+        }
+      }
+      if (g.pursuitCount >= 3 && (g.progress || 0) < 0.01) stalled++;
+    }
+    return {
+      activeTotal, withDoneWhen, dueForJudgeRecheck, stalled,
+      legacySynthesizedActive: legacySynthesized,
+      rejectedAtGateLast24h: this._rejectedAtGateCount24h || 0,
+      completedViaDoneWhenLast24h: this._completedViaDoneWhenCount24h || 0,
+      archivedViaMigration: this._archivedViaMigrationCount || 0,
+    };
+  }
+
   _applyRetrofit(goalId, doneWhen) {
     const g = this.goals.get(goalId);
     if (!g) return false;
@@ -1482,10 +1515,17 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
   archiveGoal(goalId, reason = 'archived') {
     const goal = this.goals.get(goalId);
     if (!goal) return false;
-    
+
     goal.status = 'archived';  // Mark as archived
     goal.archivedAt = Date.now();
     goal.archiveReason = reason;
+
+    // Migration-driven archives feed the closer-status counter.
+    if (typeof reason === 'string' &&
+        (reason.startsWith('audit-tumor-purge-') ||
+         reason.startsWith('no-concrete-done-when'))) {
+      this._archivedViaMigrationCount = (this._archivedViaMigrationCount || 0) + 1;
+    }
 
     this.releaseGoalClaim(goal);
     
