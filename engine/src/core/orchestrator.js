@@ -2781,6 +2781,13 @@ class Orchestrator {
       // Closer-status snapshot — primary signal for watching the doneWhen
       // primitive actually close goals after the 2026-04-17 migration.
       try {
+        // Sync dedup counter from AgentExecutor into the goal system so
+        // getCloserStatus() returns a single consolidated snapshot.
+        if (typeof this.goals.setAgentSpawnsDedupedCount === 'function') {
+          this.goals.setAgentSpawnsDedupedCount(
+            this.agentExecutor?._agentSpawnsDedupedCount24h || 0
+          );
+        }
         const closer = this.goals.getCloserStatus?.();
         if (closer) this.logger?.info?.('[closer-status]', closer);
       } catch (err) {

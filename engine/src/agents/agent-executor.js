@@ -155,6 +155,43 @@ class AgentExecutor {
       return null;
     }
 
+    // Dedup-before-spawn: if the memory graph already holds an answer-
+    // tagged node with high similarity to this mission, skip the spawn.
+    // Jerry rediscovered the same conclusion 8–16 times pre-2026-04-17
+    // closer primitive; this guard prevents the regression.
+    if (!isStrategic && process.env.HOME23_DEDUP_DISABLE !== '1') {
+      try {
+        const { checkDedup } = require('./dedup-before-spawn');
+        const threshold = Number(process.env.HOME23_DEDUP_THRESHOLD) || undefined;
+        const r = await checkDedup(missionSpec, this.memory, { threshold, logger: this.logger });
+        if (r.duplicate) {
+          this.logger.info('🪞 Dedup-before-spawn: skipping — answer already in memory', {
+            goalId: missionSpec.goalId,
+            matchId: r.match.id,
+            similarity: Number(r.match.similarity).toFixed(3),
+            tag: r.match.tag,
+            conceptPreview: r.match.concept,
+          });
+          this._agentSpawnsDedupedCount24h = (this._agentSpawnsDedupedCount24h || 0) + 1;
+          // Attach dedup breadcrumb to the goal for auditability.
+          try {
+            const goal = missionSpec.goalId && this.goals?.getGoal?.(missionSpec.goalId);
+            if (goal) {
+              goal.dedupedTo = {
+                memoryId: r.match.id,
+                similarity: r.match.similarity,
+                tag: r.match.tag,
+                at: Date.now(),
+              };
+            }
+          } catch { /* best-effort — never block on breadcrumb write */ }
+          return null;
+        }
+      } catch (err) {
+        this.logger.warn?.('[dedup] pre-spawn check failed (non-fatal)', { error: err.message });
+      }
+    }
+
     // Get agent class for this type
     const AgentClass = this.agentTypes.get(missionSpec.agentType);
     if (!AgentClass) {

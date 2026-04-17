@@ -1471,7 +1471,16 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
       rejectedAtGateLast24h: this._rejectedAtGateCount24h || 0,
       completedViaDoneWhenLast24h: this._completedViaDoneWhenCount24h || 0,
       archivedViaMigration: this._archivedViaMigrationCount || 0,
+      // Dedup-before-spawn counter lives on the AgentExecutor; the
+      // orchestrator sums it into closer-status via setAgentExecutor().
+      agentSpawnsDedupedLast24h: this._agentSpawnsDedupedCount24h || 0,
     };
+  }
+
+  // Called by the orchestrator each cycle to ferry the AgentExecutor's
+  // dedup counter into closer-status — avoids cross-module coupling.
+  setAgentSpawnsDedupedCount(n) {
+    this._agentSpawnsDedupedCount24h = Number(n) || 0;
   }
 
   _applyRetrofit(goalId, doneWhen) {
