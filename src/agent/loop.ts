@@ -331,6 +331,9 @@ export class AgentLoop {
   /** Expose memory for CompactionManager wiring */
   getMemory(): MemoryManager { return this.memory; }
 
+  /** Expose history for cron sessionHistory='fresh' rotation */
+  getHistory(): ConversationHistory { return this.history; }
+
   private providerMap: Map<string, { apiKey: string; baseURL?: string }> = new Map();
 
   /** Give AgentLoop the knowledge it needs to rebuild its HTTP client when switching

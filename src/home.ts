@@ -590,6 +590,9 @@ async function main(): Promise<void> {
           });
 
           try {
+            if (job.payload.sessionHistory === 'fresh') {
+              agent.getHistory().rotate(cronChatId);
+            }
             const agentPromise = agent.run(cronChatId, resolvedMessage);
             const result = await Promise.race([agentPromise, timeoutPromise]);
             clearTimeout(timeoutId!);

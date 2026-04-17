@@ -5,7 +5,7 @@
  * Handles context window truncation with atomic tool-pair handling.
  */
 
-import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Anthropic message types (simplified for storage)
@@ -27,7 +27,26 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
+  | { type: 'thinking'; thinking: string; signature?: string }
+  | { type: 'redacted_thinking'; data: string };
+
+// Thinking blocks are intra-turn only: their signatures are valid for the
+// current tool-use loop but become invalid across separate turns (and across
+// providers — MiniMax and Anthropic use different signature formats). Strip
+// them when persisting and when loading so history replay is always safe.
+function stripThinking(msg: StoredMessage): StoredMessage {
+  if (!Array.isArray(msg.content)) return msg;
+  const filtered = msg.content.filter(
+    b => b.type !== 'thinking' && b.type !== 'redacted_thinking',
+  );
+  if (filtered.length === msg.content.length) return msg;
+  // If stripping left nothing (e.g., thinking-only assistant message with no
+  // text or tool_use), keep a text placeholder so the API doesn't reject an
+  // empty content array.
+  const content = filtered.length > 0 ? filtered : [{ type: 'text' as const, text: '' }];
+  return { ...msg, content };
+}
 
 export class ConversationHistory {
   private dir: string;
@@ -62,7 +81,11 @@ export class ConversationHistory {
               ((rec as { type: string }).type === 'turn' || (rec as { type: string }).type === 'event')) {
             continue;
           }
-          records.push(rec);
+          if (rec && typeof rec === 'object' && !('type' in rec && (rec as { type: string }).type === 'session_boundary')) {
+            records.push(stripThinking(rec as StoredMessage));
+          } else {
+            records.push(rec);
+          }
         } catch {
           badLines++;
         }
@@ -96,7 +119,10 @@ export class ConversationHistory {
           return b;
         });
       }
-      return withTs;
+      // Strip thinking blocks — they're intra-turn only; storing them leads
+      // to "Invalid signature in thinking block" on replay when the signature
+      // format no longer matches the current provider (e.g., MiniMax → Anthropic).
+      return stripThinking(withTs);
     });
     const lines = timestamped.map(r => JSON.stringify(r)).join('\n') + '\n';
     appendFileSync(filePath, lines);
@@ -231,6 +257,21 @@ export class ConversationHistory {
     const filePath = this.filePath(chatId);
     const content = records.map(r => JSON.stringify(r)).join('\n') + '\n';
     writeFileSync(filePath, content);
+  }
+
+  /** Move history aside so the next load() returns empty. Used by cron jobs with sessionHistory="fresh". */
+  rotate(chatId: string): void {
+    const filePath = this.filePath(chatId);
+    if (!existsSync(filePath)) return;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const archivePath = filePath.replace(/\.jsonl$/, `.${ts}.jsonl`);
+    try {
+      renameSync(filePath, archivePath);
+      console.log(`[history] Rotated ${filePath} → ${archivePath}`);
+    } catch {
+      // Best-effort; if rename fails, leave in place — next run will still see old history
+      console.warn(`[history] Failed to rotate ${filePath}`);
+    }
   }
 
   private filePath(chatId: string): string {
