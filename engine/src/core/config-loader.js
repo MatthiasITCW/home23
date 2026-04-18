@@ -166,6 +166,61 @@ class ConfigLoader {
   }
 
   /**
+   * Apply per-agent feeder overrides on top of the shared base-engine.yaml
+   * feeder block. This lets each Home23 agent own its own watch paths and
+   * ingestion tuning without copying the full engine config.
+   */
+  applyInstanceFeederOverrides(instanceConfig) {
+    const feederOverrides = instanceConfig && instanceConfig.feeder;
+    if (!feederOverrides || typeof feederOverrides !== 'object') return;
+
+    const baseFeeder = this.config.feeder && typeof this.config.feeder === 'object'
+      ? this.config.feeder
+      : {};
+
+    const merged = {
+      ...baseFeeder,
+      ...feederOverrides,
+      chunking: {
+        ...(baseFeeder.chunking || {}),
+        ...(feederOverrides.chunking || {}),
+      },
+      flush: {
+        ...(baseFeeder.flush || {}),
+        ...(feederOverrides.flush || {}),
+      },
+      compiler: {
+        ...(baseFeeder.compiler || {}),
+        ...(feederOverrides.compiler || {}),
+      },
+      converter: {
+        ...(baseFeeder.converter || {}),
+        ...(feederOverrides.converter || {}),
+      },
+    };
+
+    if (Array.isArray(feederOverrides.additionalWatchPaths)) {
+      merged.additionalWatchPaths = feederOverrides.additionalWatchPaths;
+    }
+    if (Array.isArray(feederOverrides.excludePatterns)) {
+      merged.excludePatterns = feederOverrides.excludePatterns;
+    }
+
+    this.config.feeder = merged;
+
+    const applied = ['feeder'];
+    if (Array.isArray(feederOverrides.additionalWatchPaths)) applied.push('feeder.additionalWatchPaths');
+    if (Array.isArray(feederOverrides.excludePatterns)) applied.push('feeder.excludePatterns');
+    if (feederOverrides.chunking && typeof feederOverrides.chunking === 'object') applied.push('feeder.chunking');
+    if (feederOverrides.flush && typeof feederOverrides.flush === 'object') applied.push('feeder.flush');
+    if (feederOverrides.compiler && typeof feederOverrides.compiler === 'object') applied.push('feeder.compiler');
+    if (feederOverrides.converter && typeof feederOverrides.converter === 'object') applied.push('feeder.converter');
+
+    const prior = this.config._instanceFeederOverridesApplied || [];
+    this.config._instanceFeederOverridesApplied = prior.concat(applied);
+  }
+
+  /**
    * Load configuration from YAML file
    */
   load() {
@@ -184,6 +239,7 @@ class ConfigLoader {
           // Per-slot overrides run AFTER the blunt `engine.thought` shortcut so
           // specific assignments win over the sweep.
           this.applyInstanceModelAssignments(instanceConfig);
+          this.applyInstanceFeederOverrides(instanceConfig);
         } catch (_instanceErr) {
           // Instance config is best-effort — a malformed file should not break startup.
         }
@@ -259,4 +315,3 @@ class ConfigLoader {
 }
 
 module.exports = { ConfigLoader };
-

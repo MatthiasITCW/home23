@@ -200,6 +200,7 @@ function createSettingsRouter(home23Root) {
         { method: 'POST', path: '/agents/:name/primary' },
         { method: 'DELETE', path: '/agents/:name' },
         { method: 'POST', path: '/agents/:name/start' },
+        { method: 'POST', path: '/agents/:name/restart-engine' },
         { method: 'POST', path: '/agents/:name/restart-harness' },
         { method: 'POST', path: '/agents/:name/stop' },
       ],
@@ -229,10 +230,10 @@ function createSettingsRouter(home23Root) {
       ],
     },
     feeder: {
-      kind: 'global',
-      chip: 'Global',
-      agentTarget: 'none',
-      summaryTemplate: 'Document Feeder is house-wide. Watch paths, compiler settings, and uploads affect the shared Home23 ingestion pipeline.',
+      kind: 'agent',
+      chip: 'Agent',
+      agentTarget: 'selected',
+      summaryTemplate: "Document Feeder belongs to {{selectedAgent}}. Watch paths, live status, uploads, and restarts target that agent's ingestion pipeline.",
       routes: [
         { method: 'GET', path: '/feeder' },
         { method: 'PUT', path: '/feeder' },
@@ -900,6 +901,21 @@ function createSettingsRouter(home23Root) {
       const names = [`home23-${agentName}`, `home23-${agentName}-dash`, `home23-${agentName}-feeder`, `home23-${agentName}-harness`];
       execSync(`pm2 start ${ecosystemPath} --only ${names.join(',')}`, { cwd: home23Root, stdio: 'pipe', timeout: 30000 });
       res.json({ ok: true, status: 'running' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/agents/:name/restart-engine', (req, res) => {
+    const agentName = req.params.name;
+    const configPath = path.join(home23Root, 'instances', agentName, 'config.yaml');
+    if (!fs.existsSync(configPath)) {
+      return res.status(404).json({ error: `Agent "${agentName}" not found` });
+    }
+
+    try {
+      const restarted = recycleManagedProcess(`home23-${agentName}`);
+      res.json({ ok: true, restarted: restarted ? `home23-${agentName}` : null });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1772,9 +1788,10 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
   });
 
   // ── Feeder configuration (STEP 17) ──
-  // The feeder config lives in configs/base-engine.yaml under the `feeder:` block.
-  // It's shared across all home23 agents on this host. Some fields hot-apply via
-  // the engine's /admin/feeder/* routes; others require an engine restart.
+  // Base defaults live in configs/base-engine.yaml under the `feeder:` block,
+  // while per-agent overrides live in instances/<agent>/config.yaml:feeder.
+  // Some fields hot-apply via the engine's /admin/feeder/* routes; others
+  // require that specific agent's engine to restart.
 
   const BASE_ENGINE_PATH = path.join(home23Root, 'configs', 'base-engine.yaml');
 
@@ -1788,57 +1805,72 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
     converter: { enabled: true, visionModel: 'gpt-4o-mini', pythonPath: 'python3' },
   };
 
-  function mergeFeederConfig(stored) {
-    const s = stored || {};
+  function mergeFeederConfig(baseStored, overrideStored = null) {
+    const s = baseStored || {};
+    const o = overrideStored && typeof overrideStored === 'object' ? overrideStored : {};
     return {
-      enabled: s.enabled !== false,
-      additionalWatchPaths: Array.isArray(s.additionalWatchPaths) ? s.additionalWatchPaths : [],
-      excludePatterns: Array.isArray(s.excludePatterns) ? s.excludePatterns : [],
+      enabled: o.enabled !== undefined ? o.enabled !== false : s.enabled !== false,
+      additionalWatchPaths: Array.isArray(o.additionalWatchPaths)
+        ? o.additionalWatchPaths
+        : (Array.isArray(s.additionalWatchPaths) ? s.additionalWatchPaths : []),
+      excludePatterns: Array.isArray(o.excludePatterns)
+        ? o.excludePatterns
+        : (Array.isArray(s.excludePatterns) ? s.excludePatterns : []),
       chunking: {
-        maxChunkSize: s.chunking?.maxChunkSize ?? FEEDER_DEFAULTS.chunking.maxChunkSize,
-        overlap: s.chunking?.overlap ?? FEEDER_DEFAULTS.chunking.overlap,
+        maxChunkSize: o.chunking?.maxChunkSize ?? s.chunking?.maxChunkSize ?? FEEDER_DEFAULTS.chunking.maxChunkSize,
+        overlap: o.chunking?.overlap ?? s.chunking?.overlap ?? FEEDER_DEFAULTS.chunking.overlap,
       },
       flush: {
-        batchSize: s.flush?.batchSize ?? FEEDER_DEFAULTS.flush.batchSize,
-        intervalSeconds: s.flush?.intervalSeconds ?? FEEDER_DEFAULTS.flush.intervalSeconds,
+        batchSize: o.flush?.batchSize ?? s.flush?.batchSize ?? FEEDER_DEFAULTS.flush.batchSize,
+        intervalSeconds: o.flush?.intervalSeconds ?? s.flush?.intervalSeconds ?? FEEDER_DEFAULTS.flush.intervalSeconds,
       },
       compiler: {
-        enabled: s.compiler?.enabled !== false,
-        model: s.compiler?.model || FEEDER_DEFAULTS.compiler.model,
+        enabled: o.compiler?.enabled !== undefined ? o.compiler.enabled !== false : s.compiler?.enabled !== false,
+        model: o.compiler?.model || s.compiler?.model || FEEDER_DEFAULTS.compiler.model,
       },
       converter: {
-        enabled: s.converter?.enabled !== false,
-        visionModel: s.converter?.visionModel || FEEDER_DEFAULTS.converter.visionModel,
-        pythonPath: s.converter?.pythonPath || FEEDER_DEFAULTS.converter.pythonPath,
+        enabled: o.converter?.enabled !== undefined ? o.converter.enabled !== false : s.converter?.enabled !== false,
+        visionModel: o.converter?.visionModel || s.converter?.visionModel || FEEDER_DEFAULTS.converter.visionModel,
+        pythonPath: o.converter?.pythonPath || s.converter?.pythonPath || FEEDER_DEFAULTS.converter.pythonPath,
       },
     };
   }
 
   router.get('/feeder', (req, res) => {
+    const targetAgent = resolveRequestedAgent(req.query.agent);
+    if (!targetAgent) {
+      return res.status(400).json({ ok: false, error: 'No target agent selected' });
+    }
     const baseEngine = loadYaml(BASE_ENGINE_PATH);
-    const feeder = mergeFeederConfig(baseEngine.feeder || {});
+    const agentConfigPath = path.join(home23Root, 'instances', targetAgent, 'config.yaml');
+    const agentConfig = loadYaml(agentConfigPath);
+    const feeder = mergeFeederConfig(baseEngine.feeder || {}, agentConfig.feeder || {});
     // Also surface the auto-added watch paths that the orchestrator wires on startup
     const autoWatchPaths = [];
-    if (process.env.COSMO_RUNTIME_DIR) {
+    const targetRuntimeDir = path.join(home23Root, 'instances', targetAgent, 'brain');
+    const targetWorkspacePath = path.join(home23Root, 'instances', targetAgent, 'workspace');
+    if (targetRuntimeDir) {
       autoWatchPaths.push({
-        path: path.join(process.env.COSMO_RUNTIME_DIR, 'ingestion', 'documents'),
+        path: path.join(targetRuntimeDir, 'ingestion', 'documents'),
         label: 'dropzone (auto)',
         source: 'orchestrator:ingestion-directory',
         readOnly: true,
       });
     }
-    if (process.env.COSMO_WORKSPACE_PATH) {
+    if (targetWorkspacePath) {
       autoWatchPaths.push({
-        path: process.env.COSMO_WORKSPACE_PATH,
+        path: targetWorkspacePath,
         label: 'workspace (auto)',
         source: 'orchestrator:COSMO_WORKSPACE_PATH',
         readOnly: true,
       });
     }
     res.json({
+      agent: targetAgent,
       feeder,
       autoWatchPaths,
-      configPath: BASE_ENGINE_PATH,
+      configPath: agentConfigPath,
+      inheritedFrom: BASE_ENGINE_PATH,
     });
   });
 
@@ -1848,9 +1880,16 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
       return res.status(400).json({ ok: false, error: 'feeder object required' });
     }
 
+    const targetAgent = resolveRequestedAgent(req.query.agent || req.body?.agent);
+    if (!targetAgent) {
+      return res.status(400).json({ ok: false, error: 'No target agent selected' });
+    }
+
     const baseEngine = loadYaml(BASE_ENGINE_PATH);
-    const current = mergeFeederConfig(baseEngine.feeder || {});
-    const incoming = mergeFeederConfig(input);
+    const agentConfigPath = path.join(home23Root, 'instances', targetAgent, 'config.yaml');
+    const agentConfig = loadYaml(agentConfigPath);
+    const current = mergeFeederConfig(baseEngine.feeder || {}, agentConfig.feeder || {});
+    const incoming = mergeFeederConfig(baseEngine.feeder || {}, input);
 
     // Classify changes as hot-apply vs restart-required
     const applied = [];
@@ -1875,9 +1914,9 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
     if (current.converter.pythonPath !== incoming.converter.pythonPath) requiresRestart.push('converter.pythonPath');
     if (JSON.stringify(current.excludePatterns) !== JSON.stringify(incoming.excludePatterns)) requiresRestart.push('excludePatterns');
 
-    // Write to base-engine.yaml
-    baseEngine.feeder = {
-      ...(baseEngine.feeder || {}),
+    // Persist to the selected agent's config.yaml. Shared base-engine.yaml stays
+    // as the default fallback for agents without explicit overrides.
+    agentConfig.feeder = {
       enabled: incoming.enabled,
       additionalWatchPaths: incoming.additionalWatchPaths,
       excludePatterns: incoming.excludePatterns,
@@ -1886,9 +1925,9 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
       compiler: incoming.compiler,
       converter: incoming.converter,
     };
-    saveYaml(BASE_ENGINE_PATH, baseEngine);
+    saveYaml(agentConfigPath, agentConfig);
 
-    res.json({ ok: true, applied, requiresRestart });
+    res.json({ ok: true, agent: targetAgent, applied, requiresRestart });
   });
 
   // ─── Vibe (dashboard) ───────────────────────────────────────────────────────

@@ -151,6 +151,19 @@ export async function runAgentCreate(home23Root, name) {
       dreaming: 'minimax-m2.7',
       query: 'minimax-m2.7',
     },
+    // Per-agent feeder override. Empty additionalWatchPaths keeps this agent
+    // isolated from sibling agents — it only ingests its own workspace +
+    // dropzone (wired by the orchestrator). Add paths via the Settings →
+    // Feeder tab, which writes to this same block.
+    feeder: {
+      additionalWatchPaths: [],
+      excludePatterns: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/.git/**',
+        '**/.DS_Store',
+      ],
+    },
     channels: {
       telegram: {
         enabled: !!botToken,
