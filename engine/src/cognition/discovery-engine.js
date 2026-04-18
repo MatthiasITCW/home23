@@ -123,13 +123,20 @@ class DiscoveryEngine {
   async _runProbe() {
     const start = Date.now();
     try {
+      // Per-signal cap prevents one probe from dominating the queue.
+      // Without this, a noisy signal (e.g., novelty with 3k+ fresh nodes)
+      // crowds everything else out, or a cheap-but-overfiring signal
+      // (drift on uniformly sparse real graphs) claims every heartbeat.
+      const SIGNAL_CAP = this.config.perSignalCap || 8;
+      const cap = (arr) => arr.sort((a, b) => b.score - a.score).slice(0, SIGNAL_CAP);
+
       const all = [
-        ...this._probeAnomaly(),
-        ...this._probeNovelty(),
-        ...this._probeOrphan(),
-        ...this._probeDrift(),
-        ...this._probeStagnation(),
-        ...this._probeSalience(),
+        ...cap(this._probeAnomaly()),
+        ...cap(this._probeNovelty()),
+        ...cap(this._probeOrphan()),
+        ...cap(this._probeDrift()),
+        ...cap(this._probeStagnation()),
+        ...cap(this._probeSalience()),
       ];
 
       for (const cand of all) {
@@ -145,6 +152,20 @@ class DiscoveryEngine {
     } catch (err) {
       this._onProbeError(err);
     }
+  }
+
+  // ─── Shared helper: drop stale node IDs ─────────────────────────────
+
+  _liveIds(nodeSet) {
+    // Cluster memberships can reference nodes that have since been pruned
+    // (high-water 33,968 → now 27,911 ≈ 6k pruned). Handing phantom IDs
+    // to deep-dive causes empty-neighborhood thoughts about graph weirdness.
+    // Filter at emission time.
+    const live = [];
+    for (const id of nodeSet) {
+      if (this.memory.nodes.has(id)) live.push(id);
+    }
+    return live;
   }
 
   _onProbeError(err) {
@@ -196,12 +217,14 @@ class DiscoveryEngine {
     for (const [clusterId, nodeSet] of clusters.entries()) {
       const size = nodeSet.size || 0;
       if (size > upper || size < lower) {
+        const liveIds = this._liveIds(nodeSet);
+        if (liveIds.length === 0) continue;   // all stale — skip phantom candidate
         const deviation = Math.abs(size - mean) / Math.max(mean, 1);
         out.push(this._makeCandidate({
           key: `anomaly:${clusterId}`,
           signal: 'anomaly',
           clusterId,
-          nodeIds: Array.from(nodeSet).slice(0, 10),
+          nodeIds: liveIds.slice(0, 10),
           importance: Math.min(1, deviation / 3), // deviation of 3× or more = max importance
           rationale: `cluster ${clusterId} size=${size} vs mean=${mean.toFixed(1)} (deviation ${deviation.toFixed(2)}×)`,
         }));
@@ -281,44 +304,19 @@ class DiscoveryEngine {
   }
 
   _probeDrift() {
-    // v1 heuristic: new clusters with thin internal edge density.
-    // A new cluster with few internal edges relative to its size suggests
-    // thoughts diverging from established structure.
-    const now = Date.now();
-    const maxAge = this.config.drift.clusterAgeMaxMs;
-    const maxDensity = this.config.drift.maxInternalEdgeDensity;
-
-    const out = [];
-    for (const [clusterId, nodeSet] of this.memory.clusters.entries()) {
-      if (nodeSet.size < 3) continue; // too small to judge density
-
-      // Cluster age ≈ max(node.created) in the cluster. Cheap approximation.
-      let newest = 0;
-      for (const nodeId of nodeSet) {
-        const node = this.memory.nodes.get(nodeId);
-        const created = node?.created ? new Date(node.created).getTime() : 0;
-        if (created > newest) newest = created;
-      }
-      if (!newest || (now - newest) > maxAge) continue;
-
-      // Internal edge density = internal edges / max possible (n*(n-1)/2)
-      const internalEdges = this._countInternalEdges(nodeSet);
-      const maxPossible = (nodeSet.size * (nodeSet.size - 1)) / 2;
-      const density = maxPossible > 0 ? internalEdges / maxPossible : 0;
-      if (density > maxDensity) continue;
-
-      const importance = Math.min(1, 0.5 + (maxDensity - density) * 5);
-      out.push(this._makeCandidate({
-        key: `drift:${clusterId}`,
-        signal: 'drift',
-        clusterId,
-        nodeIds: Array.from(nodeSet).slice(0, 10),
-        importance,
-        rationale: `cluster ${clusterId} newest node ${humanAge(now - newest)} ago, internal density ${density.toFixed(3)} (thin structure)`,
-      }));
-    }
-    this.stats.candidatesByeSignal.drift = out.length;
-    return out;
+    // DISABLED for real brain graphs pending temporal-baseline support.
+    //
+    // The v1 heuristic — "cluster with low internal edge density = drifting" —
+    // was tuned against synthetic test graphs. Real brain graphs are uniformly
+    // sparse (27k nodes / 17k edges / 5 clusters ≈ density 0.0002 everywhere),
+    // so every cluster looked "thin" and drift claimed every heartbeat. The
+    // signal needs a temporal baseline (density change over time, or growth-
+    // without-new-edges detection) — neither of which exists yet.
+    //
+    // Re-enable when the engine records per-cluster density snapshots so we
+    // can compare current to prior and emit genuine drift signal.
+    this.stats.candidatesByeSignal.drift = 0;
+    return [];
   }
 
   _probeStagnation() {
@@ -364,14 +362,17 @@ class DiscoveryEngine {
       const newEdges = newEdgeCountByCluster.get(clusterId) || 0;
       if (newEdges > this.config.stagnation.maxNewEdgesAllowed) continue;
 
+      const nodeSet = this.memory.clusters.get(clusterId);
+      const liveIds = nodeSet ? this._liveIds(nodeSet) : [];
+      if (liveIds.length === 0) continue; // all stale — skip phantom
+
       const ratio = touchCount / Math.max(1, newEdges + 1); // higher = worse
       const importance = Math.min(1, 0.4 + ratio / 20);
-      const nodeSet = this.memory.clusters.get(clusterId);
       out.push(this._makeCandidate({
         key: `stagnation:${clusterId}`,
         signal: 'stagnation',
         clusterId,
-        nodeIds: nodeSet ? Array.from(nodeSet).slice(0, 10) : [],
+        nodeIds: liveIds.slice(0, 10),
         importance,
         rationale: `cluster ${clusterId} touched ${touchCount}× in last ${window.length} thoughts, only ${newEdges} new edges — stagnating`,
       }));
@@ -399,13 +400,17 @@ class DiscoveryEngine {
 
     const out = [];
     for (const hit of tops) {
+      // Filter stale IDs — salience scorer reads cluster membership which
+      // may reference pruned nodes.
+      const liveIds = (hit.nodeIds || []).filter(id => this.memory.nodes.has(id));
+      if (liveIds.length === 0) continue;
       out.push(this._makeCandidate({
         key: `salience:${hit.clusterId}`,
         signal: 'salience',
         clusterId: hit.clusterId,
-        nodeIds: hit.nodeIds || [],
+        nodeIds: liveIds,
         // Salience score is already [0,1]-ish via Jaccard. Scale slightly
-        // so strong matches compete with novelty/drift at the top of the queue.
+        // so strong matches compete with novelty at the top of the queue.
         importance: Math.min(1, 0.4 + hit.score * 3),
         rationale: hit.rationale || `conversation-salience for cluster ${hit.clusterId}`,
       }));
