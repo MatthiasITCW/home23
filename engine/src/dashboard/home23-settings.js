@@ -520,21 +520,36 @@ function toggleAgentDetail(name) {
   }
 }
 
+function setAgentButtonPending(name, label) {
+  const btn = document.querySelector(`button[onclick*="stopAgent('${name}')"], button[onclick*="startAgent('${name}')"]`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = label;
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'wait';
+  }
+}
+
 async function startAgent(name) {
+  setAgentButtonPending(name, 'Starting…');
   try {
     await fetch(`${API}/agents/${name}/start`, { method: 'POST' });
     loadAgents();
   } catch (err) {
     alert('Failed to start: ' + err.message);
+    loadAgents();
   }
 }
 
 async function stopAgent(name) {
+  setAgentButtonPending(name, 'Stopping…');
   try {
     await fetch(`${API}/agents/${name}/stop`, { method: 'POST' });
     loadAgents();
   } catch (err) {
-    alert('Failed to stop: ' + err.message);
+    // Stopping the agent whose dashboard is serving this request kills the
+    // connection before the response arrives — that's expected, not a failure.
+    loadAgents();
   }
 }
 

@@ -939,10 +939,13 @@ function createSettingsRouter(home23Root) {
     const agentName = req.params.name;
     try {
       const { execSync } = require('child_process');
+      // Batch all four processes into one pm2 stop call — pm2 stops them in
+      // parallel internally, so the engine's ~1.6s kill_timeout is paid once,
+      // not four times in series. Sequential stops used to take 6-12s.
       const names = [`home23-${agentName}`, `home23-${agentName}-dash`, `home23-${agentName}-feeder`, `home23-${agentName}-harness`];
-      for (const n of names) {
-        try { execSync(`pm2 stop ${n}`, { stdio: 'pipe' }); } catch { /* not running */ }
-      }
+      try {
+        execSync(`pm2 stop ${names.join(' ')}`, { stdio: 'pipe', timeout: 15000 });
+      } catch { /* some processes may not be online — pm2 non-zero is fine */ }
       res.json({ ok: true, status: 'stopped' });
     } catch (err) {
       res.status(500).json({ error: err.message });
