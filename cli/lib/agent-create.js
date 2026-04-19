@@ -151,17 +151,26 @@ export async function runAgentCreate(home23Root, name) {
       dreaming: 'minimax-m2.7',
       query: 'minimax-m2.7',
     },
-    // Per-agent feeder override. Empty additionalWatchPaths keeps this agent
-    // isolated from sibling agents — it only ingests its own workspace +
-    // dropzone (wired by the orchestrator). Add paths via the Settings →
-    // Feeder tab, which writes to this same block.
+    // Per-agent feeder override. Default watch paths cover the standard
+    // workspace subdirs where session transcripts, memory snapshots,
+    // projects, reports, and research runs land — so everything the agent
+    // writes to its own workspace flows back into its brain. Additional
+    // user-defined paths can be added via the Settings → Feeder tab.
     feeder: {
-      additionalWatchPaths: [],
+      additionalWatchPaths: [
+        { path: `${instanceDir}/workspace/sessions`, label: 'conversation_sessions' },
+        { path: `${instanceDir}/workspace/memory`, label: 'memory_snapshots' },
+        { path: `${instanceDir}/workspace/projects`, label: 'projects' },
+        { path: `${instanceDir}/workspace/reports`, label: 'reports' },
+        { path: `${instanceDir}/workspace/research-runs`, label: 'research_runs' },
+      ],
       excludePatterns: [
         '**/node_modules/**',
         '**/dist/**',
         '**/.git/**',
         '**/.DS_Store',
+        '**/research-runs/*/brain/**',
+        '**/research-runs/*/*.jsonl',
       ],
     },
     channels: {
