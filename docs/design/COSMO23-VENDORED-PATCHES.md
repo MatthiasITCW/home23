@@ -354,6 +354,67 @@ real run dirs, so no entries were being filtered anyway.
 
 ---
 
+---
+
+## Patch 7: `runRoot` + ownership on research-run launch
+
+**Files touched:**
+- `cosmo23/launcher/run-manager.js` — `createRun(runName, options = {})` accepts
+  `options.runPath`, `options.owner`, `options.topic`
+- `cosmo23/server/index.js` (`ensureLocalBrainForLaunch`) — forwards
+  `payload.runRoot`, `payload.owner` / `payload.agentName`, `payload.topic`
+  into `createRun` options
+
+**Problem:** `research_launch` creates runs at `cosmo23/runs/<runName>/`. From
+the launching agent's perspective they vanish — agent workspace never sees
+them, the feeder never ingests them, and when jtr reorganizes brains later
+everything inside `cosmo23/` gets left behind. The compiled-brain workaround
+(`research_compile_brain`) is manual and lossy.
+
+**Fix:** when a Home23 agent launches a run, it supplies `runRoot` pointing
+inside its own workspace (`instances/<agent>/workspace/research-runs/<runName>/`).
+cosmo23 creates the run there instead of the default location, then symlinks
+`cosmo23/runs/<runName>` → `runRoot` so existing cosmo23 consumers continue to
+resolve by the legacy path. Each run also writes `run.json` with
+`{ owner, createdAt, topic, runName }` so later tools (and the relocation
+script) know who owns it.
+
+```js
+// HOME23 PATCH
+async createRun(runName, options = {}) {
+  const defaultPath = path.join(this.runsDir, runName);
+  const runPath = options.runPath || defaultPath;
+  const needsSymlink = !!options.runPath &&
+    path.resolve(options.runPath) !== path.resolve(defaultPath);
+  // ... mkdir at runPath ...
+  if (needsSymlink) {
+    try {
+      await fs.mkdir(this.runsDir, { recursive: true });
+      try { await fs.unlink(defaultPath); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      await fs.symlink(runPath, defaultPath, 'dir');
+    } catch (err) {
+      // symlink is non-fatal — run still exists at runPath
+    }
+  }
+  // ... write run.json with options.owner / options.topic ...
+}
+```
+
+**Effect under Home23:** research runs live inside the launching agent's
+workspace; feeder ingests markdown output naturally; symlink keeps cosmo23's
+CLI/dashboard working; `run.json` carries ownership for downstream tooling.
+
+**Effect under standalone COSMO:** unchanged — callers that don't pass
+`runRoot` get the legacy `cosmo23/runs/<runName>/` layout exactly as before.
+The only visible difference is a new `run.json` file in each run dir, with
+`owner: null` and `topic: null` by default.
+
+**Test coverage:** `cosmo23/launcher/run-manager.test.js` — three cases:
+override path + symlink + ownership record; legacy behavior preserved;
+pre-existing runPath collision refusal.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -368,3 +429,7 @@ real run dirs, so no entries were being filtered anyway.
   to parity with evobrew (all agent + external roots). Without the filter,
   each agent root surfaced sibling dirs (workspace, conversations, logs) as
   empty brains.
+- **2026-04-19** — Patch 7 added to relocate research runs into the launching
+  agent's workspace so the feeder ingests output naturally. Adds optional
+  `runRoot` payload field + non-fatal symlink at legacy path + `run.json`
+  ownership record.

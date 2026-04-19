@@ -109,6 +109,9 @@ class RunManager {
   /**
    * Create a new run.
    *
+   * HOME23 PATCH 7 — accepts optional runPath override + writes run.json
+   * ownership record. See docs/design/COSMO23-VENDORED-PATCHES.md.
+   *
    * @param {string} runName
    * @param {object} [options]
    * @param {string} [options.runPath] - Override run dir location (used when

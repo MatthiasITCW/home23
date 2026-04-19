@@ -613,13 +613,15 @@ async function ensureLocalBrainForLaunch(payload) {
     return selected;
   }
 
-  // Honor caller-supplied runName when present (harness-driven Home23 launches);
-  // otherwise derive from topic. Collision check still runs against LOCAL_RUNS_PATH.
+  // HOME23 PATCH 7 — honor caller-supplied runName when present (harness-driven
+  // Home23 launches); otherwise derive from topic. Collision check still runs
+  // against LOCAL_RUNS_PATH.
   const baseName = sanitizeRunName(payload.runName || payload.topic || 'cosmo');
   const runName = await ensureUniqueRunName(baseName, LOCAL_RUNS_PATH);
 
-  // Home23 agents supply runRoot to relocate the run dir into their workspace.
-  // Without runRoot, legacy cosmo23 behavior (dir at LOCAL_RUNS_PATH/<runName>).
+  // HOME23 PATCH 7 — Home23 agents supply runRoot to relocate the run dir into
+  // their workspace. Without runRoot, legacy cosmo23 behavior (dir at
+  // LOCAL_RUNS_PATH/<runName>).
   const createOpts = {};
   if (payload.runRoot && typeof payload.runRoot === 'string') {
     createOpts.runPath = payload.runRoot;
