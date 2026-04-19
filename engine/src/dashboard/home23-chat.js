@@ -103,26 +103,25 @@ async function initChat(mode) {
   // same #chat-input serves both modes since we move the node between slots.
   bindInput('chat-input', 'chat-send-btn', '');
 
-  // Expand / close / standalone (standalone button moved into the ⋯ menu in
-  // Task 4; button IDs in the updated overlay markup are different).
+  // Expand / close / standalone
   const expandBtn = document.getElementById('chat-expand-btn');
   if (expandBtn) expandBtn.addEventListener('click', openOverlay);
   const closeBtn = document.getElementById('chat-overlay-close-btn');
   if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
+  const standaloneBtn = document.getElementById('chat-standalone-btn');
+  if (standaloneBtn) standaloneBtn.addEventListener('click', () => {
+    cacheHistory();
+    window.open(`/home23/chat?agent=${chatAgent?.agentName || ''}`, '_blank');
+  });
 
-  // <dialog> backdrop click → close. The dialog itself fills the panel area;
-  // clicks on padding around the panel bubble up to the dialog element.
+  // Backdrop click (on overlay wrapper but outside the panel) → close.
   const overlay = document.getElementById('chat-overlay');
   overlay?.addEventListener('click', (e) => {
     if (e.target === overlay) closeOverlay();
   });
-  // Native <dialog> emits 'close' on Esc — make sure our appendChild-move
-  // back to the tile happens in that case too.
-  overlay?.addEventListener('close', () => {
-    const shared = document.getElementById('chat-shared');
-    const tileSlot = document.getElementById('chat-slot-tile');
-    const dest = tileSlot || document.getElementById('chat-slot-standalone');
-    if (shared && dest && shared.parentElement !== dest) dest.appendChild(shared);
+  // Esc key to close overlay.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay?.classList.contains('open')) closeOverlay();
   });
 }
 
@@ -854,12 +853,7 @@ function openOverlay() {
   // in-flight streaming handlers pointed at #chat-messages.
   overlaySlot.appendChild(shared);
 
-  if (typeof overlay.showModal === 'function') {
-    try { overlay.showModal(); } catch { overlay.classList.add('open'); }
-  } else {
-    overlay.classList.add('open');
-  }
-
+  overlay.classList.add('open');
   document.getElementById('chat-input')?.focus();
   scrollToBottom();
   scheduleChatPersist();
@@ -871,11 +865,7 @@ function closeOverlay() {
   const tileSlot = document.getElementById('chat-slot-tile');
   if (!overlay) return;
 
-  if (typeof overlay.close === 'function' && overlay.open) {
-    try { overlay.close(); } catch { overlay.classList.remove('open'); }
-  } else {
-    overlay.classList.remove('open');
-  }
+  overlay.classList.remove('open');
 
   // Move shared DOM back to the tile slot (or standalone, whichever exists).
   const dest = tileSlot || document.getElementById('chat-slot-standalone');

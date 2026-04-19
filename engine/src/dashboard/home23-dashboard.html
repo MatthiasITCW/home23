@@ -405,30 +405,30 @@
     </div>
   </main>
 
-  <!-- Chat overlay — native <dialog>. The message-list + input subtree lives
-       inside #chat-shared-template; it's cloned into the tile's slot at init
-       and physically moved (via appendChild) into #chat-slot-overlay when the
-       overlay opens, and back when it closes. Moving the same nodes preserves
+  <!-- Chat overlay — the message-list + input subtree lives inside
+       #chat-shared-template; it's cloned into the tile's slot at init and
+       physically moved (via appendChild) into #chat-slot-overlay when the
+       overlay opens, back when it closes. Moving the same nodes preserves
        all event bindings and mid-stream render state. -->
-  <dialog class="h23-chat-overlay" id="chat-overlay">
-    <div class="h23-chat-overlay-layout">
-      <aside class="h23-chat-overlay-sidebar" id="chat-overlay-sidebar" hidden>
-        <div class="h23-chat-conv-list" id="chat-overlay-conv-list"></div>
-      </aside>
-      <div class="h23-chat-overlay-main">
-        <div class="h23-chat-overlay-header">
+  <div class="h23-chat-overlay" id="chat-overlay">
+    <div class="h23-chat-overlay-panel">
+      <div class="h23-chat-overlay-header">
+        <div class="h23-chat-overlay-brand">
+          <div class="h23-chat-overlay-kicker">Home23 Native Chat</div>
           <div class="h23-chat-overlay-title" id="chat-overlay-title-label">Loading agent…</div>
-          <div class="h23-chat-overlay-actions">
-            <button class="h23-chat-icon-btn" id="chat-overlay-more-btn" title="More" aria-haspopup="menu" aria-expanded="false">&#8230;</button>
-            <button class="h23-chat-icon-btn" id="chat-overlay-close-btn" title="Close">&#10005;</button>
+        </div>
+        <div class="h23-chat-overlay-controls">
+          <div class="h23-chat-actions">
+            <button class="h23-chat-expand-btn" id="chat-standalone-btn" title="Open in new tab">&#8599;</button>
+            <button class="h23-chat-expand-btn" id="chat-overlay-close-btn" title="Close">&#10005;</button>
           </div>
         </div>
-        <div class="h23-chat-slot" id="chat-slot-overlay" data-slot="overlay">
-          <!-- Shared message-list + input moves here when overlay opens -->
-        </div>
+      </div>
+      <div class="h23-chat-slot" id="chat-slot-overlay" data-slot="overlay">
+        <!-- Shared message-list + input moves here when overlay opens -->
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- Shared message-list + input subtree. Cloned into #chat-slot-tile on
        init; moved via appendChild between tile and overlay slots. -->
