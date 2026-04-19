@@ -1447,25 +1447,26 @@ class DashboardServer {
           }
         }
 
+        const nsPrefix = `${agentName}__`;
         const conversations = files.map(({ file: f, dir }) => {
-          const id = f.replace('.jsonl', '');
+          const rawId = f.replace('.jsonl', '');
+          // Strip ALL leading `${agentName}__` prefixes (handles legacy double-prefix files).
+          // The client will round-trip this clean id back through loadHistory/sendMessage,
+          // and the harness / history endpoint will re-prepend the namespace exactly once.
+          let id = rawId;
+          while (id.startsWith(nsPrefix)) id = id.slice(nsPrefix.length);
+
           const filePath = path.join(dir, f);
           const stat = fsSync.statSync(filePath);
-          const messages = parseConversationFile(filePath, 1);
-          const firstMsg = parseConversationFile(filePath, null)?.[0];
-
-          // Extract a preview from the first user message
           const allMsgs = parseConversationFile(filePath, null);
           const firstUserMsg = allMsgs.find(m => m.role === 'user');
           let preview = firstUserMsg?.content?.slice(0, 80) || 'New conversation';
           // Strip channel prefixes like "[telegram J R] "
           preview = preview.replace(/^\[(?:telegram|discord)\s+[^\]]*\]\s*/i, '');
 
-          // Determine source from filename or content
-          const cleanId = id.replace(/^[^_]+__/, ''); // strip namespace prefix like "agent__"
-          const source = cleanId.startsWith('dashboard') ? 'dashboard'
-            : cleanId.startsWith('evobrew') ? 'evobrew'
-            : cleanId.startsWith('cron-') ? 'cron'
+          const source = id.startsWith('dashboard') ? 'dashboard'
+            : id.startsWith('evobrew') ? 'evobrew'
+            : id.startsWith('cron-') ? 'cron'
             : (firstUserMsg?.content || '').includes('[telegram') ? 'telegram'
             : 'chat';
 
@@ -1491,19 +1492,35 @@ class DashboardServer {
     this.app.get('/home23/api/chat/history/:agent', (req, res) => {
       const fsSync = require('fs');
       const agentName = req.params.agent;
-      const convId = req.query.conversation || `dashboard-${agentName}`;
+      const rawConvId = req.query.conversation || `dashboard-${agentName}`;
       const limit = parseInt(req.query.limit) || 50;
       const home23Root = this.getHome23Root();
       const convDir = path.join(home23Root, 'instances', agentName, 'conversations');
       const sessionsDir = path.join(convDir, 'sessions');
 
-      // Try both locations: conversations/<id>.jsonl and conversations/sessions/<id>.jsonl
-      let chatFile = path.join(convDir, `${convId}.jsonl`);
-      if (!fsSync.existsSync(chatFile)) {
-        chatFile = path.join(sessionsDir, `${convId}.jsonl`);
-      }
+      // Normalize: strip any leading `${agentName}__` prefix(es) from the
+      // conversation id so we always end up with a clean chatId. The harness's
+      // ConversationHistory writes at `${namespace}__${chatId}.jsonl`, so we
+      // prepend it ourselves below. Tolerates legacy double-prefixed input
+      // (e.g. "jerry__dashboard-jerry-…") by stripping all leading prefixes.
+      const nsPrefix = `${agentName}__`;
+      let cleanId = String(rawConvId);
+      while (cleanId.startsWith(nsPrefix)) cleanId = cleanId.slice(nsPrefix.length);
 
-      res.json({ messages: parseConversationFile(chatFile, limit), conversation: convId });
+      // Candidate paths, in order:
+      //   1. conversations/<ns>__<chatId>.jsonl    (canonical — what the harness writes)
+      //   2. conversations/<ns>__<ns>__<chatId>.jsonl  (legacy double-prefix — still read if present)
+      //   3. conversations/<chatId>.jsonl          (old unprefixed layout, if any)
+      //   4. conversations/sessions/<chatId>.jsonl (thread-bound sessions, UUID-named)
+      const candidates = [
+        path.join(convDir, `${nsPrefix}${cleanId}.jsonl`),
+        path.join(convDir, `${nsPrefix}${nsPrefix}${cleanId}.jsonl`),
+        path.join(convDir, `${cleanId}.jsonl`),
+        path.join(sessionsDir, `${cleanId}.jsonl`),
+      ];
+      const chatFile = candidates.find(p => fsSync.existsSync(p)) || candidates[0];
+
+      res.json({ messages: parseConversationFile(chatFile, limit), conversation: cleanId });
     });
 
     // Chat Config API

@@ -236,16 +236,28 @@ async function switchAgent(name, options = {}) {
     populateModelSelect(agentData.provider, agentData.model);
   }
 
-  // Load conversation list, then start a new conversation
+  // Load conversation list first — we'll use it to decide whether to resume.
   await loadConversationList(name);
   if (preferRestore && restoreChatState(name)) {
     renderConversationList();
     resetSendButtons();
     return;
   }
-  newConversation();
 
-  await loadHistory(name);
+  // Prefer resuming the most recent conversation for this agent over silently
+  // starting a fresh one. Without this, every agent switch creates an empty
+  // chatId that the user has to manually back out of.
+  const latest = Array.isArray(chatConversations) && chatConversations.length > 0
+    ? chatConversations[0]
+    : null;
+  if (latest && latest.id) {
+    chatConversationId = latest.id;
+    await loadHistory(name, latest.id);
+    renderConversationList();
+  } else {
+    newConversation();
+    await loadHistory(name);
+  }
 }
 
 // ── History ──
