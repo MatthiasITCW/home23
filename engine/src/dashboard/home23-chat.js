@@ -402,6 +402,9 @@ function populateModelSelect(provider, currentModel) {
         const selectedOpt = select.selectedOptions[0];
         const selectedProvider = selectedOpt?.dataset?.provider || '';
         syncModelSelectors(chatModel);
+        // Push into chatState so the model pill label (and any other
+        // subscribers) re-render with the new model.
+        _syncState();
 
         if (chatAgent?.agentName) {
           try {
