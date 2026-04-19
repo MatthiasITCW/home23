@@ -122,9 +122,11 @@ async function initChat(mode) {
     if (e.key === 'Escape' && overlay?.classList.contains('open')) closeOverlay();
   });
 
-  // ⋯ menu + agent pill (replaces the old + / ☰ / model-select button row).
+  // ⋯ menu + agent pill + model pill (replaces the old + / ☰ / model-select
+  // button row).
   setupMoreMenu();
   setupAgentPill();
+  setupModelPill();
 
   // Keep tile's agent pill + overlay title in sync with state. Subscribe AND
   // apply the current snapshot immediately — switchAgent() may have already
@@ -198,8 +200,6 @@ function handleMenuAction(action) {
     newConversation();
   } else if (action === 'toggle-conversations') {
     toggleConversationList();
-  } else if (action === 'change-model') {
-    showModelPicker();
   } else if (action === 'open-standalone') {
     cacheHistory();
     window.open(`/home23/chat?agent=${chatAgent?.agentName || ''}`, '_blank');
@@ -264,7 +264,7 @@ function openListPopover({ anchor, items, onSelect, emptyText = 'Nothing to show
   };
 }
 
-function showModelPicker() {
+function showModelPicker(anchorOverride) {
   const select = document.getElementById('chat-model-select');
   if (!select) return;
   const current = select.value || chatModel || '';
@@ -272,8 +272,11 @@ function showModelPicker() {
     .map(o => o.value)
     .filter(Boolean)
     .map(v => ({ label: v, active: v === current }));
-  // Anchor to whichever ⋯ button is currently visible (tile default).
-  const anchor = document.getElementById('chat-more-btn') || document.getElementById('chat-overlay-more-btn');
+  // Prefer the model pill (tile) as anchor; fall back to the ⋯ button.
+  const anchor = anchorOverride
+    || document.getElementById('chat-model-pill')
+    || document.getElementById('chat-more-btn')
+    || document.getElementById('chat-overlay-more-btn');
   openListPopover({
     anchor,
     items,
@@ -283,6 +286,36 @@ function showModelPicker() {
       select.dispatchEvent(new Event('change', { bubbles: true }));
     },
   });
+}
+
+/** Model pill: compact button next to the agent pill that shows the current
+ *  model and opens the model picker on click. Label syncs to chatState.model
+ *  changes so Settings-driven changes also reflect here. */
+function setupModelPill() {
+  const pill = document.getElementById('chat-model-pill');
+  if (!pill) return;
+  pill.addEventListener('click', () => showModelPicker(pill));
+
+  const renderLabel = (snap) => {
+    const label = document.getElementById('chat-model-pill-label');
+    if (!label) return;
+    const raw = snap.model || chatModel || '';
+    label.textContent = shortenModelName(raw) || 'model';
+    pill.title = raw ? `Model: ${raw} — click to change` : 'Change model';
+  };
+  chatState.on('change', renderLabel);
+  renderLabel(chatState.get());
+}
+
+/** Compact display name for the pill. Strips common provider prefixes and
+ *  truncates date-stamped suffixes so "claude-opus-4-7-20260101" fits. */
+function shortenModelName(model) {
+  if (!model) return '';
+  const trimmed = String(model).trim();
+  // Drop trailing -YYYYMMDD date suffix (common on Claude model IDs).
+  const withoutDate = trimmed.replace(/-\d{8}$/, '');
+  // Cap at 22 chars with ellipsis — the pill has limited width.
+  return withoutDate.length > 22 ? withoutDate.slice(0, 21) + '…' : withoutDate;
 }
 
 /** Clicking the agent pill opens an inline list popover of agents. */

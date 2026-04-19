@@ -1490,6 +1490,9 @@ function renderChatTile() {
           <span class="h23-chat-agent-avatar" id="chat-agent-avatar">…</span>
           <span class="h23-chat-agent-name" id="chat-agent-name">Loading…</span>
         </button>
+        <button class="h23-chat-model-pill" id="chat-model-pill" type="button" title="Change model">
+          <span id="chat-model-pill-label">model</span>
+        </button>
         <div class="h23-chat-actions">
           <button class="h23-chat-expand-btn" id="chat-expand-btn" type="button" title="Expand">&#8599;</button>
           <button class="h23-chat-expand-btn" id="chat-more-btn" type="button" title="More" aria-haspopup="menu" aria-expanded="false">&#8230;</button>
