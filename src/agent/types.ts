@@ -38,6 +38,9 @@ export interface ToolContext {
   browser: BrowserController | null;
   projectRoot: string;
   enginePort: number;
+  agentName: string;                  // HOME23_AGENT
+  cosmo23BaseUrl: string;             // http://localhost:43210
+  brainRoute: string | null;          // ${cosmo23BaseUrl}/api/brain/<brainId>; null if unresolved
   workspacePath: string;
   tempDir: string;
   contextManager: ContextManagerRef;
