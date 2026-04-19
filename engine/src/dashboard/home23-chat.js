@@ -3,7 +3,20 @@
  *
  * Native chat tile connecting to the agent loop via the bridge endpoint.
  * Renders in tile, overlay, or standalone mode.
+ *
+ * Conversation/streaming state is mirrored to chatState (home23-chat-state.mjs)
+ * so newer view components (menu, overlay, standalone sidebar) can subscribe to
+ * changes without reaching into this file's internals. The `let` variables
+ * below remain the working copy; call _syncState() after mutating them.
  */
+
+import { chatState } from './home23-chat-state.mjs';
+
+// Expose for classic-script consumers (home23-dashboard.js, home23-chat.html
+// onload handler) and for in-browser debugging.
+if (typeof window !== 'undefined') {
+  window.chatState = chatState;
+}
 
 const CHAT_API = '/home23/api/chat';
 const CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -23,6 +36,21 @@ let chatConversations = [];     // list of all conversations
 let chatPersistTimer = null;
 let chatPersistenceBound = false;
 let chatCurrentAgentName = null;
+
+/** Push the local `let` vars into chatState. Call after any mutation block. */
+function _syncState() {
+  chatState.set({
+    agent: chatAgent,
+    model: chatModel,
+    provider: chatAgent?.provider ?? null,
+    conversationId: chatConversationId,
+    conversations: chatConversations,
+    streaming: chatStreaming,
+    activeTurnId,
+    activeCursor,
+    turnCtx: currentTurnCtx,
+  });
+}
 
 // ── Init ──
 
@@ -258,6 +286,7 @@ async function switchAgent(name, options = {}) {
     newConversation();
     await loadHistory(name);
   }
+  _syncState();
 }
 
 // ── History ──
@@ -338,6 +367,7 @@ function newConversation() {
   // Highlight active in list
   updateConversationListHighlight();
   scheduleChatPersist();
+  _syncState();
 }
 
 async function loadConversationList(agentName) {
@@ -347,6 +377,7 @@ async function loadConversationList(agentName) {
     chatConversations = data.conversations || [];
   } catch { chatConversations = []; }
   renderConversationList();
+  _syncState();
 }
 
 function renderConversationList() {
@@ -384,6 +415,7 @@ async function openConversation(convId) {
   await loadHistory(chatAgent?.agentName, convId);
   renderConversationList();
   scheduleChatPersist();
+  _syncState();
 }
 
 function toggleConversationList() {
@@ -442,6 +474,7 @@ async function sendMessage(source) {
   };
   activeChatId = chatConversationId;
   activeCursor = -1;
+  _syncState();
 
   const bridgeBase = `http://${window.location.hostname}:${chatAgent.bridgePort}`;
 
@@ -570,6 +603,7 @@ function finalizeTurn(finalEnvelope) {
   resetSendButtons();
   cacheHistory();
   scheduleChatPersist();
+  _syncState();
 }
 
 function resetSendButtons() {
@@ -596,6 +630,7 @@ async function stopChat() {
     chatStreaming = false;
     resetSendButtons();
     scheduleChatPersist();
+    _syncState();
   }
 }
 
@@ -889,6 +924,7 @@ function restoreChatState(agentName) {
     chatStreaming = false;
     scrollToBottom();
     scrollContainer('chat-overlay-body');
+    _syncState();
     return true;
   } catch {
     return false;
@@ -906,3 +942,17 @@ document.addEventListener('visibilitychange', () => {
   console.log('[chat] tab visible — resuming stream from cursor', activeCursor);
   openTurnStream({ bridgeBase, chatId: activeChatId, turnId: activeTurnId, cursor: activeCursor });
 });
+
+// Expose classic-script entry points (home23-dashboard.js calls initChat and
+// closeOverlay via typeof checks; the standalone HTML calls initChat('standalone')).
+// Module scope is not global, so bind explicitly.
+if (typeof window !== 'undefined') {
+  window.initChat = initChat;
+  window.closeOverlay = closeOverlay;
+  window.openConversation = openConversation;  // called from inline onclick in conv-list HTML
+  window.newConversation = newConversation;
+  window.openOverlay = openOverlay;
+  window.stopChat = stopChat;
+  window.sendMessage = sendMessage;
+  window.toggleConversationList = toggleConversationList;
+}
