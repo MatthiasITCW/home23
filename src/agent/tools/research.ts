@@ -8,6 +8,7 @@
  * See: docs/design/STEP16-AGENT-COSMO-TOOLKIT-DESIGN.md
  */
 
+import * as path from 'node:path';
 import type { ToolDefinition, ToolResult, ToolContext } from '../types.js';
 
 function getCosmoBase(_ctx?: ToolContext): string {
@@ -17,6 +18,18 @@ function getCosmoBase(_ctx?: ToolContext): string {
 
 function errResult(msg: string): ToolResult {
   return { content: msg, is_error: true };
+}
+
+function generateRunName(topic: string): string {
+  const slug = (topic || 'research')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'research';
+  const ts = new Date().toISOString()
+    .replace(/[-:T.Z]/g, '')
+    .slice(0, 14);
+  return `${slug}-${ts}`;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit, timeoutMs = 15_000): Promise<T> {
@@ -338,8 +351,16 @@ export const launchTool: ToolDefinition = {
           `Cannot launch: a run is already active ("${active.runName}", topic: "${active.topic}"). Use research_stop first, or research_watch_run to monitor it.`
         );
       }
+      // Generate runName + runRoot client-side so agent workspace owns the run.
+      // cosmo23 Patch 7 creates the run at runRoot and symlinks cosmo23/runs/<runName> back.
+      const runName = generateRunName(topic);
+      const runRoot = path.join(ctx.workspacePath, 'research-runs', runName);
+
       const payload: Record<string, unknown> = {
         topic,
+        runName,
+        runRoot,
+        owner: ctx.agentName,
         context: input.context || '',
         explorationMode: input.explorationMode || 'guided',
         analysisDepth: input.analysisDepth || 'normal',
@@ -375,9 +396,11 @@ export const launchTool: ToolDefinition = {
         `- runName: **${result.runName}**`,
         `- brainId: ${result.brainId || '(pending)'}`,
         `- cycles: ${result.cycles || payload.cycles}`,
+        `- runRoot: ${runRoot}`,
       ];
       if (result.dashboardUrl) lines.push(`- dashboard: ${result.dashboardUrl}`);
       lines.push('');
+      lines.push('The run lives in your workspace. Feeder will ingest markdown output as it appears.');
       lines.push('Use research_watch_run to check progress. Do not check every turn.');
       return { content: lines.join('\n') };
     } catch (err) {
