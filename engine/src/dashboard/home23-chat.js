@@ -108,11 +108,9 @@ async function initChat(mode) {
   if (expandBtn) expandBtn.addEventListener('click', openOverlay);
   const closeBtn = document.getElementById('chat-overlay-close-btn');
   if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
-  const standaloneBtn = document.getElementById('chat-standalone-btn');
-  if (standaloneBtn) standaloneBtn.addEventListener('click', () => {
-    cacheHistory();
-    window.open(`/home23/chat?agent=${chatAgent?.agentName || ''}`, '_blank');
-  });
+
+  // Standalone button moved to ⋯ menu ("Open in new tab"); kept the
+  // handler in handleMenuAction. No separate toolbar button needed.
 
   // Backdrop click (on overlay wrapper but outside the panel) → close.
   const overlay = document.getElementById('chat-overlay');
