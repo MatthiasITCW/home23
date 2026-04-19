@@ -584,6 +584,20 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   Task 7 additions — standalone page content max-width on wide screens
+   The standalone page (/home23/chat) is intentionally mobile-first with a
+   drawer + bottom sheet; on desktop viewports the message column would
+   otherwise sprawl across the entire width. Cap it for readability.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (min-width: 1100px) {
+  body > .sh-shell .sh-body {
+    max-width: 880px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    Task 4 additions — agent pill + ⋯ menu popover
    ═══════════════════════════════════════════════════════════════════════ */
 
