@@ -307,7 +307,12 @@ async function openPulseHistoryPanel() {
     }
     list.innerHTML = remarks.map(r => {
       const ts = r.ts ? new Date(r.ts).toLocaleString() : '';
-      const briefCount = (r.brief?.notable?.length || 0) + (r.brief?.novelThoughts?.length || 0);
+      const briefCount =
+        (r.brief?.notable?.length || 0) +
+        (r.brief?.signals?.length || 0) +
+        (r.brief?.liveProblems?.open?.length || 0) +
+        (r.brief?.liveProblems?.chronic?.length || 0) +
+        (r.brief?.liveProblems?.resolvedJustNow?.length || 0);
       const briefSummary = briefCount > 0 ? `${briefCount} signal${briefCount === 1 ? '' : 's'} fed this remark` : 'quiet context';
       return `
         <div style="padding:12px 14px;margin-bottom:8px;background:rgba(255,255,255,0.02);border-left:3px solid #5ac8fa;">

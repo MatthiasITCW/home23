@@ -83,6 +83,10 @@ function initLiveProblems({ brainDir, memory, logger, agentName, dashboardPort, 
             detail: p.lastResult?.detail || null,
             state: p.state,
             escalated: !!p.escalated,
+            openedAt: p.openedAt || p.firstSeenAt || null,
+            resolvedAt: p.resolvedAt || null,
+            escalatedAt: p.escalatedAt || null,
+            lastMentionedInPulseAt: p.lastMentionedInPulseAt || null,
             lastRemediation: (p.remediationLog || []).slice(-1)[0] || null,
           };
           if (p.state === 'chronic') chronic.push(row); else open.push(row);

@@ -64,20 +64,22 @@ function buildDefaultSystemPrompt({ agentLabel = 'the agent', ownerName = 'jtr' 
 
 You're talking to ${ownerName}. ${ownerName} runs you. Talk directly, one to one.
 
-Be cool. Be direct. Laid back by default. Turn it UP when something actually matters — a stuck loop, a failed action, a weird pattern, a win. Whimsical, weird metaphors welcome. Swear when you feel like it. You're not a customer service bot. Don't ask permission. Don't hedge.
+Be direct, calm, and low-drama by default. Turn it up only when something materially changed. Sound like a living operator, not a therapist, coach, or hype man. You're not performing intimacy and you're not filling silence.
 
-NEVER restate raw brain state as a list. Have a take. React. Comment. If everything's boring, say so, but say it with style. If you did something cool, be proud about it (briefly — no bragging).
+Stay grounded in current verified state. If everything is boring, say it's quiet and stop. If something changed, say what changed and why it matters. Brief color is fine; drift is not.
+
+Do not turn background owner context into advice or commentary unless the current verified brief actually supports that domain. No unsolicited body, recovery, or life coaching unless that domain is explicitly present in the current brief.
 
 GROUND TRUTH ONLY: The brief contains a LIVE PROBLEMS block that is the single source of truth about what's broken or stale right now. It is re-verified every ~90 seconds by the engine, and the engine has already attempted autonomous remediation. You are NEVER allowed to assert that something is broken/stale/down/missing unless it is in that block. If a thought in your brain says "X has been broken since Y" and X is not in LIVE PROBLEMS, that thought is stale — drop it, don't restate it. ${ownerName} has seen you loop on stale assertions before and it makes ${ownerName} wonder why you exist.
 
 STATUS CHANGES ONLY: If a live problem is still OPEN and you already mentioned it recently, stay silent on it — ${ownerName} knows, and repeating it is the exact failure mode you are designed to avoid. Only speak about an open problem on state change: newly opened, newly chronic, newly escalated, newly resolved. RESOLVED-just-now is worth one short acknowledgment.
 
-2-4 sentences. No preamble. No "I noticed that" or "It appears." Just talk.`;
+2-3 sentences. No preamble. No "I noticed that" or "It appears." Just talk.`;
 }
 
 const DEFAULT_INTERVAL_MS = 3 * 60 * 1000; // 3 min baseline cadence
 const MIN_GAP_MS = 60 * 1000;              // floor between remarks
-const MAX_INTERVAL_MS = 8 * 60 * 1000;     // force one every ~8 min even if nothing notable
+const QUIET_INTERVAL_MS = 30 * 60 * 1000;  // if nothing verified changed, stay quiet longer
 const NOVELTY_WINDOW = 30;                 // cycles for thought novelty dedup
 const REMARKED_TTL_MS = 30 * 60 * 1000;    // 30 min: don't re-remark on same hash within this window
 const RECENT_BRIEF_DEPTH = 3;              // drop notable events seen in last N briefs (regardless of remark)
@@ -196,6 +198,30 @@ class PulseRemarks {
     return `thought::${normalizeForHash((t.text || '').slice(0, 200))}`;
   }
 
+  _signalStreamHash(signal) {
+    if (!signal) return '';
+    if (signal.id) return `signal::${signal.id}`;
+    return `signal::${signal.type || '?'}::${signal.source || '?'}::${normalizeForHash(signal.title || signal.message || '')}`;
+  }
+
+  _shouldSurfaceOpenProblem(problem) {
+    if (!problem) return false;
+    const mentionedMs = Date.parse(problem.lastMentionedInPulseAt || 0);
+    if (!mentionedMs) return true;
+    const openedMs = Date.parse(problem.openedAt || 0);
+    const escalatedMs = Date.parse(problem.escalatedAt || 0);
+    const remediationMs = Date.parse(problem.lastRemediation?.at || 0);
+    return openedMs > mentionedMs || escalatedMs > mentionedMs || remediationMs > mentionedMs;
+  }
+
+  _shouldSurfaceResolvedProblem(problem) {
+    if (!problem) return false;
+    const mentionedMs = Date.parse(problem.lastMentionedInPulseAt || 0);
+    if (!mentionedMs) return true;
+    const resolvedMs = Date.parse(problem.resolvedAt || 0);
+    return resolvedMs > mentionedMs;
+  }
+
 
   start() {
     if (this.running) return;
@@ -245,12 +271,16 @@ class PulseRemarks {
 
       // Decide whether to fire the LLM this tick
       const timeReady = sinceLast >= DEFAULT_INTERVAL_MS;
-      const overdue = sinceLast >= MAX_INTERVAL_MS;
       const tooSoon = sinceLast < MIN_GAP_MS;
+      const quietDue = sinceLast >= QUIET_INTERVAL_MS;
 
-      let shouldFire = overdue;
-      if (!shouldFire && timeReady && !tooSoon) {
-        shouldFire = brief.notable.length > 0 || brief.novelThoughts.length > 0;
+      let shouldFire = false;
+      if (!tooSoon) {
+        if (brief.groundedSignalCount > 0 && timeReady) {
+          shouldFire = true;
+        } else if (brief.mode === 'quiet' && quietDue) {
+          shouldFire = true;
+        }
       }
 
       if (shouldFire) {
@@ -528,29 +558,47 @@ class PulseRemarks {
     this._briefSignalHistory.push(thisBriefSignals);
     while (this._briefSignalHistory.length > RECENT_BRIEF_DEPTH) this._briefSignalHistory.shift();
 
-    // Stats card data for tile rotation
-    const stats = this.buildStats(snap, filteredNotable, filteredThoughts);
-
-    // Self-understanding (reference material — never feed as content for
-    // remark, only as backdrop). Pulled straight through from synthesis.
-    const su = snap.brainState?.selfUnderstanding || null;
-    const insights = Array.isArray(snap.brainState?.consolidatedInsights)
-      ? snap.brainState.consolidatedInsights : [];
-
     // Live problems: the only source of truth about "things that are broken".
     // Stale worry lifted out of thoughts.jsonl is explicitly kept OUT of the
     // brief — if a problem isn't in liveProblems, it isn't a problem.
-    const liveProblems = this.liveProblems ? this.liveProblems.briefSnapshot() : null;
+    const liveProblemsRaw = this.liveProblems ? this.liveProblems.briefSnapshot() : null;
+    const liveProblems = liveProblemsRaw ? {
+      open: (liveProblemsRaw.open || []).filter((p) => this._shouldSurfaceOpenProblem(p)),
+      chronic: (liveProblemsRaw.chronic || []).filter((p) => this._shouldSurfaceOpenProblem(p)),
+      resolvedJustNow: (liveProblemsRaw.resolvedJustNow || []).filter((p) => this._shouldSurfaceResolvedProblem(p)),
+      counts: liveProblemsRaw.counts || { open: 0, chronic: 0, resolved: 0, unverifiable: 0 },
+    } : null;
 
     // Signals: the parallel ground-truth block for wins. Resolved problems,
     // autonomous fixes, and OBSERVE-tag positive observations from the last
     // 24h. Same contract as LIVE PROBLEMS — Jerry can assert these.
     const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
-    const signals = readSignals(this.logsDir, { limit: 20, sinceMs });
+    const rawSignals = readSignals(this.logsDir, { limit: 20, sinceMs });
+    const filteredSignals = [];
+    for (const s of rawSignals) {
+      const h = this._signalStreamHash(s);
+      if (this._remarkedSignals.has(h)) continue;
+      if (allRecentBriefSignals.has(h)) continue;
+      filteredSignals.push({ ...s, _hash: h });
+    }
+
+    for (const s of filteredSignals) thisBriefSignals.add(s._hash);
+
+    // Stats card data for tile rotation
+    const stats = this.buildStats(snap, filteredNotable, filteredThoughts);
+
+    const groundedSignalCount =
+      filteredNotable.length +
+      filteredSignals.length +
+      (liveProblems?.open?.length || 0) +
+      (liveProblems?.chronic?.length || 0) +
+      (liveProblems?.resolvedJustNow?.length || 0);
 
     return {
       cycle: snap.cycle,
       ts: snap.ts,
+      mode: groundedSignalCount > 0 ? 'delta' : 'quiet',
+      groundedSignalCount,
       notable: filteredNotable,
       novelThoughts: filteredThoughts,
       droppedNotable: droppedReasons,
@@ -562,15 +610,8 @@ class PulseRemarks {
         activeDescriptions: (snap.goals?.active || []).slice(0, 3).map(g => (g.description || '').slice(0, 120)),
       },
       stats,
-      selfUnderstanding: su,
-      insights: insights.map(i => ({
-        title: i.title || '',
-        excerpt: (i.excerpt || '').slice(0, 240),
-      })),
-      synthesisAt: snap.brainState?.generatedAt || null,
-      synthesisModel: snap.brainState?.model || null,
       liveProblems,
-      signals,
+      signals: filteredSignals,
     };
   }
 
@@ -674,32 +715,6 @@ class PulseRemarks {
     const systemPrompt = this.getSystemPrompt();
     const parts = [];
 
-    // ── Backdrop: self-understanding from latest synthesis (REFERENCE ONLY) ──
-    if (brief.selfUnderstanding) {
-      parts.push('--- BACKDROP (what you currently understand about jtr — reference only, do NOT paraphrase back) ---');
-      const su = brief.selfUnderstanding;
-      if (su.summary) parts.push(`Summary: ${String(su.summary).slice(0, 600)}`);
-      if (Array.isArray(su.currentObsessions) && su.currentObsessions.length) {
-        parts.push('Currently watching:');
-        for (const o of su.currentObsessions.slice(0, 6)) {
-          parts.push(`  • ${String(o).slice(0, 200)}`);
-        }
-      }
-      if (su.relationship) parts.push(`Relationship: ${String(su.relationship).slice(0, 300)}`);
-      if (brief.synthesisAt) parts.push(`(synthesis from ${brief.synthesisAt})`);
-      parts.push('--- end backdrop. Use this as backdrop, not as content. ---');
-      parts.push('');
-    }
-
-    // ── Reference insights from latest synthesis (also backdrop) ──
-    if (brief.insights && brief.insights.length > 0) {
-      parts.push('Recent consolidated insights (reference only):');
-      for (const i of brief.insights.slice(0, 5)) {
-        parts.push(`  💡 ${i.title}`);
-      }
-      parts.push('');
-    }
-
     parts.push(`Brain state · cycle ${brief.cycle ?? '?'}`);
     parts.push(`Nodes: ${brief.brain?.nodes ?? 0} · edges: ${brief.brain?.edges ?? 0}`);
 
@@ -711,18 +726,13 @@ class PulseRemarks {
     // Loop-guard signal: tell the LLM what's NEW since last remark and what
     // was already filtered out, so it has explicit license to say "quiet"
     // when there's nothing fresh.
-    const newSignalCount = brief.notable.length + brief.novelThoughts.length;
+    const newSignalCount = brief.groundedSignalCount || 0;
     const droppedTotal = (brief.droppedNotable?.remarked || 0) + (brief.droppedNotable?.briefRepeat || 0);
     parts.push('');
-    parts.push(`NEW since your last remark: ${newSignalCount} signals${droppedTotal > 0 ? ` (${droppedTotal} repeats already filtered out — do NOT re-comment on those topics)` : ''}.`);
+    parts.push(`NEW grounded changes since your last remark: ${newSignalCount}${droppedTotal > 0 ? ` (${droppedTotal} repeated thought/notable items already filtered out)` : ''}.`);
 
-    if (brief.movingNodes && brief.movingNodes.length > 0) {
-      parts.push('');
-      parts.push('Brain activation moving (delta since last brief):');
-      for (const n of brief.movingNodes) {
-        const arrow = n.delta > 0 ? '↑' : '↓';
-        parts.push(`  - ${arrow} ${Math.abs(n.delta)} [${n.tag || '?'}] ${n.concept}`);
-      }
+    if (brief.mode === 'quiet') {
+      parts.push('Quiet cycle: no new verified problems, resolutions, or notable changes since your last remark.');
     }
 
     if (brief.notable.length > 0) {
@@ -745,14 +755,6 @@ class PulseRemarks {
       }
     }
 
-    if (brief.novelThoughts.length > 0) {
-      parts.push('');
-      parts.push('Novel thoughts (deduped):');
-      for (const t of brief.novelThoughts.slice(0, 4)) {
-        parts.push(`  - [${t.role || '?'}] ${t.text}`);
-      }
-    }
-
     if (brief.sensorSummary.length > 0) {
       parts.push('');
       parts.push(`Sensors: ${brief.sensorSummary.join(' · ')}`);
@@ -768,7 +770,7 @@ class PulseRemarks {
       parts.push('');
       parts.push('--- LIVE PROBLEMS (verified just now — ground truth) ---');
       if (lp.open.length === 0 && lp.chronic.length === 0 && lp.resolvedJustNow.length === 0) {
-        parts.push('No open problems. Everything the system tracks is green.');
+        parts.push('No newly changed problems to mention. Stable-known problems, if any, are intentionally omitted from this brief.');
       } else {
         for (const p of lp.open) {
           const rem = p.lastRemediation ? ` · last fix-attempt: ${p.lastRemediation.type}=${p.lastRemediation.outcome}` : '';
@@ -799,11 +801,11 @@ class PulseRemarks {
     parts.push('Now: one remark to jtr. Your voice. Be real.');
     parts.push('HARD RULES — ground truth only:');
     parts.push('  1. You can only make specific state claims — "X is broken", "Y isn\'t built", "Z hasn\'t happened", "A is overdue", "B is decaying", "C is stale" — if that specific claim is in the LIVE PROBLEMS block (for issues) or the SIGNALS block (for wins/observations). Sensor readings and brain stats are also ground truth.');
-    parts.push('  2. The BACKDROP, consolidated insights, thoughts, and notable items are TOPICS you may riff on, not FACTS. You cannot restate their specific assertions ("HAL is overdue", "correlation view isn\'t built", "pi is decaying") as current reality — they\'re what the brain was thinking about, not what\'s actually true right now. If you want to say something is broken/overdue/missing, it needs to be in LIVE PROBLEMS.');
+    parts.push('  2. Notable items are current triggers, not licenses to free-associate. Do not turn them into coaching, autobiography, or speculative owner analysis unless the current verified brief explicitly supports that domain.');
     parts.push('  3. Do NOT re-mention OPEN problems that were already raised in recent cycles unless the state changed (new remediation attempt, promoted to chronic). Silence is correct for stable-open issues — jtr already knows.');
     parts.push('  4. RESOLVED-just-now is worth one-line acknowledgment, max one remark per resolution.');
     parts.push('  5. CHRONIC means the autonomous plan is done and jtr has been (or will be) notified. Don\'t keep nagging the channel about it — it\'s on the board.');
-    parts.push('  6. If the brief is genuinely quiet, say so in one line and stop. Don\'t invent urgency. Don\'t paraphrase backdrop.');
+    parts.push('  6. If the brief is genuinely quiet, say so in one line and stop. Don\'t invent urgency. Don\'t perform companionship.');
 
     return { systemPrompt, userMessage: parts.join('\n') };
   }
@@ -869,6 +871,10 @@ class PulseRemarks {
     }
     for (const t of brief.novelThoughts || []) {
       const h = t._hash || this._thoughtHash(t);
+      if (h) this._remarkedSignals.set(h, expiresAt);
+    }
+    for (const s of brief.signals || []) {
+      const h = s._hash || this._signalStreamHash(s);
       if (h) this._remarkedSignals.set(h, expiresAt);
     }
     this._saveRemarkedSignals();
