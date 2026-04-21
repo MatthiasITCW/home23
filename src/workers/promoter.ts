@@ -12,10 +12,20 @@
  * The goal: free-form brain output becomes evidence-backed tracked problems
  * the engine's 3-tier loop can actually resolve, instead of unverified
  * text piling up on the dashboard.
+ *
+ * Step 24 — OS-engine bus compatibility:
+ *   The engine's NotifyChannel (engine/src/channels/notify/notify-channel.js)
+ *   now mirrors the same notifications.jsonl stream onto the universal
+ *   channel bus for cross-channel correlation and downstream consumers.
+ *   The two tailers (this worker in-harness, NotifyChannel in-engine) are
+ *   idempotent file readers that do not interfere. A future phase can route
+ *   bus observations through consumeFromBus() below to unify the flow,
+ *   after the cross-process orchestration story is in place.
  */
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
+import type { VerifiedObservation } from '../agent/verification.js';
 
 interface Notification {
   id: string;
@@ -626,6 +636,29 @@ export class PromoterWorker {
       if (existsSync(this.ackFile)) return JSON.parse(readFileSync(this.ackFile, 'utf-8')) as AckMap;
     } catch { /* ignore */ }
     return {};
+  }
+
+  /**
+   * Step 24 — bus consumer interface hook.
+   *
+   * Accepts a VerifiedObservation from the engine's channel bus (a
+   * NotifyChannel observation carrying a Notification payload) and
+   * routes it through the same processOne() path the file-tailing loop
+   * uses. Unwired in Phase 1 — present as a stable entry point for the
+   * future cross-process orchestration that will let the engine push
+   * observations to the promoter directly instead of both sides tailing
+   * the same file.
+   */
+  async consumeFromBus(obs: VerifiedObservation): Promise<void> {
+    if (!obs || !obs.payload) return;
+    const n = obs.payload as Notification;
+    if (!n.id) return;
+    try {
+      const outcome = await this.processOne(n);
+      this.autoAckNotification(n.id, `${outcome.outcome}_by_bus`, outcome.reason || '');
+    } catch (err) {
+      this.logger.warn?.(`[promoter] bus-consume failed for ${n.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 

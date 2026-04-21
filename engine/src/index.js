@@ -701,6 +701,7 @@ async function main() {
     const { ChannelBus } = await import('./channels/bus.js');
     const { Closer } = await import('./cognition/closer.js');
     const { DecayWorker } = await import('./cognition/decay-worker.js');
+    const { NotifyChannel } = await import('./channels/notify/notify-channel.js');
     const channelsDir = path.join(runtimeRoot, 'channels');
     channelBus = new ChannelBus({ persistenceDir: channelsDir, logger });
     closer = new Closer({
@@ -714,8 +715,13 @@ async function main() {
       logger,
       enabled: false, // activated in Phase 5
     });
+    // Phase 1: NotifyChannel is always on as the first bus consumer, mirroring
+    // the cognition NOTIFY stream into the bus. The harness-side PromoterWorker
+    // continues to tail the same file in parallel — this is idempotent.
+    const notifyPath = path.join(runtimeRoot, 'notifications.jsonl');
+    channelBus.register(new NotifyChannel({ path: notifyPath }));
     await channelBus.start();
-    logger.info('[channels] bus started (Phase 0: no channels registered, scaffolds only)');
+    logger.info(`[channels] bus started (NotifyChannel tailing ${notifyPath})`);
     // Expose on config so subsystems can access later without threading refs.
     config._osEngine = { channelBus, closer, decayWorker };
   } catch (err) {
