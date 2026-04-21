@@ -703,12 +703,38 @@ async function main() {
     // provider catalog fallback, so osEngine must be loaded directly here.
     const yaml = require('js-yaml');
     const fs = require('node:fs');
+    const os = require('node:os');
     const home23RepoRoot = path.resolve(__dirname, '..', '..');
     const homeYamlPath = path.join(home23RepoRoot, 'config', 'home.yaml');
+    const expandHome = (p) => (typeof p === 'string' && p.startsWith('~')) ? path.join(os.homedir(), p.slice(1)) : p;
+    const deepMerge = (a, b) => {
+      if (!a || typeof a !== 'object' || Array.isArray(a)) return b;
+      if (!b || typeof b !== 'object' || Array.isArray(b)) return b;
+      const out = { ...a };
+      for (const k of Object.keys(b)) {
+        out[k] = (a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) ? deepMerge(a[k], b[k]) : b[k];
+      }
+      return out;
+    };
     let osEngineCfg = {};
     try {
       const raw = yaml.load(fs.readFileSync(homeYamlPath, 'utf8')) || {};
       osEngineCfg = raw.osEngine || {};
+      // Overlay per-agent instance config.yaml if present.
+      const agentName = process.env.HOME23_AGENT || config.agent?.name;
+      if (agentName) {
+        const instancePath = path.join(home23RepoRoot, 'instances', agentName, 'config.yaml');
+        if (fs.existsSync(instancePath)) {
+          try {
+            const inst = yaml.load(fs.readFileSync(instancePath, 'utf8')) || {};
+            if (inst.osEngine) {
+              osEngineCfg = deepMerge(osEngineCfg, inst.osEngine);
+            }
+          } catch (err) {
+            logger.warn?.(`[channels] instance osEngine overlay failed: ${err?.message || err}`);
+          }
+        }
+      }
     } catch (err) {
       logger.warn?.(`[channels] failed to load osEngine from ${homeYamlPath}: ${err?.message || err}`);
     }
@@ -785,6 +811,35 @@ async function main() {
         intervalMs: 60 * 1000,
       }));
       registered.push('work.agenda', 'work.live-problems', 'work.goals', 'work.crons', 'work.heartbeat');
+    }
+
+    // Phase 3: domain channels (pressure, health, sauna, weather).
+    // Enable per-agent via osEngine.channels.domain.readers in home.yaml
+    // or instance config.yaml.
+    const domainCfg = osEngineCfg?.channels?.domain;
+    if (domainCfg?.enabled) {
+      const readers = domainCfg.readers || {};
+      const { PressureChannel } = await import('./channels/domain/pressure-channel.js');
+      const { HealthChannel }   = await import('./channels/domain/health-channel.js');
+      const { SaunaChannel }    = await import('./channels/domain/sauna-channel.js');
+      const { WeatherChannel }  = await import('./channels/domain/weather-channel.js');
+      if (readers.pressure?.path) {
+        channelBus.register(new PressureChannel({ path: expandHome(readers.pressure.path) }));
+        registered.push('domain.pressure');
+      }
+      if (readers.health?.path) {
+        channelBus.register(new HealthChannel({ path: expandHome(readers.health.path) }));
+        registered.push('domain.health');
+      }
+      if (readers.sauna?.path) {
+        channelBus.register(new SaunaChannel({ path: expandHome(readers.sauna.path) }));
+        registered.push('domain.sauna');
+      }
+      if (readers.weather?.enabled) {
+        // Weather fetcher is agent-specific; default to no-op until plumbed.
+        channelBus.register(new WeatherChannel({ intervalMs: 5 * 60 * 1000 }));
+        registered.push('domain.weather');
+      }
     }
 
     await channelBus.start();

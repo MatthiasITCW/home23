@@ -135,7 +135,13 @@ osEngine:
   channels:
     machine:  { enabled: false }
     os:       { enabled: false }
-    domain:   { enabled: false }
+    domain:                       # Phase 3: pressure / health / sauna / weather
+      enabled: true
+      readers:
+        pressure: { path: ~/.pressure_log.jsonl, tail: true, enabled: true }
+        health:   { path: ~/.health_log.jsonl, tail: true, enabled: true }
+        sauna:    { path: ~/.sauna_usage_log.jsonl, tail: true, enabled: true }
+        weather:  { enabled: false }
     build:    { enabled: true }   # Phase 2: git / gh / fswatch on home23 paths
     work:     { enabled: true }   # Phase 2: agenda / live-problems / goals / crons / heartbeat
     neighbor: { enabled: false }
