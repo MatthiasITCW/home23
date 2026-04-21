@@ -922,6 +922,72 @@ async function main() {
       }
     }
 
+    // Phase 9: publish layer. Starvation-aware workspace insights, dream log,
+    // and bridge-chat publishers. The dashboard publisher is omitted in this
+    // phase — dashboard surface writes already exist in the curator cycle;
+    // future work can route them through a dedicated publisher.
+    const publishCfg = osEngineCfg?.publish || {};
+    const { PublishLedger } = await import('./publish/publish-ledger.js');
+    const { WorkspaceInsightsPublisher, selectHighestConfidenceCluster } = await import('./publish/workspace-insights.js');
+    const { DreamLogPublisher } = await import('./publish/dream-log.js');
+    const { BridgeChatPublisher, computeSalience } = await import('./publish/bridge-chat-publisher.js');
+    const workspacePath = process.env.COSMO_WORKSPACE_PATH
+      ? path.resolve(process.env.COSMO_WORKSPACE_PATH)
+      : path.join(path.dirname(runtimeRoot), 'workspace');
+    const starvationFloor = {};
+    for (const [k, v] of Object.entries(publishCfg.starvationFloor || {})) {
+      const ms = /^(\d+)\s*(s|m|h|d)$/i.exec(String(v).trim());
+      if (ms) starvationFloor[k] = parseInt(ms[1], 10) * { s: 1000, m: 60_000, h: 3600_000, d: 86400_000 }[ms[2].toLowerCase()];
+    }
+    const publishLedger = new PublishLedger({
+      path: path.join(runtimeRoot, 'publish-ledger.jsonl'),
+      starvationFloor,
+    });
+    const cadenceCyclesRaw = publishCfg.targets?.workspace_insights?.cadence || '50cycles';
+    const cadenceCycles = (() => {
+      const m = /^(\d+)\s*cycles?$/i.exec(String(cadenceCyclesRaw).trim());
+      return m ? parseInt(m[1], 10) : 50;
+    })();
+    const workspaceInsights = new WorkspaceInsightsPublisher({
+      outDir: path.join(workspacePath, 'insights'),
+      cadenceCycles,
+      selectCluster: selectHighestConfidenceCluster(runtimeRoot),
+      ledger: publishLedger,
+      logger,
+    });
+    const dreamLog = new DreamLogPublisher({
+      outDir: path.join(workspacePath, 'dreams'),
+      ledger: publishLedger,
+      logger,
+    });
+    const bridgePublisher = new BridgeChatPublisher({
+      salienceThreshold: publishCfg.targets?.bridge_chat?.salience_threshold ?? 0.75,
+      sender: null,  // wired post-Phase-9 once bridge-chat out-path is routable from engine process
+      ledger: publishLedger,
+      logger,
+    });
+    // Hook bus observations into bridge salience evaluation (no-op until sender is wired).
+    channelBus.on('observation', async (obs) => {
+      const salience = computeSalience(obs);
+      if (salience < bridgePublisher.salienceThreshold) return;
+      try {
+        await bridgePublisher.onObservation({
+          salience,
+          summary: `[${obs.channelId}] ${JSON.stringify(obs.payload).slice(0, 200)}`,
+          observation: obs,
+        });
+      } catch (err) { logger.warn?.('[publish] bridge-chat hook failed:', err?.message || err); }
+    });
+    // Periodic starvation check every 5m.
+    setInterval(() => {
+      const starving = publishLedger.listStarving();
+      if (starving.length) logger.warn?.(`[publish] starvation: ${starving.join(', ')}`);
+    }, 5 * 60 * 1000).unref?.();
+    logger.info(`[publish] layer initialized — workspace=${workspacePath}, cadenceCycles=${cadenceCycles}, starvationTargets=${Object.keys(starvationFloor).join(',') || 'none'}`);
+    // Expose publishers so thinking-machine cycle events can trigger them
+    // once Phase 6/7 wires cycleComplete / criticVerdict emissions.
+    config._osEngine = { ...(config._osEngine || {}), publishLedger, workspaceInsights, dreamLog, bridgePublisher };
+
     await channelBus.start();
     logger.info(`[channels] bus started with ${registered.length} channels: ${registered.join(', ')}`);
     logger.info('[channels] memory-ingest wired to crystallize events');
