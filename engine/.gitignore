@@ -58,6 +58,7 @@ temp/
 # Build outputs
 dist/
 build/
+!src/channels/build/
 *.min.js
 *.min.css
 

@@ -89,7 +89,12 @@ export class ChannelBus extends EventEmitter {
 
   _persist(channel, obs) {
     if (!this.persistenceDir) return;
-    const path = join(this.persistenceDir, `${channel.class}.${channel.id}.jsonl`);
+    // channel.id already namespaces with class prefix (e.g. "work.agenda");
+    // avoid double-prefixing in the filename.
+    const fileName = channel.id.startsWith(`${channel.class}.`)
+      ? `${channel.id}.jsonl`
+      : `${channel.class}.${channel.id}.jsonl`;
+    const path = join(this.persistenceDir, fileName);
     try { appendFileSync(path, JSON.stringify(obs) + '\n'); }
     catch (err) { this._logWarn(`persist failed for ${channel.id}`, err); }
   }

@@ -698,6 +698,23 @@ async function main() {
   let closer = null;
   let decayWorker = null;
   try {
+    // Step 24 config lives in config/home.yaml under `osEngine` — the engine
+    // ConfigLoader reads its own engine YAML and only touches home.yaml for
+    // provider catalog fallback, so osEngine must be loaded directly here.
+    const yaml = require('js-yaml');
+    const fs = require('node:fs');
+    const home23RepoRoot = path.resolve(__dirname, '..', '..');
+    const homeYamlPath = path.join(home23RepoRoot, 'config', 'home.yaml');
+    let osEngineCfg = {};
+    try {
+      const raw = yaml.load(fs.readFileSync(homeYamlPath, 'utf8')) || {};
+      osEngineCfg = raw.osEngine || {};
+    } catch (err) {
+      logger.warn?.(`[channels] failed to load osEngine from ${homeYamlPath}: ${err?.message || err}`);
+    }
+    // Mirror onto the engine config so downstream code can reach it.
+    config.osEngine = osEngineCfg;
+
     const { ChannelBus } = await import('./channels/bus.js');
     const { Closer } = await import('./cognition/closer.js');
     const { DecayWorker } = await import('./cognition/decay-worker.js');
@@ -720,10 +737,61 @@ async function main() {
     // continues to tail the same file in parallel — this is idempotent.
     const notifyPath = path.join(runtimeRoot, 'notifications.jsonl');
     channelBus.register(new NotifyChannel({ path: notifyPath }));
+
+    // Phase 2: wire bus crystallize events into the memory-objects.json store.
+    // MemoryIngest writes with proper-lockfile so the harness MemoryObjectStore
+    // can coexist as a reader/writer on the same file.
+    const { MemoryIngest } = require('./channels/memory-ingest.js');
+    const memoryIngest = new MemoryIngest({ brainDir: runtimeRoot, logger });
+    channelBus.on('crystallize', async ({ observation, draft }) => {
+      try { await memoryIngest.writeFromObservation(observation, draft); }
+      catch (err) { logger.warn?.('[memory-ingest] write failed from bus:', err?.message || err); }
+    });
+
+    // Phase 2: register build + work channels per osEngine config.
+    const repoRoot = path.resolve(__dirname, '..', '..');
+    const conversationsDir = path.resolve(runtimeRoot, '..', 'conversations');
+    const buildCfg = config.osEngine?.channels?.build;
+    const workCfg  = config.osEngine?.channels?.work;
+    const registered = ['notify.cognition'];
+
+    if (buildCfg?.enabled) {
+      const { GitChannel }     = await import('./channels/build/git-channel.js');
+      const { GhChannel }      = await import('./channels/build/gh-channel.js');
+      const { FsWatchChannel } = await import('./channels/build/fswatch-channel.js');
+      channelBus.register(new GitChannel({ repoPath: repoRoot, intervalMs: 60 * 1000 }));
+      channelBus.register(new GhChannel({ intervalMs: 5 * 60 * 1000, repo: buildCfg?.gh?.repo }));
+      channelBus.register(new FsWatchChannel({ paths: [
+        path.join(repoRoot, 'docs', 'design'),
+        path.join(repoRoot, 'config'),
+        path.join(repoRoot, 'engine', 'src'),
+        path.join(repoRoot, 'src'),
+      ]}));
+      registered.push('build.git', 'build.gh', 'build.fswatch');
+    }
+
+    if (workCfg?.enabled) {
+      const { AgendaChannel }        = await import('./channels/work/agenda-channel.js');
+      const { LiveProblemsChannel }  = await import('./channels/work/live-problems-channel.js');
+      const { GoalsChannel }         = await import('./channels/work/goals-channel.js');
+      const { CronsChannel }         = await import('./channels/work/crons-channel.js');
+      const { HeartbeatChannel }     = await import('./channels/work/heartbeat-channel.js');
+      channelBus.register(new AgendaChannel({ path: path.join(runtimeRoot, 'agenda.jsonl') }));
+      channelBus.register(new LiveProblemsChannel({ path: path.join(runtimeRoot, 'live-problems.json'), intervalMs: 30 * 1000 }));
+      channelBus.register(new GoalsChannel({ goalsDir: path.join(runtimeRoot, 'goals') }));
+      channelBus.register(new CronsChannel({ path: path.join(conversationsDir, 'cron-jobs.json'), intervalMs: 60 * 1000 }));
+      channelBus.register(new HeartbeatChannel({
+        getEngineState: () => ({ at: new Date().toISOString() }),
+        intervalMs: 60 * 1000,
+      }));
+      registered.push('work.agenda', 'work.live-problems', 'work.goals', 'work.crons', 'work.heartbeat');
+    }
+
     await channelBus.start();
-    logger.info(`[channels] bus started (NotifyChannel tailing ${notifyPath})`);
+    logger.info(`[channels] bus started with ${registered.length} channels: ${registered.join(', ')}`);
+    logger.info('[channels] memory-ingest wired to crystallize events');
     // Expose on config so subsystems can access later without threading refs.
-    config._osEngine = { channelBus, closer, decayWorker };
+    config._osEngine = { channelBus, closer, decayWorker, memoryIngest };
   } catch (err) {
     logger.warn?.('[channels] bus initialization failed — engine continues without it:', err?.message || err);
   }

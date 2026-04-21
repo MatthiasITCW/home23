@@ -136,8 +136,8 @@ osEngine:
     machine:  { enabled: false }
     os:       { enabled: false }
     domain:   { enabled: false }
-    build:    { enabled: false }
-    work:     { enabled: false }
+    build:    { enabled: true }   # Phase 2: git / gh / fswatch on home23 paths
+    work:     { enabled: true }   # Phase 2: agenda / live-problems / goals / crons / heartbeat
     neighbor: { enabled: false }
   verification:
     flagRequired: true
