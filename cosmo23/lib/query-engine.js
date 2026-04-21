@@ -813,7 +813,41 @@ STYLE:
     try {
       const compressed = await fs.readFile(this.stateFile);
       const decompressed = await gunzip(compressed);
-      return JSON.parse(decompressed.toString());
+      const state = JSON.parse(decompressed.toString());
+
+      // Home23 persistence split (V8-heap fix): when state.json.gz has
+      // memory.nodes=[], the real graph lives in sidecar files
+      // memory-nodes.jsonl.gz and memory-edges.jsonl.gz at the same brainDir.
+      // Rehydrate them so queryMemory() sees the full graph instead of
+      // reporting Memory Nodes: 0 on fully-populated brains.
+      try {
+        const memEmpty = !state.memory?.nodes?.length;
+        if (memEmpty) {
+          const nodesPath = path.join(this.runtimeDir, 'memory-nodes.jsonl.gz');
+          const edgesPath = path.join(this.runtimeDir, 'memory-edges.jsonl.gz');
+          const { existsSync } = require('fs');
+          if (existsSync(nodesPath)) {
+            const nodesBuf = await gunzip(await fs.readFile(nodesPath));
+            const nodes = nodesBuf.toString().split('\n').filter(Boolean)
+              .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+              .filter(Boolean);
+            state.memory = state.memory || {};
+            state.memory.nodes = nodes;
+            if (existsSync(edgesPath)) {
+              const edgesBuf = await gunzip(await fs.readFile(edgesPath));
+              const edges = edgesBuf.toString().split('\n').filter(Boolean)
+                .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+                .filter(Boolean);
+              state.memory.edges = edges;
+            }
+            console.log(`[QueryEngine] Rehydrated brain from sidecars: ${nodes.length} nodes, ${(state.memory.edges || []).length} edges`);
+          }
+        }
+      } catch (sidecarErr) {
+        console.warn('[QueryEngine] sidecar rehydration failed (continuing with whatever state.json.gz has):', sidecarErr.message);
+      }
+
+      return state;
     } catch (error) {
       console.error('Failed to load brain state:', error.message);
       console.error('Attempted to load from:', this.stateFile);
