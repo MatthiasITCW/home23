@@ -415,6 +415,46 @@ pre-existing runPath collision refusal.
 
 ---
 
+## Patch 8 — `cosmo23/lib/query-engine.js` · `loadBrainState` sidecar rehydration
+
+**Why:** Home23's persistence layer was updated (V8-heap fix, ~2026-04-15)
+to move the full NetworkMemory graph out of `state.json.gz` into two
+sidecar files at the same brainDir:
+
+- `memory-nodes.jsonl.gz` (one JSON node per line, 29k+ records on jerry)
+- `memory-edges.jsonl.gz` (one JSON edge per line, 21k+ records on jerry)
+
+After that fix, `state.json.gz.memory.nodes` is permanently `[]` and
+`state.json.gz.memory.edges` is permanently `[]` — the full graph lives
+in the sidecars only. But cosmo23's query engine `loadBrainState` only
+reads `state.json.gz`, so every dive-mode query against a home23 agent
+reported `sources.memoryNodes = 0, edges = 0, liveJournalNodes = 0`
+even when the actual brain was 29k/21k. Users saw the brain answering
+their questions using thoughts alone, never consulting memory — a real
+behavioral regression disguised as a metadata bug.
+
+**What changed:** in `loadBrainState`, after decompressing `state.json.gz`,
+if `state.memory.nodes` is empty and `memory-nodes.jsonl.gz` exists in
+the runtimeDir, decompress + parse it and populate `state.memory.nodes`.
+Same for `memory-edges.jsonl.gz`. Logs `[QueryEngine] Rehydrated brain
+from sidecars: N nodes, M edges` on successful load.
+
+**Verified live (2026-04-21) against jerry's brain:**
+
+```
+Before: sources: { memoryNodes: 0,     edges: 0,     liveJournalNodes: 0 }
+After:  sources: { memoryNodes: 19589, edges: 21035, liveJournalNodes: 0 }
+```
+
+**Effect under standalone COSMO:** unchanged — standalone COSMO runs
+don't have the sidecar files, so the `existsSync` check short-circuits
+and the original `state.json.gz` is returned as before.
+
+**Survives upstream resync:** yes — the patch is purely additive,
+guarded by `memory.nodes.length === 0` + `existsSync` on sidecar paths.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -433,3 +473,10 @@ pre-existing runPath collision refusal.
   agent's workspace so the feeder ingests output naturally. Adds optional
   `runRoot` payload field + non-fatal symlink at legacy path + `run.json`
   ownership record.
+- **2026-04-21** — Patch 8 added when jerry's dive-mode queries kept
+  reporting `Memory Nodes: 0 / Edges: 0` despite a 29k-node brain. Root
+  cause was the persistence split from 2026-04-15 that moved nodes/edges
+  to sidecar files `memory-nodes.jsonl.gz` + `memory-edges.jsonl.gz`,
+  which the query engine never learned to read. The "brain doesn't look
+  at files" pathology Jerry self-diagnosed on 2026-04-21 was literally
+  this reporting bug — the graph was there the whole time.
