@@ -774,6 +774,22 @@ async function main() {
       catch (err) { logger.warn?.('[memory-ingest] write failed from bus:', err?.message || err); }
     });
 
+    // Phase 6: feed verified observations into DiscoveryEngine as external
+    // candidates. This closes the loop between observation and cognition:
+    // the inner loop no longer mines only its own thought graph.
+    // DiscoveryEngine is lazily created inside orchestrator.start(); resolve
+    // it through the orchestrator reference which is wired up further below.
+    channelBus.on('observation', (obs) => {
+      try {
+        const de = typeof orchestrator !== 'undefined' ? orchestrator?.discoveryEngine : null;
+        if (de && typeof de.injectObservation === 'function') {
+          de.injectObservation(obs);
+        }
+      } catch (err) {
+        logger.warn?.('[discovery] injectObservation failed:', err?.message || err);
+      }
+    });
+
     // Phase 5: activate DecayWorker against MemoryIngest.
     const parseDurMs = (s, fallbackMs) => {
       if (!s) return fallbackMs;

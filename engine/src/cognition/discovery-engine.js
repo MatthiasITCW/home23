@@ -470,6 +470,45 @@ class DiscoveryEngine {
     }
   }
 
+  /**
+   * Step 24 (Phase 6 external-candidate hook).
+   *
+   * Inject a verified observation from the OS-engine channel bus as a
+   * discovery candidate. The cognitive cycle's DeepDive will pick it up
+   * alongside internally-generated signals, so Discovery is no longer a
+   * closed loop over its own thought graph — reality gets a seat at the
+   * table.
+   *
+   * Only COLLECTED observations land in the queue. ZERO_CONTEXT is
+   * recorded for audit via an observation-silence signal, counted in
+   * stats but not enqueued.
+   */
+  injectObservation(obs) {
+    if (!obs || !obs.channelId) return false;
+    if (obs.flag !== 'COLLECTED' && obs.flag !== 'UNCERTIFIED') {
+      // ZERO_CONTEXT / UNKNOWN — audit counter only, no candidate.
+      this.stats.candidatesByeSignal['observation-silence'] =
+        (this.stats.candidatesByeSignal['observation-silence'] || 0) + 1;
+      return false;
+    }
+    const importance = Math.max(0.1, Math.min(1, obs.confidence || 0.5));
+    const candidate = this._makeCandidate({
+      key: `observation:${obs.channelId}:${obs.sourceRef}`,
+      signal: 'observation-delta',
+      clusterId: null,
+      nodeIds: [],
+      importance,
+      rationale: `bus observation ${obs.channelId} (${obs.flag}, confidence ${importance.toFixed(2)})`,
+    });
+    // Attach the raw observation so DeepDive can access the payload.
+    candidate.observation = obs;
+    this._enqueue(candidate);
+    this.stats.candidatesByeSignal['observation-delta'] =
+      (this.stats.candidatesByeSignal['observation-delta'] || 0) + 1;
+    this.stats.totalCandidatesProduced += 1;
+    return true;
+  }
+
   _trimQueue() {
     if (this.queue.size <= this.config.queueCapacity) return;
     // Drop lowest-scoring first
