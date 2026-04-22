@@ -16,7 +16,6 @@ const { TelemetryCollector } = require('./telemetry-collector');
 // Planning modules
 const PlanScheduler = require('../planning/plan-scheduler');
 const AcceptanceValidator = require('../planning/acceptance-validator');
-const { generateTaskId } = require('../planning/types');
 const { IntrospectionModule } = require('../system/introspection');
 const { RealityLayer } = require('../system/reality-layer');
 const { IntrospectionRouter } = require('../system/introspection-router');
@@ -43,6 +42,7 @@ const {
 // (INVESTIGATE/NOTIFY/TRIGGER) that get routed to agents, notifications, and
 // standing triggers so thoughts have real consequences.
 const { routeThoughtAction, stripActionTags, scrubToolArtifacts } = require('../cognition/thought-action-parser');
+const { executeAction } = require('../cognition/action-dispatcher');
 
 // Cycle tools: inline MCP-style tools that cognitive cycles can call mid-thought
 // to ground their reasoning in real data (surface files, brain memory, goals,
@@ -6877,40 +6877,33 @@ class Orchestrator {
     }
   }
 
-  async ensureBacklogPlan() {
-    if (!this.clusterStateStore) {
-      throw new Error('clusterStateStore unavailable');
-    }
+  inferAgendaAction(item) {
+    const text = String(item?.content || '').toLowerCase();
+    if (!text) return null;
 
-    let backlogPlan = await this.clusterStateStore.getPlan('plan:backlog');
-    if (!backlogPlan) {
-      backlogPlan = {
-        id: 'plan:backlog',
-        title: 'Migrated Goals Backlog',
-        version: 1,
-        status: 'ACTIVE',
-        milestones: ['ms:backlog'],
-        activeMilestone: 'ms:backlog',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
+    if (
+      /(?:health shortcut|ios health shortcut|health sync|pi health bridge|re-trigger health shortcut|shortcuts app)/i.test(text)
+    ) {
+      return {
+        action: 'run_shortcut',
+        target: 'Health',
+        reason: item.content,
       };
-      await this.clusterStateStore.createPlan(backlogPlan);
     }
 
-    const backlogMilestone = await this.clusterStateStore.getMilestone('ms:backlog');
-    if (!backlogMilestone) {
-      await this.clusterStateStore.upsertMilestone({
-        id: 'ms:backlog',
-        planId: backlogPlan.id,
-        title: 'Backlog',
-        order: 1,
-        status: 'ACTIVE',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      });
+    if (/(?:refresh|force-poll|re-poll|poll).*(weather)|weather.*(?:refresh|force-poll|re-poll|poll)/i.test(text)) {
+      return { action: 'refresh_sensor', target: 'weather', reason: item.content };
     }
 
-    return backlogPlan;
+    if (/(?:refresh|force-poll|re-poll|poll).*(sauna)|sauna.*(?:refresh|force-poll|re-poll|poll)/i.test(text)) {
+      return { action: 'refresh_sensor', target: 'sauna', reason: item.content };
+    }
+
+    if (/(?:refresh|force-poll|re-poll|poll).*(pressure)|pressure.*(?:refresh|force-poll|re-poll|poll)/i.test(text)) {
+      return { action: 'refresh_sensor', target: 'pressure', reason: item.content };
+    }
+
+    return null;
   }
 
   async executeAgendaItem(item, opts = {}) {
@@ -6919,71 +6912,45 @@ class Orchestrator {
     }
 
     const actor = opts.actor || 'agenda';
+    const action = this.inferAgendaAction(item);
+    if (!action) {
+      throw new Error('no safe direct action mapping for this agenda item');
+    }
+
+    let sensorsModule = null;
+    try { sensorsModule = require('./sensors'); } catch { /* optional */ }
+
+    const result = await executeAction({
+      action,
+      role: 'agenda',
+      cycle: this.cycleCount,
+      brainDir: this.logsDir,
+      workspaceDir: process.env.COSMO_WORKSPACE_PATH || null,
+      agentName: process.env.HOME23_AGENT || null,
+      sensors: sensorsModule,
+      memory: this.memory,
+      goalSystem: this.goals,
+      logger: this.logger,
+    });
+
+    if (result.status !== 'success' && result.status !== 'dry_run') {
+      throw new Error(result.detail || `agenda action ${action.action} failed`);
+    }
+
     const summary = {
-      goalId: null,
-      goalCreated: false,
-      taskId: null,
-      taskCreated: false,
+      directAction: true,
+      action: action.action,
+      target: action.target || null,
+      status: result.status,
+      detail: result.detail || null,
     };
 
-    if (this.coordinator && this.goals) {
-      const injectedGoals = await this.coordinator.injectUrgentGoals([{
-        description: item.content,
-        agentType: item.kind === 'question' ? 'research' : 'analysis',
-        priority: 0.9,
-        urgency: 'high',
-        rationale: `Agenda item ${item.id} marked acted_on by ${actor}`,
-      }], this.goals);
-
-      if (Array.isArray(injectedGoals) && injectedGoals[0]?.id) {
-        summary.goalId = injectedGoals[0].id;
-        summary.goalCreated = true;
-      }
-    }
-
-    if (this.clusterStateStore) {
-      await this.ensureBacklogPlan();
-      const now = Date.now();
-      const taskId = generateTaskId();
-      const tags = Array.from(new Set([
-        'agenda',
-        'agenda-execution',
-        item.kind || 'idea',
-        ...(Array.isArray(item.topicTags) ? item.topicTags : []),
-      ].filter(Boolean)));
-
-      await this.clusterStateStore.upsertTask({
-        id: taskId,
-        planId: 'plan:backlog',
-        milestoneId: 'ms:backlog',
-        title: item.content.substring(0, 100),
-        description: item.content,
-        tags,
-        deps: [],
-        priority: 0.9,
-        state: 'PENDING',
-        acceptanceCriteria: [{ type: 'qa', rubric: 'Agenda item materially advanced or resolved', threshold: 0.7 }],
-        artifacts: [],
-        createdAt: now,
-        updatedAt: now,
-        metadata: {
-          source: 'agenda',
-          agendaId: item.id,
-          sourceCycleSessionId: item.sourceCycleSessionId || null,
-          goalId: summary.goalId,
-          actor,
-        }
-      });
-
-      summary.taskId = taskId;
-      summary.taskCreated = true;
-    }
-
-    this.logger.info('✋ Agenda item executed', {
+    this.logger.info('✋ Agenda item executed directly', {
       agendaId: item.id,
       actor,
-      taskId: summary.taskId,
-      goalId: summary.goalId,
+      action: summary.action,
+      target: summary.target,
+      status: summary.status,
     });
 
     return summary;

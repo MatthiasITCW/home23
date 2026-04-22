@@ -355,12 +355,12 @@ class RealtimeServer {
         try {
           execution = await this.orchestrator?.executeAgendaItem?.(existing, { actor: body.actor || 'api' });
           const detail = [
-            execution?.goalId ? `goal ${execution.goalId}` : null,
-            execution?.taskId ? `task ${execution.taskId}` : null,
+            execution?.action ? `action ${execution.action}` : null,
+            execution?.target ? `target ${execution.target}` : null,
           ].filter(Boolean).join(', ');
-          note = detail ? `executed via ${detail}` : (note || 'executed');
+          note = detail ? `executed directly via ${detail}` : (note || 'executed directly');
         } catch (error) {
-          return json(500, { ok: false, error: `agenda execution failed: ${error.message}` });
+          return json(409, { ok: false, error: `agenda execution failed: ${error.message}` });
         }
       }
 
