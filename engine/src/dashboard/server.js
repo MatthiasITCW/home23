@@ -1103,17 +1103,22 @@ class DashboardServer {
 
       // Proxy helper: forward a JSON request to the engine's admin endpoint
       const adminUrl = (port, p) => `http://localhost:${port}${p}`;
+      const fetchAdminJson = async (target, method, requestPath, body, timeoutMs = 10_000) => {
+        const r = await fetch(adminUrl(target.realtimePort, requestPath), {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        const payload = await r.json().catch(() => ({ ok: false, error: 'invalid response' }));
+        return { status: r.status, body: payload };
+      };
+
       const proxyJson = async (req, res, method, requestPath) => {
         try {
           const target = this.getHome23AgentContext(req.query?.agent || req.body?.agent);
-          const r = await fetch(adminUrl(target.realtimePort, requestPath), {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: method === 'POST' ? JSON.stringify(req.body || {}) : undefined,
-            signal: AbortSignal.timeout(10_000),
-          });
-          const body = await r.json().catch(() => ({ ok: false, error: 'invalid response' }));
-          res.status(r.status).json(body);
+          const result = await fetchAdminJson(target, method, requestPath, req.body || {}, 10_000);
+          res.status(result.status).json(result.body);
         } catch (err) {
           res.status(502).json({ ok: false, error: `Engine admin unreachable: ${err.message}` });
         }
@@ -1144,15 +1149,40 @@ class DashboardServer {
         const qs = req.query.status ? `?status=${encodeURIComponent(req.query.status)}` : '';
         return proxyJson(req, res, 'GET', `/admin/agenda/grouped${qs}`);
       });
-      this.app.get('/api/agenda/stats', (req, res) => proxyJson(req, res, 'GET', '/admin/agenda/stats'));
+      this.app.get('/api/agenda/stats', async (req, res) => {
+        const target = this.getHome23AgentContext(req.query?.agent);
+        try {
+          const result = await fetchAdminJson(target, 'GET', '/admin/agenda/stats', null, 1500);
+          return res.status(result.status).json(result.body);
+        } catch {
+          const payload = await this.buildThinkingFallbackPayload(target);
+          return res.json({ ok: true, degraded: true, source: payload.source, counts: payload.agenda });
+        }
+      });
       this.app.get('/api/agenda/:id', (req, res) => proxyJson(req, res, 'GET', `/admin/agenda/${encodeURIComponent(req.params.id)}`));
       this.app.post('/api/agenda/:id/status', (req, res) => proxyJson(req, res, 'POST', `/admin/agenda/${encodeURIComponent(req.params.id)}/status`));
 
       // Thinking-machine observability (Phase 8 of thinking-machine-cycle).
-      this.app.get('/api/thinking/stats', (req, res) => proxyJson(req, res, 'GET', '/admin/thinking/stats'));
-      this.app.get('/api/thinking/recent', (req, res) => {
-        const n = req.query.n ? `?n=${encodeURIComponent(req.query.n)}` : '';
-        return proxyJson(req, res, 'GET', `/admin/thinking/recent${n}`);
+      this.app.get('/api/thinking/stats', async (req, res) => {
+        const target = this.getHome23AgentContext(req.query?.agent);
+        try {
+          const result = await fetchAdminJson(target, 'GET', '/admin/thinking/stats', null, 1500);
+          return res.status(result.status).json(result.body);
+        } catch {
+          const payload = await this.buildThinkingFallbackPayload(target);
+          return res.json(payload);
+        }
+      });
+      this.app.get('/api/thinking/recent', async (req, res) => {
+        const target = this.getHome23AgentContext(req.query?.agent);
+        const n = Math.min(parseInt(req.query.n, 10) || 10, 50);
+        try {
+          const result = await fetchAdminJson(target, 'GET', `/admin/thinking/recent?n=${encodeURIComponent(n)}`, null, 1500);
+          return res.status(result.status).json(result.body);
+        } catch {
+          const payload = await this.buildThinkingFallbackPayload(target);
+          return res.json({ ok: true, degraded: true, source: payload.source, thoughts: payload.thoughts.slice(0, n) });
+        }
       });
     } catch (err) {
       console.warn('[Feeder routes] Failed to mount:', err.message);
@@ -8928,7 +8958,11 @@ You are empowered to explore and understand. The user trusts you to discover the
   }
 
   async getThoughtsSummary() {
-    const thoughtsPath = path.join(this.logsDir, 'thoughts.jsonl');
+    return this.getThoughtsSummaryForDir(this.logsDir);
+  }
+
+  async getThoughtsSummaryForDir(brainDir) {
+    const thoughtsPath = path.join(brainDir, 'thoughts.jsonl');
     let count = 0;
     let lastThought = null;
 
@@ -8953,6 +8987,172 @@ You are empowered to explore and understand. The user trusts you to discover the
     }
 
     return { count, lastThought };
+  }
+
+  async getRecentThoughtsForDir(brainDir, limit = 20) {
+    const thoughtsPath = path.join(brainDir, 'thoughts.jsonl');
+    const thoughts = [];
+
+    try {
+      const fileStream = createReadStream(thoughtsPath);
+      const rl = createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          thoughts.push(JSON.parse(line));
+          if (thoughts.length > limit) thoughts.shift();
+        } catch {
+          // Skip malformed lines.
+        }
+      }
+    } catch {
+      return [];
+    }
+
+    return thoughts.reverse();
+  }
+
+  async getJsonlLineCount(filePath) {
+    let count = 0;
+    try {
+      const fileStream = createReadStream(filePath);
+      const rl = createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+      for await (const line of rl) {
+        if (line.trim()) count += 1;
+      }
+    } catch {
+      return 0;
+    }
+    return count;
+  }
+
+  async getAgendaCountsForDir(brainDir) {
+    const agendaPath = path.join(brainDir, 'agenda.jsonl');
+    const items = new Map();
+
+    try {
+      const fileStream = createReadStream(agendaPath);
+      const rl = createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        let evt;
+        try {
+          evt = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (evt.type === 'add' && evt.id && evt.record) {
+          items.set(evt.id, { status: evt.record.status || 'candidate' });
+        } else if (evt.type === 'status' && evt.id) {
+          const rec = items.get(evt.id) || {};
+          rec.status = evt.status;
+          items.set(evt.id, rec);
+        }
+      }
+    } catch {
+      return { candidate: 0, surfaced: 0, acknowledged: 0, acted_on: 0, stale: 0, discarded: 0, total: 0 };
+    }
+
+    const counts = { candidate: 0, surfaced: 0, acknowledged: 0, acted_on: 0, stale: 0, discarded: 0, total: 0 };
+    for (const rec of items.values()) {
+      counts[rec.status] = (counts[rec.status] || 0) + 1;
+      counts.total += 1;
+    }
+    return counts;
+  }
+
+  async getConversationSalienceStatsForDir(brainDir) {
+    const sidecarPath = path.join(brainDir, 'conversation-salience.jsonl');
+    const maxAgeMs = 72 * 60 * 60 * 1000;
+    let totalCached = 0;
+    let active = 0;
+
+    try {
+      const fileStream = createReadStream(sidecarPath);
+      const rl = createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        totalCached += 1;
+        try {
+          const obj = JSON.parse(line);
+          const ageMs = Date.now() - new Date(obj.ts).getTime();
+          if (Number.isFinite(ageMs) && ageMs <= maxAgeMs) active += 1;
+        } catch {
+          // Ignore malformed entries for active count.
+        }
+      }
+    } catch {
+      return { totalCached: 0, active: 0, sidecarExists: false };
+    }
+
+    return { totalCached, active, sidecarExists: true };
+  }
+
+  readHome23CognitionMode() {
+    try {
+      const fsSync = require('fs');
+      const yaml = require('js-yaml');
+      const cfgPath = path.join(this.getHome23Root(), 'configs', 'base-engine.yaml');
+      if (!fsSync.existsSync(cfgPath)) return 'legacy_roles';
+      const cfg = yaml.load(fsSync.readFileSync(cfgPath, 'utf8')) || {};
+      return cfg.architecture?.cognitionMode || 'legacy_roles';
+    } catch {
+      return 'legacy_roles';
+    }
+  }
+
+  async buildThinkingFallbackPayload(agentCtx) {
+    const brainDir = agentCtx.runtimeDir;
+    const cognitionMode = this.readHome23CognitionMode();
+    const [thoughtSummary, discardedCount, agendaStats, salienceStats, recentThoughts] = await Promise.all([
+      this.getThoughtsSummaryForDir(brainDir),
+      this.getJsonlLineCount(path.join(brainDir, 'discarded-thoughts.jsonl')),
+      this.getAgendaCountsForDir(brainDir),
+      this.getConversationSalienceStatsForDir(brainDir),
+      this.getRecentThoughtsForDir(brainDir, 10),
+    ]);
+
+    const lastThoughtAt = thoughtSummary.lastThought?.timestamp || thoughtSummary.lastThought?.ts || null;
+    const thinkingMachineRunning = cognitionMode === 'thinking_machine';
+
+    return {
+      ok: true,
+      degraded: true,
+      source: 'dashboard-fallback',
+      cognitionMode,
+      thinkingMachineRunning,
+      thinkingMachine: {
+        heartbeats: null,
+        cyclesRun: thoughtSummary.count + discardedCount,
+        cyclesKept: thoughtSummary.count,
+        cyclesDiscarded: discardedCount,
+        lastRunAt: lastThoughtAt,
+        lastRunDurationMs: null,
+        errors: null,
+        running: thinkingMachineRunning,
+        cyclesWithoutReceipt: null,
+        pgsAdapterStats: null,
+      },
+      agenda: agendaStats,
+      discovery: null,
+      salience: salienceStats,
+      thoughts: recentThoughts,
+    };
   }
 
   async getFastMemoryNodeCount() {
@@ -9091,26 +9291,7 @@ You are empowered to explore and understand. The user trusts you to discover the
   }
 
   async getRecentThoughts(limit = 20) {
-    const thoughtsPath = path.join(this.logsDir, 'thoughts.jsonl');
-    const thoughts = [];
-
-    try {
-      const fileStream = createReadStream(thoughtsPath);
-      const rl = createInterface({
-        input: fileStream,
-        crlfDelay: Infinity
-      });
-
-      for await (const line of rl) {
-        if (line.trim()) {
-          thoughts.push(JSON.parse(line));
-        }
-      }
-
-      return thoughts.slice(-limit);
-    } catch (error) {
-      return [];
-    }
+    return this.getRecentThoughtsForDir(this.logsDir, limit).then(thoughts => thoughts.reverse());
   }
 
   async readAgentResults(resultsPath) {
