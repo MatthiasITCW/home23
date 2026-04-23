@@ -11,7 +11,7 @@
  * was applied; the next verify tick decides whether it actually worked.
  */
 
-const { execFileSync, execSync, spawnSync } = require('child_process');
+const { execFileSync, execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -23,14 +23,32 @@ const os = require('os');
  */
 function isRestartableProcess(name) {
   if (!name || typeof name !== 'string') return false;
+  if (!/^home23-[a-z0-9._-]+$/i.test(name)) return false;
   if (!name.startsWith('home23-')) return false;
-  // Don't restart the engine itself from within the engine — leads to loops.
-  // HOME23_AGENT is set on the harness, INSTANCE_ID on the engine.
-  const self = process.env.HOME23_AGENT
-    ? `home23-${process.env.HOME23_AGENT}`
-    : process.env.INSTANCE_ID || null;
-  if (self && name === self) return false;
   return true;
+}
+
+function currentProcessName() {
+  if (process.env.INSTANCE_ID) return process.env.INSTANCE_ID;
+  if (process.env.HOME23_AGENT) return `home23-${process.env.HOME23_AGENT}`;
+  return null;
+}
+
+function isSelfProcess(name) {
+  return Boolean(name && currentProcessName() && name === currentProcessName());
+}
+
+function scheduleSelfRestart(name) {
+  const child = spawn('sh', [
+    '-c',
+    'sleep 1; exec pm2 restart "$1" --update-env',
+    'home23-self-restart',
+    name,
+  ], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
 }
 
 /**
@@ -126,6 +144,14 @@ const remediators = {
   pm2_restart({ name }) {
     if (!isRestartableProcess(name)) {
       return { outcome: 'rejected', detail: `not restartable: ${name}` };
+    }
+    if (isSelfProcess(name)) {
+      try {
+        scheduleSelfRestart(name);
+        return { outcome: 'success', detail: `scheduled self restart for ${name}` };
+      } catch (err) {
+        return { outcome: 'failed', detail: `self restart schedule failed: ${err.message}` };
+      }
     }
     try {
       execFileSync('pm2', ['restart', name, '--update-env'], {
@@ -332,4 +358,5 @@ module.exports = {
   remediators,
   EXEC_CATALOG,
   isRestartableProcess,
+  isSelfProcess,
 };

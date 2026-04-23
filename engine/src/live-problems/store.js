@@ -143,6 +143,8 @@ class LiveProblemStore {
         p.stepIndex = 0;
         this.logger.info?.(`[live-problems] resolved: ${id}`);
       }
+      p.escalated = false;
+      delete p.escalatedAt;
     } else {
       // Re-open if previously resolved
       if (p.state === 'resolved') {

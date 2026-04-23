@@ -288,6 +288,16 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
 
 function seedAll(store, opts) {
   const seeds = defaultSeeds(opts || {});
+  const agent = opts?.agentName || process.env.HOME23_AGENT || 'agent';
+  if (agent !== 'agent') {
+    for (const p of store.all()) {
+      const isObsoleteGeneric =
+        p?.seedOrigin === 'system'
+        && (p.id === 'agent_harness_online' || p.id === 'agent_dashboard_ping')
+        && /home23-agent(?:-harness|-dash)?/.test(JSON.stringify(p));
+      if (isObsoleteGeneric) store.remove(p.id);
+    }
+  }
   for (const s of seeds) store.upsert(s);
   return seeds;
 }

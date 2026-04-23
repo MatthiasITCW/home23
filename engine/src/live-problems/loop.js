@@ -45,7 +45,13 @@ function classifyDispatchRecipe(recipe) {
   if (explicitOutcome === 'fixed' || explicitVerifier === 'pass') {
     return { outcome: 'success', advance: false };
   }
-  if (explicitOutcome === 'failed' || explicitOutcome === 'blocked' || explicitVerifier === 'fail') {
+  if (
+    explicitOutcome === 'failed'
+    || explicitOutcome === 'blocked'
+    || explicitOutcome === 'unknown'
+    || explicitVerifier === 'fail'
+    || explicitVerifier === 'unknown'
+  ) {
     return { outcome: 'failed', advance: true };
   }
   if (
@@ -58,7 +64,7 @@ function classifyDispatchRecipe(recipe) {
   ) {
     return { outcome: 'failed', advance: true };
   }
-  return { outcome: 'completed', advance: false };
+  return { outcome: 'failed', advance: true };
 }
 
 class LiveProblemsLoop {
@@ -260,4 +266,4 @@ function summarizeRemediation(entries) {
   return parts.join(' · ');
 }
 
-module.exports = { LiveProblemsLoop, DEFAULT_INTERVAL_MS };
+module.exports = { LiveProblemsLoop, DEFAULT_INTERVAL_MS, classifyDispatchRecipe };
