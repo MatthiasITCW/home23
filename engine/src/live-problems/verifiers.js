@@ -489,6 +489,68 @@ verifiers.composed = async function composed(args = {}, ctx = {}) {
   };
 };
 
+/**
+ * Agenda handoff completion check. The agenda "Do it" path can create a
+ * bounded live-problem whose only verifier is: did the diagnostic harness post
+ * back a fix/diagnosis recipe for this agenda item after it was dispatched?
+ *
+ * args: {
+ *   problemId: "agenda_ag-...",
+ *   since?: ISO timestamp,
+ *   outcomes?: ["fixed", "failed", "blocked", "unknown"]  // default: any
+ * }
+ */
+verifiers.fix_recipe_recorded = async function fixRecipeRecorded(args = {}, ctx = {}) {
+  const problemId = args.problemId;
+  const brainDir = ctx.brainDir;
+  if (!problemId) return { ok: false, detail: 'problemId required' };
+  if (!brainDir) return { ok: false, detail: 'brainDir required' };
+
+  const file = path.join(brainDir, 'live-problems.json');
+  if (!fs.existsSync(file)) return { ok: false, detail: 'live-problems.json missing' };
+
+  const sinceMs = args.since ? Date.parse(args.since) : 0;
+  const allowed = Array.isArray(args.outcomes) && args.outcomes.length > 0
+    ? new Set(args.outcomes.map((x) => String(x).toLowerCase()))
+    : null;
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const problem = (raw.problems || []).find((p) => p && p.id === problemId);
+    if (!problem) return { ok: false, detail: `problem not found: ${problemId}` };
+
+    const recipes = [
+      ...(Array.isArray(problem.fixRecipeHistory) ? problem.fixRecipeHistory : []),
+      ...(problem.fixRecipe ? [problem.fixRecipe] : []),
+    ].filter(Boolean);
+    const recipe = recipes
+      .filter((r) => {
+        const atMs = Date.parse(r.at || '');
+        if (sinceMs && (!atMs || atMs < sinceMs)) return false;
+        if (allowed && !allowed.has(String(r.dispatchOutcome || '').toLowerCase())) return false;
+        return true;
+      })
+      .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))[0];
+
+    if (!recipe) {
+      return { ok: false, detail: `no diagnostic recipe recorded for ${problemId}` };
+    }
+
+    return {
+      ok: true,
+      detail: `recipe recorded (${recipe.dispatchOutcome || 'unknown'} / verifier ${recipe.verifierStatus || 'unknown'})`,
+      observed: {
+        at: recipe.at || null,
+        dispatchOutcome: recipe.dispatchOutcome || null,
+        verifierStatus: recipe.verifierStatus || null,
+        turnId: recipe.turnId || null,
+      },
+    };
+  } catch (err) {
+    return { ok: false, detail: `read failed: ${err.message}` };
+  }
+};
+
 function listVerifierTypes() {
   return Object.keys(verifiers);
 }

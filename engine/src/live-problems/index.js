@@ -73,6 +73,14 @@ function initLiveProblems({ brainDir, memory, logger, agentName, dashboardPort, 
     loop,
     start() { loop.start(); },
     stop() { loop.stop(); },
+    async processNow(id) {
+      store.reloadIfChanged();
+      const problem = store.get(id);
+      if (!problem) return null;
+      await loop._processOne(problem);
+      store.reloadIfChanged();
+      return store.get(id);
+    },
     /**
      * Snapshot for the pulse brief. Shape:
      * {

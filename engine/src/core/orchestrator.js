@@ -6877,6 +6877,59 @@ class Orchestrator {
     }
   }
 
+  isBoundedOperationalAgendaItem(item) {
+    const text = String(item?.content || '').trim();
+    if (!text) return false;
+    if (/\bask jtr\b|\bjtr needs to pick\b|\bjtr should decide\b/i.test(text)) return false;
+    if (/(?:autobiographical|phenomenological|temporal experience|identity reconstruction|parallel investigations|underlying concern|purely an investigation framework|decision-support characterization|what home23 really is)/i.test(text)) return false;
+    if (!/^(fix|resolve|verify|investigate|check|audit|restore|re-trigger|retrigger|re-enable|reenable|update|implement|diagnose|execute|determine)\b/i.test(text)) return false;
+    return /(?:\b\d+(?:\.\d+)?[-\s]*(?:ms|s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?)\b|:\d{2,5}\b|https?:\/\/|~\/|\/api\/|\/admin\/|\.jsonl\b|\.ya?ml\b|\.md\b|\.js\b|\bpm2\b|\bcron(?:\s+(?:job|agent|fleet|history))?\b|\bprocess\b|\bport\s+\d+\b|\bendpoint\b|\bstatus\b|\blog(?:ging)?\b|\bfile(?:system)?\b|\bshortcut\b|\bworkflow\b|\bdashboard\b|\bpanel\b|\btile\b|\bsensor\b|\bfield[- ]report[- ]cycle\b|\bbrain-housekeeping\b|\brun-intraday-review\b|\bsynthesis report failure\b|\ball fallbacks exhausted\b|\bnode count\b|\bthoughts\.jsonl\b|\bhealth log\b|\bpressure log\b)/i.test(text);
+  }
+
+  async enqueueAgendaDiagnostic(item, opts = {}) {
+    if (!this.liveProblems?.store?.upsert) {
+      throw new Error('live-problems system unavailable');
+    }
+    if (!this.isBoundedOperationalAgendaItem(item)) {
+      throw new Error('agenda item is not a bounded operational task');
+    }
+
+    const now = new Date().toISOString();
+    const problemId = `agenda_${String(item.id || Date.now()).replace(/[^a-z0-9_-]+/gi, '_')}`;
+    const existing = this.liveProblems.store.get(problemId);
+
+    if (!existing) {
+      this.liveProblems.store.upsert({
+        id: problemId,
+        seedOrigin: 'agenda',
+        claim: `Agenda action: ${String(item.content || '').slice(0, 500)}`,
+        verifier: {
+          type: 'fix_recipe_recorded',
+          args: { problemId, since: now },
+        },
+        remediation: [
+          { type: 'dispatch_to_agent', args: { budgetHours: 4 }, cooldownMin: 0 },
+        ],
+      });
+    }
+
+    const processed = typeof this.liveProblems.processNow === 'function'
+      ? await this.liveProblems.processNow(problemId)
+      : this.liveProblems.store.get(problemId);
+
+    const latest = processed || this.liveProblems.store.get(problemId);
+    const dispatch = latest?.dispatchedTurnId ? `turnId=${latest.dispatchedTurnId}` : 'queued for diagnostic dispatch';
+    return {
+      directAction: true,
+      action: 'diagnose_agenda',
+      target: problemId,
+      status: latest?.state || 'open',
+      detail: dispatch,
+      problemId,
+      turnId: latest?.dispatchedTurnId || null,
+    };
+  }
+
   inferAgendaAction(item) {
     const text = String(item?.content || '').toLowerCase();
     if (!text) return null;
@@ -6914,7 +6967,7 @@ class Orchestrator {
     const actor = opts.actor || 'agenda';
     const action = this.inferAgendaAction(item);
     if (!action) {
-      throw new Error('no safe direct action mapping for this agenda item');
+      return this.enqueueAgendaDiagnostic(item, opts);
     }
 
     let sensorsModule = null;

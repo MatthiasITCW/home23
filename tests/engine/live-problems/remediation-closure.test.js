@@ -10,6 +10,7 @@ const { LiveProblemStore } = require('../../../engine/src/live-problems/store.js
 const { seedAll } = require('../../../engine/src/live-problems/seed.js');
 const { isRestartableProcess } = require('../../../engine/src/live-problems/remediators.js');
 const { classifyDispatchRecipe } = require('../../../engine/src/live-problems/loop.js');
+const { runVerifier } = require('../../../engine/src/live-problems/verifiers.js');
 
 test('seedAll prunes obsolete generic agent live-problem seeds', () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
@@ -81,5 +82,33 @@ test('home23 engine process names remain restartable, including self names', () 
   } finally {
     if (prev === undefined) delete process.env.INSTANCE_ID;
     else process.env.INSTANCE_ID = prev;
+  }
+});
+
+test('fix_recipe_recorded verifier closes agenda diagnostics after agent report', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
+  try {
+    writeFileSync(join(dir, 'live-problems.json'), JSON.stringify({
+      problems: [{
+        id: 'agenda_ag-123',
+        claim: 'Agenda action: investigate RECENT.md',
+        fixRecipe: {
+          at: '2026-04-24T12:00:00.000Z',
+          dispatchOutcome: 'fixed',
+          verifierStatus: 'pass',
+          turnId: 'turn-1',
+        },
+      }],
+    }));
+
+    const result = await runVerifier({
+      type: 'fix_recipe_recorded',
+      args: { problemId: 'agenda_ag-123', since: '2026-04-24T11:00:00.000Z' },
+    }, { brainDir: dir });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.observed.turnId, 'turn-1');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

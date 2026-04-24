@@ -25,7 +25,8 @@ const DEFAULT_CONFIG = {
   candidateStaleAfterMs: 48 * 60 * 60 * 1000, // unsurfaced candidates expire quickly
   surfacedStaleAfterMs: 14 * 24 * 60 * 60 * 1000, // surfaced items can stay active longer
   decayReviewMs: 6 * 60 * 60 * 1000,        // run decay review every 6 hours
-  surfaceLimit: 12,                         // bounded working set visible to jtr
+  surfaceLimit: 5,                          // bounded working set visible to jtr
+  staleUnsurfacedDuringReconcile: true,     // agenda is an action surface, not a backlog
   mergeSimilarityThreshold: 0.9,           // only merge near-identical candidates
   surfaceSimilarityThreshold: 0.62,        // diversify surfaced set across active topics
   legacyUngroundedActiveStaleAfterMs: 60 * 60 * 1000, // old pre-grounding items should not keep resurfacing
@@ -59,11 +60,14 @@ const ABSTRACT_OPENERS = [
   're-examine ',
 ];
 const OPERATIONAL_AGENDA_ANCHORS = /(?:api\b|endpoint\b|dashboard\b|shortcut\b|health\b|sauna\b|pressure\b|sensor\b|bridge\b|correlation\b|cron\b|pm2\b|process\b|syntaxerror\b|harness\b|chrome cdp\b|disk\b|port\b|run-intraday-review\.js\b|lib\/time\.js\b|ettimehm\b|ticker-home23\b|health shortcut\b|brain-housekeeping\b|node count\b|regression\b|recent\.md\b|heartbeat\.md\b|cleanup\b|alerting\b|watchdog\b)/i;
-const BOUNDED_ARTIFACT_HINTS = /(?:goal[_-]\d+|run-intraday-review\.js|lib\/time\.js|ettimehm|health shortcut|shortcut bridge|ticker-home23|chrome cdp|recent\.md|heartbeat\.md|personal\.md|field-report-cycle|test-discord-delivery)/i;
+const BOUNDED_ARTIFACT_HINTS = /(?:goal[_-]\d+|run-intraday-review\.js|lib\/time\.js|ettimehm|health shortcut|shortcut bridge|ticker-home23|chrome cdp|recent\.md|heartbeat\.md|personal\.md|field[- ]report[- ]cycle|test-discord-delivery)/i;
 const DIRECT_DECISION_OPENERS = /^(clarify focus:|decide:|what should|which should|is the pragmatic answer|should the|does the system|does monitoring|should monitoring)/i;
 const RESEARCH_ARCHEOLOGY_OPENERS = /^(follow the node|consider what deliberate absence|map which other nodes|locate and read|answer explicitly: why is jtr|answer the stated question: what is the primary purpose|test whether home23 can be induced|re-examine the truncated node|trace the|map the|locate the|find any documented instances|corroborate whether|cross-reference the)/i;
 const ACTION_OPENERS = /^(fix|resolve|verify|investigate|check|audit|restore|re-trigger|retrigger|re-enable|reenable|update|implement|diagnose|execute|determine|distinguish)\b/i;
 const META_RESEARCH_PHRASES = /(?:design aspiration|not fully interrogated|documented in the graph|connect it explicitly to|this documents a systematic gap|highest-leverage re-engagement point|operational viability of home23-style frameworks|what is the primary purpose of home23|why is jtr building|whether retrocausal narrative systems|if this claim holds|worth examining$)/i;
+const USER_BOUNCE_PHRASES = /(?:\bask jtr\b|\bjtr needs to pick\b|\bjtr should decide\b|\bwould change what gets built\b|\bshould .* be prioritized\b)/i;
+const THEORY_ONLY_PHRASES = /(?:autobiographical|mother at seventeen|phenomenological|temporal experience|identity reconstruction|resource-expenditure-as-evidence|parallel investigations|underlying concern|proof\/interpretation tension|sensitive information|narrative functional coherence|therapeutic rupture|patina-as-memory|negative capability|does it do anything|purely an investigation framework|decision-support characterization|what home23 really is)/i;
+const CONCRETE_OPERATIONAL_TARGETS = /(?:\b\d+(?:\.\d+)?[-\s]*(?:ms|s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?)\b|:\d{2,5}\b|https?:\/\/|~\/|\/api\/|\/admin\/|\.jsonl\b|\.ya?ml\b|\.md\b|\.js\b|\bpm2\b|\bcron(?:\s+(?:job|agent|fleet|history))?\b|\bprocess\b|\bport\s+\d+\b|\bendpoint\b|\bstatus\b|\blog(?:ging)?\b|\bfile(?:system)?\b|\bshortcut\b|\bworkflow\b|\bdashboard\b|\bpanel\b|\btile\b|\bsensor\b|\bfield[- ]report[- ]cycle\b|\bbrain-housekeeping\b|\brun-intraday-review\b|\bsynthesis report failure\b|\ball fallbacks exhausted\b|\bnode count\b|\bthoughts\.jsonl\b|\bhealth log\b|\bpressure log\b)/i;
 
 class AgendaStore {
   constructor(opts = {}) {
@@ -590,11 +594,13 @@ class AgendaStore {
 
     const surfacedIds = new Set(surfaced.map(rec => rec.id));
     for (const rec of active) {
-      const desired = surfacedIds.has(rec.id) ? 'surfaced' : 'candidate';
+      const desired = surfacedIds.has(rec.id)
+        ? 'surfaced'
+        : (this.config.staleUnsurfacedDuringReconcile ? 'stale' : 'candidate');
       if (rec.status !== desired) {
         this._applyStatus(rec, desired, {
           actor: opts.actor || 'system',
-          note: opts.note || (desired === 'surfaced' ? 'auto-surfaced into working set' : 'auto-demoted out of working set'),
+          note: opts.note || (desired === 'surfaced' ? 'auto-surfaced into working set' : 'auto-staled outside bounded working set'),
           persist: true,
         });
       }
@@ -655,18 +661,22 @@ class AgendaStore {
     const operationalAnchor = OPERATIONAL_AGENDA_ANCHORS.test(text);
     const boundedArtifact = BOUNDED_ARTIFACT_HINTS.test(text)
       || (/\bnode\s+\d+\b/i.test(text) && operationalAnchor);
+    const concreteOperationalTarget = CONCRETE_OPERATIONAL_TARGETS.test(text) || boundedArtifact;
     const directDecision = DIRECT_DECISION_OPENERS.test(lower);
     const actionOpener = ACTION_OPENERS.test(lower);
     const researchArcheology = RESEARCH_ARCHEOLOGY_OPENERS.test(lower);
     const broadTheoryPrompt = ABSTRACT_OPENERS.some(prefix => lower.startsWith(prefix));
 
+    if (USER_BOUNCE_PHRASES.test(text)) return false;
+    if (THEORY_ONLY_PHRASES.test(text)) return false;
     if (researchArcheology) return false;
     if (META_RESEARCH_PHRASES.test(text)) return false;
-    if (sourceSignal === 'novelty' && !operationalAnchor && !boundedArtifact) return false;
+    if (sourceSignal === 'novelty' && !concreteOperationalTarget) return false;
     if (broadTheoryPrompt && !operationalAnchor && !boundedArtifact) return false;
     if ((envelope.kind || params.kind) === 'idea' && !(operationalAnchor && actionOpener) && !boundedArtifact) return false;
-    if (directDecision) return operationalAnchor || boundedArtifact;
+    if (directDecision) return (operationalAnchor || boundedArtifact) && concreteOperationalTarget;
     if (!(operationalAnchor || boundedArtifact)) return false;
+    if (!concreteOperationalTarget) return false;
     if (!actionOpener && !boundedArtifact) return false;
     return true;
   }
@@ -681,6 +691,9 @@ class AgendaStore {
     }
     if (/(run-intraday-review\.js|ettimehm|lib\/time\.js|intraday review|syntaxerror)/.test(text) || /(intraday-review|crash|data-quality|tick-orb-bot|esm)/.test(joinedTags)) {
       return 'intraday-review';
+    }
+    if (/(recent\.md|heartbeat\.md|personal\.md)/.test(text) || /(recent-md|recent\.md|heartbeat|surface|ingestion)/.test(joinedTags)) {
+      return 'surface-freshness';
     }
     if (/(cron fleet|brain-housekeeping|ticker-home23|timeout|ram patterns|cron job)/.test(text) || /(cron-fleet|monitoring|system-reliability)/.test(joinedTags)) {
       return 'cron-fleet';
