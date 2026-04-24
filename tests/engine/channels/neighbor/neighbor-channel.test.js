@@ -19,24 +19,30 @@ test('NeighborChannel emits on snapshotAt/lastMemoryWrite advance', async () => 
 });
 
 test('NeighborChannel.verify flags UNCERTIFIED with 0.70 confidence', () => {
-  const ch = new NeighborChannel({ peerName: 'x', url: 'http://x', intervalMs: 10 });
-  const v = ch.verify({
-    payload: { agent: 'x', snapshotAt: 's' },
-    sourceRef: 'neighbor:x:s', producedAt: 's',
-  });
+  const ch = new NeighborChannel({ peerName: 'x', url: 'http://x', intervalMs: 10, peerSource: 'remote' });
+  const parsed = ch.parse({ agent: 'x', snapshotAt: 's' });
+  const v = ch.verify(parsed);
   assert.equal(v.flag, 'UNCERTIFIED');
   assert.equal(v.confidence, 0.7);
+  assert.deepEqual(v.origin, {
+    agent: 'x',
+    peerName: 'x',
+    peerSource: 'remote',
+    url: 'http://x',
+    snapshotAt: 's',
+    protocol: 'home23-neighbor-state',
+    protocolVersion: 1,
+  });
 });
 
 test('NeighborChannel.crystallize uses neighbor_gossip method', () => {
-  const ch = new NeighborChannel({ peerName: 'x', url: 'http://x', intervalMs: 10 });
-  const v = ch.verify({
-    payload: { agent: 'x', snapshotAt: 's', dispatchState: 'idle' },
-    sourceRef: 'r', producedAt: 's',
-  });
+  const ch = new NeighborChannel({ peerName: 'x', url: 'http://x', intervalMs: 10, peerSource: 'local' });
+  const v = ch.verify(ch.parse({ agent: 'x', snapshotAt: 's', dispatchState: 'idle' }));
   const d = ch.crystallize(v);
   assert.equal(d.method, 'neighbor_gossip');
   assert.ok(d.tags.includes('idle'));
+  assert.ok(d.tags.includes('agent:x'));
+  assert.ok(d.tags.includes('peer-source:local'));
 });
 
 test('NeighborChannel sends bearer token when configured', async () => {

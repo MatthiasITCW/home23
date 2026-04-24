@@ -37,7 +37,12 @@ class DocumentFeeder {
     // when large folders are added and chokidar fires hundreds of file events at once
     this._compileQueue = [];
     this._compileActive = 0;
-    this._compileMaxConcurrent = config.compiler?.maxConcurrent || 3;
+    this._compileMaxConcurrent = this._positiveInt(config.compiler?.maxConcurrent, 3);
+    this._compileMaxQueued = this._positiveInt(config.compiler?.maxQueue, 200);
+    this._compileFailureCount = 0;
+    this._compileCircuitFailures = this._positiveInt(config.compiler?.circuitFailures, 5);
+    this._compileCircuitCooldownMs = this._positiveInt(config.compiler?.circuitCooldownMs, 60_000);
+    this._compileCircuitOpenUntil = 0;
 
     // Subsystems — created in start()
     this.converter = null;
@@ -233,6 +238,22 @@ class DocumentFeeder {
       converter: {
         available: this.converter?.available || false,
         visionModel: this.config.converter?.visionModel || 'gpt-4o-mini'
+      },
+      compiler: {
+        enabled: this.compilerConfig.enabled !== false,
+        model: this.compilerConfig.model || null,
+        queue: {
+          queued: this._compileQueue.length,
+          active: this._compileActive,
+          maxConcurrent: this._compileMaxConcurrent,
+          maxQueued: this._compileMaxQueued
+        },
+        circuit: {
+          open: this._isCompileCircuitOpen(),
+          failureCount: this._compileFailureCount,
+          openUntil: this._compileCircuitOpenUntil || null,
+          cooldownMs: this._compileCircuitCooldownMs
+        }
       }
     };
   }
@@ -489,6 +510,11 @@ class DocumentFeeder {
     return new RegExp(`^${escaped}$`).test(normalizedPath);
   }
 
+  _positiveInt(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+  }
+
   /**
    * Derive a label from the file's immediate parent directory relative to the watch root.
    */
@@ -517,6 +543,23 @@ class DocumentFeeder {
    */
   _queueCompile(text, metadata) {
     return new Promise((resolve, reject) => {
+      if (this._isCompileCircuitOpen()) {
+        const err = new Error('Document compiler circuit is open');
+        err.code = 'FEEDER_COMPILER_CIRCUIT_OPEN';
+        reject(err);
+        return;
+      }
+      if (this._compileQueue.length >= this._compileMaxQueued) {
+        const err = new Error('Document compiler queue is full');
+        err.code = 'FEEDER_COMPILE_QUEUE_FULL';
+        this.logger?.warn?.('Document compiler queue full, falling back to raw text', {
+          queued: this._compileQueue.length,
+          active: this._compileActive,
+          maxQueued: this._compileMaxQueued
+        });
+        reject(err);
+        return;
+      }
       this._compileQueue.push({ text, metadata, resolve, reject });
       this._drainCompileQueue();
     });
@@ -530,9 +573,11 @@ class DocumentFeeder {
       // Fire and forget — the promise resolution happens inside
       this.compiler.compile(job.text, job.metadata)
         .then(result => {
+          this._recordCompileSuccess();
           job.resolve(result);
         })
         .catch(err => {
+          this._recordCompileFailure(err);
           job.reject(err);
         })
         .finally(() => {
@@ -548,6 +593,31 @@ class DocumentFeeder {
         max: this._compileMaxConcurrent
       });
     }
+  }
+
+  _isCompileCircuitOpen(now = Date.now()) {
+    if (!this._compileCircuitOpenUntil) return false;
+    if (now < this._compileCircuitOpenUntil) return true;
+    this._compileCircuitOpenUntil = 0;
+    this._compileFailureCount = 0;
+    return false;
+  }
+
+  _recordCompileSuccess() {
+    this._compileFailureCount = 0;
+    this._compileCircuitOpenUntil = 0;
+  }
+
+  _recordCompileFailure(err) {
+    this._compileFailureCount++;
+    if (this._compileFailureCount < this._compileCircuitFailures) return;
+
+    this._compileCircuitOpenUntil = Date.now() + this._compileCircuitCooldownMs;
+    this.logger?.warn?.('Document compiler circuit opened after repeated failures', {
+      failureCount: this._compileFailureCount,
+      cooldownMs: this._compileCircuitCooldownMs,
+      error: err?.message || String(err)
+    });
   }
 
   _chunkCompiledSynthesis(text, filePath) {

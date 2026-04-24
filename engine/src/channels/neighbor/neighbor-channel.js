@@ -25,10 +25,11 @@ async function defaultFetch(url, { token = null, headers = null } = {}) {
 }
 
 export class NeighborChannel extends PollChannel {
-  constructor({ peerName, url, intervalMs = 3 * 60 * 1000, fetchState = null, id = null, token = null, headers = null }) {
+  constructor({ peerName, url, intervalMs = 3 * 60 * 1000, fetchState = null, id = null, token = null, headers = null, peerSource = null }) {
     super({ id: id || `neighbor.${peerName}`, class: ChannelClass.NEIGHBOR, intervalMs });
     this.peerName = peerName;
     this.url = url;
+    this.peerSource = peerSource || null;
     this.fetchState = typeof fetchState === 'function' ? fetchState : (() => defaultFetch(url, { token, headers }));
     this._lastKey = null;
   }
@@ -43,10 +44,21 @@ export class NeighborChannel extends PollChannel {
   }
 
   parse(raw) {
+    const agent = raw.agent || this.peerName;
+    const snapshotAt = raw.snapshotAt || new Date().toISOString();
     return {
-      payload: raw,
-      sourceRef: `neighbor:${raw.agent}:${raw.snapshotAt}`,
-      producedAt: raw.snapshotAt || new Date().toISOString(),
+      payload: { ...raw, agent, snapshotAt },
+      sourceRef: `neighbor:${agent}:${snapshotAt}`,
+      producedAt: snapshotAt,
+      origin: {
+        agent,
+        peerName: this.peerName,
+        peerSource: this.peerSource,
+        url: this.url,
+        snapshotAt,
+        protocol: 'home23-neighbor-state',
+        protocolVersion: raw.origin?.protocolVersion || raw.provenance?.protocolVersion || 1,
+      },
     };
   }
 
@@ -55,11 +67,14 @@ export class NeighborChannel extends PollChannel {
       channelId: this.id, sourceRef: parsed.sourceRef, payload: parsed.payload,
       flag: 'UNCERTIFIED', confidence: 0.7, producedAt: parsed.producedAt,
       verifierId: `neighbor:${this.peerName}`,
+      origin: parsed.origin,
     });
   }
 
   crystallize(obs) {
     const tags = ['neighbor', this.peerName];
+    if (obs.origin?.agent) tags.push(`agent:${obs.origin.agent}`);
+    if (obs.origin?.peerSource) tags.push(`peer-source:${obs.origin.peerSource}`);
     if (obs.payload.dispatchState) tags.push(obs.payload.dispatchState);
     return { method: 'neighbor_gossip', type: 'observation', topic: 'neighbor-state', tags };
   }

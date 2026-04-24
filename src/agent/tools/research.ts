@@ -66,6 +66,11 @@ interface ActiveContext {
 
 interface StatusResponse {
   running?: boolean;
+  activeRun?: boolean;
+  health?: {
+    activeRun?: boolean;
+    process?: { count?: number };
+  };
   activeContext?: ActiveContext | null;
   processStatus?: { running?: Array<{ name?: string }>; count?: number };
 }
@@ -98,12 +103,13 @@ export async function checkCosmoActiveRun(
     const res = await fetch(`${base}/api/status`, { signal: AbortSignal.timeout(3_000) });
     if (!res.ok) return null;
     const status = (await res.json()) as StatusResponse;
-    if (!status.running || !status.activeContext?.runName) return null;
+    const activeRun = status.health?.activeRun ?? status.activeRun ?? status.running;
+    if (!activeRun || !status.activeContext?.runName) return null;
     return {
       runName: status.activeContext.runName,
       topic: status.activeContext.topic || '',
       startedAt: status.activeContext.startedAt || '',
-      processCount: status.processStatus?.count || 0,
+      processCount: status.health?.process?.count ?? status.processStatus?.count ?? 0,
     };
   } catch {
     return null;
@@ -514,6 +520,8 @@ interface LogsResponse {
   logs?: LogEntry[];
   latest?: number;
   running?: boolean;
+  activeRun?: boolean;
+  health?: { activeRun?: boolean };
   activeContext?: ActiveContext | null;
 }
 
@@ -547,7 +555,8 @@ export const watchRunTool: ToolDefinition = {
         `${base}/api/watch/logs?after=${after}&limit=${Math.min(limit, 500)}`
       );
       const header: string[] = [];
-      if (data.running && data.activeContext?.runName) {
+      const activeRun = data.health?.activeRun ?? data.activeRun ?? data.running;
+      if (activeRun && data.activeContext?.runName) {
         header.push(`**Active run:** ${data.activeContext.runName}`);
         if (data.activeContext.topic) header.push(`**Topic:** ${data.activeContext.topic}`);
       } else {

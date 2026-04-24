@@ -893,6 +893,7 @@ async function main() {
           url: peer.url,
           token: peer.token,
           headers: peer.headers,
+          peerSource: peer.source,
           intervalMs: pollMs,
         }));
         registered.push(`neighbor.${peer.peerName}`);

@@ -115,9 +115,26 @@ describe('GracefulShutdownHandler', () => {
       let stateSaved = false;
       mockOrchestrator.saveState = async () => { stateSaved = true; };
       
-      await handler.dumpState();
+      const result = await handler.dumpState();
       
       expect(stateSaved).to.be.true;
+      expect(result.saved).to.be.true;
+    });
+
+    it('should return refused save result without throwing', async () => {
+      mockOrchestrator.saveState = async () => ({
+        saved: false,
+        reason: 'catastrophic_node_loss',
+        currentNodes: 12,
+        existingNodes: 125,
+        source: 'memory-sidecar',
+        cycle: 77
+      });
+
+      const result = await handler.dumpState();
+
+      expect(result.saved).to.be.false;
+      expect(result.reason).to.equal('catastrophic_node_loss');
     });
 
     it('should throw if saveState fails', async () => {
@@ -181,6 +198,36 @@ describe('GracefulShutdownHandler', () => {
       // No errors should occur
       expect(handler.shutdownComplete).to.be.true;
     });
+
+    it('should not mark clean shutdown when final save is refused', async () => {
+      const originalExit = process.exit;
+      let exitCode = null;
+      let markedClean = false;
+
+      process.exit = (code) => {
+        exitCode = code;
+      };
+      mockOrchestrator.saveState = async () => ({
+        saved: false,
+        reason: 'catastrophic_node_loss',
+        currentNodes: 12,
+        existingNodes: 125,
+        source: 'memory-sidecar',
+        cycle: 77
+      });
+      mockOrchestrator.crashRecovery.markCleanShutdown = async () => {
+        markedClean = true;
+      };
+
+      try {
+        await handler.shutdown('test');
+      } finally {
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).to.equal(0);
+      expect(markedClean).to.be.false;
+      expect(handler.shutdownComplete).to.be.true;
+    });
   });
 });
-

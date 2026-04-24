@@ -77,9 +77,11 @@ class MemoryIngest {
       updated_at: now,
       actor: 'os-engine-bus',
       provenance: {
-        source_refs: [obs.sourceRef, obs.channelId, ...(draft.tags || [])],
+        trace_id: obs.traceId || null,
+        source_refs: [obs.sourceRef, obs.channelId, ...(obs.traceId ? [obs.traceId] : []), ...(draft.tags || [])],
         session_refs: [`bus-ingest-${obs.receivedAt.slice(0, 10)}`],
         generation_method: draft.method || 'build_event',
+        ...(obs.origin ? { origin: obs.origin } : {}),
       },
       evidence: {
         evidence_links: obs.verifierId ? [`verifier:${obs.verifierId}`] : [],
@@ -160,6 +162,7 @@ class MemoryIngest {
 
   async writeFromObservation(obs, draft) {
     if (!obs || !obs.channelId) throw new Error('writeFromObservation requires obs with channelId');
+    obs = ensureTraceId(obs);
     if (!draft) draft = { method: 'build_event', type: 'observation', topic: obs.channelId, tags: [] };
 
     // Ensure the file exists before acquiring a lock
@@ -198,12 +201,14 @@ class MemoryIngest {
     if (written) {
       const receipt = {
         at: new Date().toISOString(),
+        traceId: obs.traceId || null,
         channelId: obs.channelId,
         sourceRef: obs.sourceRef,
         memoryObjectId: written.memory_id,
         flag: obs.flag,
         confidence: written.confidence.score,
         method: draft.method || null,
+        origin: obs.origin || null,
       };
       try { fs.appendFileSync(this.receiptsPath, JSON.stringify(receipt) + '\n'); }
       catch (err) { this.logger.warn?.('[memory-ingest] receipt append failed:', err?.message || err); }
@@ -222,6 +227,13 @@ function summarizePayload(payload) {
     if (typeof payload[k] === 'string' && payload[k].trim()) return payload[k];
   }
   return safeStringify(payload).slice(0, 280);
+}
+
+function ensureTraceId(obs) {
+  if (obs.traceId) return obs;
+  const input = `${obs.channelId || 'unknown'}\0${obs.sourceRef || 'unknown'}`;
+  const hash = crypto.createHash('sha256').update(input).digest('hex').slice(0, 24);
+  return { ...obs, traceId: `trace:${hash}` };
 }
 
 function safeStringify(v) {

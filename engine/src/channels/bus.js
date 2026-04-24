@@ -20,6 +20,7 @@
 import { EventEmitter } from 'node:events';
 import { mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ensureTraceId, validateObservation } from './contract.js';
 
 export class ChannelBus extends EventEmitter {
   constructor({ persistenceDir, logger } = {}) {
@@ -76,8 +77,7 @@ export class ChannelBus extends EventEmitter {
   async _handleRaw(channel, raw) {
     try {
       const parsed = raw && raw.payload !== undefined ? raw : channel.parse(raw);
-      const obs = channel.verify(parsed, {});
-      if (!obs || !obs.flag) return;
+      const obs = validateObservation(ensureTraceId(channel.verify(parsed, {})));
       this._persist(channel, obs);
       this.emit('observation', obs);
       const draft = channel.crystallize(obs);

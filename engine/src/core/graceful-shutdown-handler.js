@@ -199,11 +199,15 @@ class GracefulShutdownHandler {
 
       // Step 2: Save final state
       this.logger.info('[GracefulShutdown] Dumping final state...');
-      await this.dumpState();
+      const dumpResult = await this.dumpState();
 
       // Step 3: Mark clean shutdown (for crash recovery)
-      this.logger.info('[GracefulShutdown] Marking clean shutdown...');
-      if (this.orchestrator.crashRecovery) {
+      if (dumpResult?.saved === false) {
+        this.logger.warn('[GracefulShutdown] Final state was not saved; leaving shutdown dirty for crash recovery', {
+          reason: dumpResult.reason,
+        });
+      } else if (this.orchestrator.crashRecovery) {
+        this.logger.info('[GracefulShutdown] Marking clean shutdown...');
         await this.orchestrator.crashRecovery.markCleanShutdown();
       }
 
@@ -249,10 +253,22 @@ class GracefulShutdownHandler {
   async dumpState() {
     try {
       if (this.orchestrator && typeof this.orchestrator.saveState === 'function') {
-        await this.orchestrator.saveState();
+        const result = await this.orchestrator.saveState();
+        if (result && result.saved === false) {
+          this.logger.warn('[GracefulShutdown] State dump refused by persistence guard', {
+            reason: result.reason,
+            currentNodes: result.currentNodes,
+            existingNodes: result.existingNodes,
+            source: result.source,
+            cycle: result.cycle,
+          });
+          return result;
+        }
         this.logger.info('[GracefulShutdown] State dumped successfully');
+        return result || { saved: true };
       } else {
         this.logger.warn('[GracefulShutdown] No saveState method available');
+        return { saved: false, reason: 'saveState_unavailable' };
       }
     } catch (error) {
       this.logger.error('[GracefulShutdown] Failed to dump state', { error: error.message });
@@ -365,4 +381,3 @@ class GracefulShutdownHandler {
 }
 
 module.exports = { GracefulShutdownHandler };
-

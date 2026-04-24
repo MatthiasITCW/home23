@@ -3003,13 +3003,14 @@ class Orchestrator {
         await this.memory.rewire(0.01);
         await this.memory.applyDecay();
         
-        // Garbage collect with more aggressive parameters for sustainability
-        // Remove nodes with weight < 0.05 that haven't been accessed in 3 days
-        // OR nodes older than 7 days with zero access
+        // Garbage collect conservatively so steady-state brain growth does not
+        // get outpaced by routine cleanup. The default summarizer policy already
+        // prunes weak/stale nodes; use that instead of the overly aggressive
+        // 7-day awake-cycle override that has been bleeding hundreds of nodes.
         const removed = this.summarizer.garbageCollect(
           this.memory,
-          0.05,  // minWeight (was 0.1) - remove weaker memories
-          7 * 24 * 60 * 60 * 1000  // maxAge = 7 days (was 30) - faster cleanup
+          0.1,
+          30 * 24 * 60 * 60 * 1000
         );
         if (removed > 0) {
           this.logger.info('🗑️  Memory GC (GPT-5.2)', { removed, remaining: this.memory.nodes.size });
@@ -4506,7 +4507,9 @@ class Orchestrator {
   async pollActionQueue() {
     const fs = require('fs').promises;
     const path = require('path');
-    const actionsQueuePath = path.join(this.config.logsDir || './runtime', 'actions-queue.json');
+    const logsDir = this.config.logsDir || './runtime';
+    const actionsQueuePath = path.join(logsDir, 'actions-queue.json');
+    const receiptsPath = path.join(logsDir, 'actions-receipts.jsonl');
     
     try {
       // Read action queue
@@ -4524,10 +4527,33 @@ class Orchestrator {
       }
       
       this.logger.info(`⚡ Processing ${pendingActions.length} pending action(s) from MCP queue`);
+
+      const receiptIndex = await this.loadActionReceiptIndex(receiptsPath);
       
       for (const action of pendingActions) {
         try {
+          const actionId = String(action.actionId || '');
+          const idempotencyKey = typeof action.idempotencyKey === 'string' ? action.idempotencyKey : '';
+          if ((actionId && receiptIndex.actionIds.has(actionId)) || (idempotencyKey && receiptIndex.idempotencyKeys.has(idempotencyKey))) {
+            action.status = 'completed';
+            action.completedAt = new Date().toISOString();
+            action.completedCycle = this.cycleCount;
+            action.completedViaReceipt = true;
+            this.logger.info('Skipping already-receipted action', { actionId, idempotencyKey });
+            continue;
+          }
+
           await this.processAction(action);
+          await this.appendActionReceipt(receiptsPath, {
+            at: new Date().toISOString(),
+            actionId: action.actionId,
+            idempotencyKey: action.idempotencyKey || null,
+            type: action.type,
+            status: 'completed',
+            completedCycle: this.cycleCount,
+          });
+          if (action.actionId) receiptIndex.actionIds.add(action.actionId);
+          if (action.idempotencyKey) receiptIndex.idempotencyKeys.add(action.idempotencyKey);
           action.status = 'completed';
           action.completedAt = new Date().toISOString();
           action.completedCycle = this.cycleCount;
@@ -4548,6 +4574,39 @@ class Orchestrator {
         return;
       }
       this.logger.error('Failed to poll action queue:', error);
+    }
+  }
+
+  async loadActionReceiptIndex(receiptsPath) {
+    const fs = require('fs').promises;
+    const index = { actionIds: new Set(), idempotencyKeys: new Set() };
+    try {
+      const content = await fs.readFile(receiptsPath, 'utf-8');
+      for (const line of content.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        try {
+          const receipt = JSON.parse(line);
+          if (receipt.status !== 'completed') continue;
+          if (receipt.actionId) index.actionIds.add(String(receipt.actionId));
+          if (receipt.idempotencyKey) index.idempotencyKeys.add(String(receipt.idempotencyKey));
+        } catch { /* skip malformed receipt lines */ }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        this.logger?.warn?.('Failed to load action receipts', { error: error.message });
+      }
+    }
+    return index;
+  }
+
+  async appendActionReceipt(receiptsPath, receipt) {
+    const fs = require('fs').promises;
+    const path = require('path');
+    try {
+      await fs.mkdir(path.dirname(receiptsPath), { recursive: true });
+      await fs.appendFile(receiptsPath, JSON.stringify(receipt) + '\n', 'utf-8');
+    } catch (error) {
+      this.logger?.warn?.('Failed to append action receipt', { actionId: receipt?.actionId, error: error.message });
     }
   }
   
@@ -6033,35 +6092,34 @@ class Orchestrator {
       const nodesWithEmbeddings = state.memory?.nodes?.filter(n => n.embedding).length || 0;
       const totalNodes = state.memory?.nodes?.length || 0;
 
-      // SAFEGUARD (sidecar-first): prefer brain-snapshot.json for the
-      // last-known-good node count. The sidecar is tiny and always readable,
-      // even when state.json.gz is in a broken shape OR exceeds V8's ~536 MB
-      // string limit (both of which silently make the existing-state read
-      // return 0 nodes, causing the original safeguard to fail open).
+      // SAFEGUARD: resolve the last-known-good node count without trusting
+      // state.json.gz first. In the sidecar architecture state.json.gz
+      // intentionally carries empty memory arrays, so if brain-snapshot.json is
+      // missing we must count memory-nodes.jsonl.gz before falling back to the
+      // inline legacy state file. Otherwise a missing snapshot can fail open
+      // and overwrite a healthy sidecar brain with an empty runtime graph.
+      let existingState = null;
       try {
-        const { readSnapshot, writeSnapshot } = require('./brain-snapshot');
-        const sidecar = readSnapshot(this.logsDir);
-        let existingNodes = sidecar?.nodeCount ?? null;
-        let safeguardSource = sidecar ? 'sidecar' : null;
+        const { resolveKnownGoodNodeCount, evaluateSaveSafety } = require('./brain-persistence-guard');
+        const knownGood = await resolveKnownGoodNodeCount(this.logsDir, statePath);
+        existingState = knownGood.state || null;
+        const safety = evaluateSaveSafety({
+          currentNodes: totalNodes,
+          existingNodes: knownGood.count,
+          source: knownGood.source,
+          cycle: this.cycleCount,
+        });
 
-        // Fall back to reading the state file only if no sidecar exists yet
-        // (first run, or migrated from pre-sidecar build).
-        let existingState = null;
-        if (existingNodes === null) {
-          existingState = await StateCompression.loadCompressed(statePath);
-          existingNodes = existingState.memory?.nodes?.length || 0;
-          safeguardSource = 'state-file';
-        }
-
-        if (existingNodes > 100 && totalNodes < existingNodes * 0.5) {
+        if (!safety.ok) {
           this.logger.error('REFUSING STATE SAVE — catastrophic node loss detected', {
-            currentNodes: totalNodes,
-            existingNodes,
-            safeguardSource,
-            dropPercent: ((1 - totalNodes / existingNodes) * 100).toFixed(1),
-            cycle: this.cycleCount
+            currentNodes: safety.currentNodes,
+            existingNodes: safety.existingNodes,
+            safeguardSource: safety.source,
+            dropPercent: safety.dropPercent.toFixed(1),
+            cycle: safety.cycle
           });
-          return; // Don't save, preserve the existing state
+          this.lastSaveResult = { saved: false, ...safety };
+          return this.lastSaveResult; // Don't save, preserve the existing state
         }
 
         // If we didn't already load the state file (sidecar path), load it
@@ -6104,8 +6162,19 @@ class Orchestrator {
           }
         }
       } catch (error) {
-        // If we can't read existing state (first run, or file missing), proceed with save
-        this.logger.warn('Could not read existing state for safeguard check', { error: error.message });
+        this.logger.error('REFUSING STATE SAVE — persistence guard could not establish known-good baseline', {
+          error: error.message,
+          currentNodes: totalNodes,
+          cycle: this.cycleCount,
+        });
+        this.lastSaveResult = {
+          saved: false,
+          reason: 'persistence_guard_failed',
+          error: error.message,
+          currentNodes: totalNodes,
+          cycle: this.cycleCount,
+        };
+        return this.lastSaveResult;
       }
 
       // ── MEMORY SIDECARS (Tier 2) ──
@@ -6185,6 +6254,13 @@ class Orchestrator {
           : 'inline (fallback)',
         ...(saveResult.ratio && { compressionRatio: saveResult.ratio })
       });
+      this.lastSaveResult = {
+        saved: true,
+        cycle: this.cycleCount,
+        totalNodes,
+        expectedEdges,
+        sidecars: sidecarsWritten ? 'sidecar' : 'inline',
+      };
 
       // Write the brain-snapshot sidecar as the new source of truth for
       // the next save's safeguard check. Best-effort — snapshot failure
@@ -6239,9 +6315,17 @@ class Orchestrator {
         .catch(error => {
           this.logger.warn('Backup rotation failed', { error: error.message });
         });
+      return this.lastSaveResult;
       
     } catch (error) {
       this.logger.error('Save failed', { error: error.message });
+      this.lastSaveResult = {
+        saved: false,
+        reason: 'save_failed',
+        error: error.message,
+        cycle: this.cycleCount,
+      };
+      return this.lastSaveResult;
     }
   }
 

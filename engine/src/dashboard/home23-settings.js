@@ -769,6 +769,7 @@ function populateWizardModels() {
       'minimax': ['MiniMax-M2.7'],
       'anthropic': ['claude-sonnet-4-6', 'claude-opus-4-7'],
       'openai': ['gpt-5.4'],
+      'openai-codex': ['gpt-5.5'],
       'xai': ['grok-4-0709'],
     };
     for (const m of (fallback[provider] || ['default'])) {
@@ -3368,7 +3369,7 @@ const SLOT_META = {
   'agents.research': {
     label: 'Research agent — primary',
     desc: 'Research sub-agents launched via the research_* tools. Initial investigation pass that produces findings.',
-    pick: 'Favor accuracy + grounding. Models with web search or strong knowledge (grok-4, claude-opus, gpt-5.4).',
+    pick: 'Favor accuracy + grounding. Models with web search or strong knowledge (grok-4, claude-opus, gpt-5.5).',
   },
   'agents.research-synthesis': {
     label: 'Research synthesis',

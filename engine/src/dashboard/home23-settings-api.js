@@ -4,6 +4,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const yaml = require('js-yaml');
 const { Home23TileService } = require('./home23-tiles');
+const { writeYamlSafely } = require('./yaml-write-safety');
 
 function createSettingsRouter(home23Root) {
   const router = express.Router();
@@ -15,7 +16,12 @@ function createSettingsRouter(home23Root) {
   }
 
   function saveYaml(filePath, data) {
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: 120 }), 'utf8');
+    return writeYamlSafely(filePath, data, {
+      yaml,
+      lineWidth: 120,
+      rootDir: home23Root,
+      logger: console,
+    });
   }
 
   function seedCosmo23Config() {

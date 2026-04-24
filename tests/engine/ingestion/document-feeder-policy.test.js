@@ -55,3 +55,79 @@ test('document feeder skips oversized files before reading or compiling', async 
   assert.equal(logs.some(entry => entry.message === 'Skipping file above feeder maxFileBytes'), true);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('document feeder rejects compile jobs when pending queue is full', async () => {
+  const logs = [];
+  const feeder = makeFeeder({ compiler: { maxConcurrent: 1, maxQueue: 1 } }, logs);
+  feeder.compiler = {
+    compile: () => new Promise(() => {}),
+  };
+
+  feeder._queueCompile('active', { filePath: 'active.md' }).catch(() => {});
+  const queued = feeder._queueCompile('queued', { filePath: 'queued.md' });
+  await assert.rejects(
+    () => feeder._queueCompile('overflow', { filePath: 'overflow.md' }),
+    { code: 'FEEDER_COMPILE_QUEUE_FULL' }
+  );
+
+  assert.equal(feeder._compileActive, 1);
+  assert.equal(feeder._compileQueue.length, 1);
+  assert.equal(logs.some(entry => entry.message === 'Document compiler queue full, falling back to raw text'), true);
+  queued.catch(() => {});
+});
+
+test('document feeder opens compiler circuit after repeated failures', async () => {
+  const logs = [];
+  const feeder = makeFeeder({
+    compiler: {
+      circuitFailures: 2,
+      circuitCooldownMs: 10_000,
+    },
+  }, logs);
+  feeder.compiler = {
+    compile: async () => {
+      throw new Error('provider unavailable');
+    },
+  };
+
+  await assert.rejects(() => feeder._queueCompile('a', { filePath: 'a.md' }), /provider unavailable/);
+  await assert.rejects(() => feeder._queueCompile('b', { filePath: 'b.md' }), /provider unavailable/);
+  await assert.rejects(
+    () => feeder._queueCompile('c', { filePath: 'c.md' }),
+    { code: 'FEEDER_COMPILER_CIRCUIT_OPEN' }
+  );
+
+  assert.equal(feeder._isCompileCircuitOpen(), true);
+  assert.equal(logs.some(entry => entry.message === 'Document compiler circuit opened after repeated failures'), true);
+});
+
+test('document feeder status exposes compile queue and circuit state', async () => {
+  const feeder = makeFeeder({
+    compiler: {
+      model: 'minimax-m2.7',
+      maxConcurrent: 2,
+      maxQueue: 3,
+      circuitCooldownMs: 1234,
+    },
+  });
+  feeder._started = true;
+  feeder.manifest = { getStats: () => ({ fileCount: 0, nodeCount: 0, pendingCount: 0 }) };
+  feeder.converter = { available: false };
+  feeder._compileQueue.push({ text: 'queued' });
+  feeder._compileActive = 1;
+  feeder._compileFailureCount = 4;
+  feeder._compileCircuitOpenUntil = Date.now() + 1234;
+
+  const status = await feeder.getStatus();
+
+  assert.deepEqual(status.compiler.queue, {
+    queued: 1,
+    active: 1,
+    maxConcurrent: 2,
+    maxQueued: 3,
+  });
+  assert.equal(status.compiler.model, 'minimax-m2.7');
+  assert.equal(status.compiler.circuit.open, true);
+  assert.equal(status.compiler.circuit.failureCount, 4);
+  assert.equal(status.compiler.circuit.cooldownMs, 1234);
+});

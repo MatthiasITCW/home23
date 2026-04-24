@@ -382,6 +382,15 @@ export interface MemoryObject {
     source_refs: string[];
     session_refs: string[];
     generation_method: string;
+    origin?: {
+      agent?: string;
+      peerName?: string;
+      peerSource?: string | null;
+      url?: string;
+      snapshotAt?: string;
+      protocol?: string;
+      protocolVersion?: number;
+    };
   };
   evidence: {
     evidence_links: string[];

@@ -51,6 +51,7 @@ const {
 const {
   createBrainsRouter
 } = require('./lib/brains-router');
+const { buildStatusContract } = require('./lib/status-contract');
 const {
   repairAllRunMetadata
 } = require('./lib/run-metadata-repair');
@@ -748,10 +749,20 @@ function extractCallbackParams(input) {
 }
 
 app.get('/api/health', async (_req, res) => {
+  const processStatus = processManager.getStatus();
+  const health = buildStatusContract({
+    activeContext,
+    processStatus,
+    isLaunching,
+    ports: { app: PORT, websocket: WS_PORT, dashboard: DASHBOARD_PORT, mcpHttp: MCP_HTTP_PORT },
+  });
   res.json({
     success: true,
     name: 'cosmo-2.3',
-    running: !!activeContext
+    // Legacy field: means an active research run exists, not merely that the
+    // server process is reachable. See `health` for the explicit contract.
+    running: health.activeRun,
+    health
   });
 });
 
@@ -1630,11 +1641,28 @@ app.post('/api/stop', async (_req, res) => {
 
 app.get('/api/status', async (req, res) => {
   const processStatus = processManager.getStatus();
-  const running = !!activeContext && processStatus.running.some(process => process.name === 'cosmo-main');
+  // HOME23 PATCH — explicit health contract. Preserve legacy `running` while
+  // exposing the individual truths so Home23 does not confuse API reachability,
+  // launcher context, and child process state.
+  const health = buildStatusContract({
+    activeContext,
+    processStatus,
+    isLaunching,
+    ports: { app: PORT, websocket: WS_PORT, dashboard: DASHBOARD_PORT, mcpHttp: MCP_HTTP_PORT },
+  });
+  const running = health.activeRun;
 
   res.json({
     success: true,
     running,
+    health,
+    apiReachable: health.apiReachable,
+    lifecycle: health.lifecycle,
+    activeRun: health.activeRun,
+    processOnline: health.processOnline,
+    hasActiveContext: health.hasActiveContext,
+    isLaunching: health.isLaunching,
+    lastHeartbeat: health.lastHeartbeat,
     activeContext,
     processStatus,
     ports: {
@@ -1653,10 +1681,18 @@ app.get('/api/watch/logs', async (req, res) => {
     const after = Number.parseInt(req.query.after || '0', 10) || 0;
     const limit = Number.parseInt(req.query.limit || '250', 10) || 250;
     const payload = processManager.getLogs({ after, limit });
+    const processStatus = processManager.getStatus();
+    const health = buildStatusContract({
+      activeContext,
+      processStatus,
+      isLaunching,
+      ports: { app: PORT, websocket: WS_PORT, dashboard: DASHBOARD_PORT, mcpHttp: MCP_HTTP_PORT },
+    });
     res.json({
       success: true,
       ...payload,
-      running: !!activeContext && processManager.getStatus().running.some(p => p.name === 'cosmo-main'),
+      running: health.activeRun,
+      health,
       activeContext
     });
   } catch (error) {

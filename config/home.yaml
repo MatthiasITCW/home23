@@ -35,10 +35,10 @@ dashboard:
         enabled: true
         size: third
       - tileId: outside-weather
-        enabled: true
+        enabled: false
         size: half
       - tileId: sauna-control
-        enabled: true
+        enabled: false
         size: half
       - tileId: system-summary
         enabled: true
@@ -60,7 +60,7 @@ dashboard:
         mode: ecowitt-weather
         connectionId: jtr-ecowitt
         refreshMs: 60000
-        sizeDefault: half
+        sizeDefault: third
         config: {}
       - id: sauna-control
         kind: custom
@@ -69,7 +69,7 @@ dashboard:
         mode: huum-sauna
         connectionId: jtr-huum
         refreshMs: 15000
-        sizeDefault: half
+        sizeDefault: third
         config:
           startDefaults:
             targetTemperature: 190
@@ -82,6 +82,7 @@ providers:
       - gemma4:31b
       - glm-5.1
       - qwen3.5:397b
+      - deepseek-v4-flash:cloud
       - deepseek-v3.2
       - nemotron-3-super
   ollama-local:
@@ -96,6 +97,7 @@ providers:
       - gpt-5.4-mini
   openai-codex:
     defaultModels:
+      - gpt-5.5
       - gpt-5.4
   minimax:
     baseUrl: https://api.minimax.io/anthropic
@@ -251,7 +253,13 @@ models:
       model: qwen3.5:397b
     deepseek:
       provider: ollama-cloud
-      model: deepseek-v3.2
+      model: deepseek-v4-flash:cloud
+    deepseek-v4:
+      provider: ollama-cloud
+      model: deepseek-v4-flash:cloud
+    deepseek-v4-flash:
+      provider: ollama-cloud
+      model: deepseek-v4-flash:cloud
     minimax:
       provider: minimax
       model: MiniMax-M2.7
@@ -281,7 +289,7 @@ models:
       model: glm-5.1
     codex:
       provider: openai-codex
-      model: gpt-5.4
+      model: gpt-5.5
 skills:
   x-research:
     defaults:

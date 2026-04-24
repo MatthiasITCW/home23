@@ -35,7 +35,7 @@ corrupts runtime state with encrypted strings that later get shipped as literal
 bearer tokens. First observed as `401 unauthorized: encrypted:...` errors during
 smoke testing (2026-04-10).
 
-There are currently **4 patches** in this file. Patches 1–3 are the config/key
+There are currently **9 patches** in this file. Patches 1–3 are the config/key
 plumbing fixes from the initial integration. Patch 4 is a small admin HTTP
 surface that lets Home23 use cosmo23 as an OAuth broker (Step 18).
 
@@ -455,6 +455,54 @@ guarded by `memory.nodes.length === 0` + `existsSync` on sidecar paths.
 
 ---
 
+## Patch 9 — `cosmo23/server/index.js` · explicit status health contract
+
+**Why:** `/api/status` used one legacy `running` boolean for a compound truth:
+`activeContext !== null && processManager has cosmo-main`. That made it easy
+for Home23 to confuse four different states:
+
+- API server reachable but idle
+- launch in progress
+- active launcher context with no child process
+- child process running without launcher context
+
+**What changed:** `server/lib/status-contract.js` now builds an explicit
+contract used by `/api/health`, `/api/status`, and `/api/watch/logs`.
+`running` is preserved as the legacy active-run boolean, while new fields expose
+the separated truths:
+
+```js
+{
+  health: {
+    apiReachable: true,
+    lifecycle: 'idle' | 'launching' | 'running' | 'context_without_process' | 'process_without_context',
+    activeRun: boolean,
+    processOnline: boolean,
+    hasActiveContext: boolean,
+    isLaunching: boolean,
+    lastHeartbeat: null,
+    process: { cosmoMainOnline, count, runningNames },
+    run: { runName, brainId, topic, startedAt, runPath } | null,
+    ports: { app, websocket, dashboard, mcpHttp }
+  },
+  running: health.activeRun
+}
+```
+
+**Effect under Home23:** dashboard/agent callers can distinguish “COSMO server
+is alive but no research is active” from “research should be active but the
+child process is gone.” `research_*` tools prefer `health.activeRun` when
+present and fall back to legacy `running`.
+
+**Effect under standalone COSMO:** backward-compatible. Existing consumers that
+read `running`, `activeContext`, `processStatus`, `dashboardUrl`, or `wsUrl`
+continue to work.
+
+**Test coverage:** `cosmo23/server/lib/status-contract.test.js` covers idle,
+running, launching, context-without-process, and process-without-context states.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -480,3 +528,5 @@ guarded by `memory.nodes.length === 0` + `existsSync` on sidecar paths.
   which the query engine never learned to read. The "brain doesn't look
   at files" pathology Jerry self-diagnosed on 2026-04-21 was literally
   this reporting bug — the graph was there the whole time.
+- **2026-04-24** — Patch 9 added to split COSMO status truth into an explicit
+  health contract while preserving the legacy `running` boolean.

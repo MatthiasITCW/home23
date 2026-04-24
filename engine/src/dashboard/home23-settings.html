@@ -10,32 +10,88 @@
 </head>
 <body>
   <div id="particles-js"></div>
-  <!-- Header -->
-  <header class="h23-header">
-    <div class="h23-header-left">
-      <span class="h23-logo">&#129504; <span id="home-name">Home23</span></span>
-      <span class="h23-subtitle">SETTINGS</span>
-    </div>
-    <div class="h23-header-right">
-      <a href="/home23" class="h23s-back-link">&larr; Dashboard</a>
-    </div>
-  </header>
+  <div class="h23-app-shell h23s-app-shell">
+    <aside class="h23-sidebar">
+      <div class="h23-sidebar-brand">
+        <div class="h23-sidebar-orb" aria-hidden="true">
+          <span class="h23-sidebar-orb-ring ring-a"></span>
+          <span class="h23-sidebar-orb-ring ring-b"></span>
+          <span class="h23-sidebar-orb-core"></span>
+        </div>
+        <div class="h23-sidebar-brand-copy">
+          <div class="h23-logo">Home23</div>
+          <div class="h23-subtitle">AUTONOMOUS INTELLIGENCE</div>
+        </div>
+      </div>
 
-  <!-- Sub-tab bar -->
-  <nav class="h23s-tabs">
-    <button class="h23s-tab active" data-stab="providers" data-tab-label="Providers">Providers</button>
-    <button class="h23s-tab" data-stab="agents" data-tab-label="Agents">Agents</button>
-    <button class="h23s-tab" data-stab="models" data-tab-label="Models">Models</button>
-    <button class="h23s-tab" data-stab="query" data-tab-label="Query">Query</button>
-    <button class="h23s-tab" data-stab="feeder" data-tab-label="Feeder">Feeder</button>
-    <button class="h23s-tab" data-stab="skills" data-tab-label="Skills">Skills</button>
-    <button class="h23s-tab" data-stab="vibe" data-tab-label="Vibe">Vibe</button>
-    <button class="h23s-tab" data-stab="tiles" data-tab-label="Tiles">Tiles</button>
-    <button class="h23s-tab" data-stab="agency" data-tab-label="Agency">Agency</button>
-    <button class="h23s-tab" data-stab="system" data-tab-label="System">System</button>
-  </nav>
+      <div class="h23-sidebar-scroll">
+        <nav class="h23-tabs h23-tabs-primary">
+          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Home</span></a>
+          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Intelligence</span></a>
+          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Query</span></a>
+          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Brain Map</span></a>
+          <a class="h23-tab" href="/home23"><span class="h23-tab-label">About</span></a>
+          <a class="h23-tab h23-tab-settings active" href="/home23/settings"><span class="h23-tab-label">Settings</span></a>
+        </nav>
 
-  <main class="h23s-main">
+        <div class="h23-sidebar-group">
+          <div class="h23-sidebar-group-label">Linked Spaces</div>
+          <div class="h23-linked-tabs">
+            <a class="h23-tab" href="/home23"><span class="h23-tab-label">dashboard</span><span class="h23-tab-scope-chip scope-peer">agent</span></a>
+            <a class="h23-tab h23-tab-cosmo23" href="http://localhost:43210" target="_blank" rel="noopener"><span class="h23-tab-label">cosmo23</span><span class="h23-tab-scope-chip scope-external">external</span></a>
+            <a class="h23-tab h23-tab-evobrew" href="http://localhost:3415/?agent=jerry" target="_blank" rel="noopener"><span class="h23-tab-label">evobrew</span><span class="h23-tab-scope-chip scope-external">external</span></a>
+          </div>
+        </div>
+      </div>
+
+      <div class="h23-sidebar-card">
+        <div class="h23-sidebar-card-title">Settings Surface</div>
+        <div class="h23-sidebar-card-line">House-wide and agent-scoped controls live here.</div>
+        <div class="h23-sidebar-card-line">Dashboard shell now matches Home.</div>
+        <a class="h23-sidebar-card-button h23s-sidebar-button" href="/home23">Return to dashboard</a>
+      </div>
+    </aside>
+
+    <div class="h23-shell-main h23s-shell-main">
+      <header class="h23-header h23s-shell-header">
+        <div class="h23-header-left">
+          <div class="h23-header-agent">
+            <div class="h23-header-agent-icon" aria-hidden="true">⚙</div>
+            <div class="h23-header-agent-copy">
+              <div class="h23-header-kicker">Home23</div>
+              <div class="h23-header-agent-name">Settings</div>
+            </div>
+          </div>
+          <div class="h23-dashboard-identity">CONTROL SURFACE</div>
+        </div>
+        <div class="h23-header-right">
+          <a href="/home23" class="h23s-back-link">&larr; Dashboard</a>
+          <div class="cosmo-status">
+            <span class="status-dot alive"></span>
+            <span>SETTINGS</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="h23-tab-scope-bar h23s-shell-intro">
+        <div class="h23-tab-scope-kicker">Configuration Surface</div>
+        <div class="h23-tab-scope-summary">Providers, agents, model defaults, feeder controls, tile layout, and system behavior all route through this screen.</div>
+      </div>
+
+      <nav class="h23s-tabs">
+        <button class="h23s-tab active" data-stab="providers" data-tab-label="Providers">Providers</button>
+        <button class="h23s-tab" data-stab="agents" data-tab-label="Agents">Agents</button>
+        <button class="h23s-tab" data-stab="models" data-tab-label="Models">Models</button>
+        <button class="h23s-tab" data-stab="query" data-tab-label="Query">Query</button>
+        <button class="h23s-tab" data-stab="feeder" data-tab-label="Feeder">Feeder</button>
+        <button class="h23s-tab" data-stab="skills" data-tab-label="Skills">Skills</button>
+        <button class="h23s-tab" data-stab="vibe" data-tab-label="Vibe">Vibe</button>
+        <button class="h23s-tab" data-stab="tiles" data-tab-label="Tiles">Tiles</button>
+        <button class="h23s-tab" data-stab="agency" data-tab-label="Agency">Agency</button>
+        <button class="h23s-tab" data-stab="system" data-tab-label="System">System</button>
+      </nav>
+
+      <main class="h23s-main">
     <div class="h23s-section" id="settings-agent-scope" style="margin-bottom:20px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);border-radius:12px;">
       <div style="display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap;">
         <div style="min-width:280px;flex:1;">
@@ -1000,7 +1056,9 @@
       </div>
     </div>
 
-  </main>
+      </main>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
   <script src="/home23-settings.js"></script>

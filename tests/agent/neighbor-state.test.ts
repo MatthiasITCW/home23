@@ -18,6 +18,11 @@ test('buildPublicState returns a well-formed record', async () => {
   };
   const st = await buildPublicState(deps, { recentCount: 1 });
   assert.equal(st.agent, 'jerry');
+  assert.deepEqual(st.origin, {
+    agent: 'jerry',
+    protocol: 'home23-neighbor-state',
+    protocolVersion: 1,
+  });
   assert.equal(st.activeGoals.length, 1);
   assert.equal(st.recentObservations.length, 1);
   assert.equal(st.dispatchState, 'idle');

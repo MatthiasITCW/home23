@@ -1143,6 +1143,11 @@ async function main(): Promise<void> {
         }
         publicStateCache = {
           agent: AGENT_NAME,
+          origin: {
+            agent: AGENT_NAME,
+            protocol: 'home23-neighbor-state',
+            protocolVersion: 1,
+          },
           activeGoals: [],        // Goals live engine-side; not exposed in Phase 8.
           recentObservations,     // Last 20 crystallization receipts.
           currentFocus: config.agent?.displayName ?? AGENT_NAME,

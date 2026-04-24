@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryIngest, applyChannelCap, CHANNEL_CAPS } from '../../../engine/src/channels/memory-ingest.js';
+import { makeTraceId } from '../../../engine/src/channels/contract.js';
 
 test('CHANNEL_CAPS has the six channel-class methods', () => {
   for (const k of ['sensor_primary', 'sensor_derived', 'build_event', 'work_event', 'neighbor_gossip', 'zero_context_audit']) {
@@ -41,9 +42,12 @@ test('MemoryIngest.writeFromObservation creates a full MemoryObject and a receip
   assert.ok(existsSync(join(dir, 'crystallization-receipts.jsonl')));
   const raw = JSON.parse(readFileSync(join(dir, 'memory-objects.json'), 'utf8'));
   assert.equal(raw.objects.length, 1);
+  assert.equal(raw.objects[0].provenance.trace_id, makeTraceId('build.git', 'git:abc1234'));
+  assert.ok(raw.objects[0].provenance.source_refs.includes(makeTraceId('build.git', 'git:abc1234')));
   const receiptLines = readFileSync(join(dir, 'crystallization-receipts.jsonl'), 'utf8').trim().split('\n');
   assert.equal(receiptLines.length, 1);
   const r = JSON.parse(receiptLines[0]);
+  assert.equal(r.traceId, makeTraceId('build.git', 'git:abc1234'));
   assert.equal(r.channelId, 'build.git');
   assert.equal(r.memoryObjectId, mo.memory_id);
 });
@@ -72,4 +76,42 @@ test('MemoryIngest caps zero-context audit confidence hard', async () => {
   };
   const mo = await ingest.writeFromObservation(obs, { method: 'zero_context_audit', type: 'observation', topic: 'weather', tags: [] });
   assert.ok(mo.confidence.score <= 0.2);
+});
+
+test('MemoryIngest preserves cross-agent origin on memory object and receipt', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mi-origin-'));
+  const ingest = new MemoryIngest({ brainDir: dir });
+  const obs = {
+    channelId: 'neighbor.forrest',
+    sourceRef: 'neighbor:forrest:2026-04-24T12:00:00Z',
+    receivedAt: '2026-04-24T12:00:01Z',
+    producedAt: '2026-04-24T12:00:00Z',
+    flag: 'UNCERTIFIED',
+    confidence: 0.7,
+    payload: { agent: 'forrest', snapshotAt: '2026-04-24T12:00:00Z' },
+    origin: {
+      agent: 'forrest',
+      peerName: 'forrest',
+      peerSource: 'remote',
+      url: 'http://forrest.local/__state/public.json',
+      snapshotAt: '2026-04-24T12:00:00Z',
+      protocol: 'home23-neighbor-state',
+      protocolVersion: 1,
+    },
+  };
+  const draft = {
+    method: 'neighbor_gossip',
+    type: 'observation',
+    topic: 'neighbor-state',
+    tags: ['neighbor', 'forrest', 'agent:forrest'],
+  };
+
+  const mo = await ingest.writeFromObservation(obs, draft);
+  assert.equal(mo.provenance.origin.agent, 'forrest');
+  assert.equal(mo.provenance.origin.peerSource, 'remote');
+  assert.ok(mo.provenance.source_refs.includes('agent:forrest'));
+
+  const receipt = JSON.parse(readFileSync(join(dir, 'crystallization-receipts.jsonl'), 'utf8').trim());
+  assert.equal(receipt.origin.agent, 'forrest');
+  assert.equal(receipt.origin.protocol, 'home23-neighbor-state');
 });

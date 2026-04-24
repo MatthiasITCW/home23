@@ -1,42 +1,95 @@
 /* Home23 Settings — extends ReginaCosmo glass-morphism design tokens */
 
+.h23s-app-shell {
+  align-items: start;
+}
+
 .h23s-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
   color: var(--text-secondary);
   text-decoration: none;
   font-size: 13px;
 }
 .h23s-back-link:hover {
   color: var(--text-primary);
+  border-color: rgba(94, 215, 255, 0.24);
+  background: rgba(13, 76, 127, 0.24);
+}
+
+.h23s-sidebar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.h23s-shell-main {
+  min-width: 0;
+}
+
+.h23s-shell-header {
+  align-items: center;
+}
+
+.h23s-shell-intro {
+  margin-top: 0;
+}
+
+#settings-agent-scope {
+  margin-bottom: 0 !important;
+  padding: 18px 20px !important;
+  background:
+    linear-gradient(180deg, rgba(10, 29, 54, 0.9), rgba(8, 24, 44, 0.92)) !important;
+  border: 1px solid rgba(118, 190, 255, 0.14) !important;
+  border-radius: 22px !important;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.14);
 }
 
 /* ── Sub-tab bar ── */
 
 .h23s-tabs {
   display: flex;
-  gap: 6px;
-  padding: 0 24px 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(8, 24, 49, 0.9), rgba(8, 22, 40, 0.92)),
+    radial-gradient(circle at top right, rgba(73, 206, 255, 0.08), transparent 34%);
+  border: 1px solid rgba(118, 190, 255, 0.14);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.14);
 }
 
 .h23s-tab {
-  background: var(--glass-secondary);
-  border: none;
-  color: var(--text-secondary);
-  padding: 7px 18px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(226, 236, 252, 0.82);
+  padding: 10px 14px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   border-radius: 16px;
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
 }
 .h23s-tab:hover {
-  background: var(--glass-border);
+  background: rgba(13, 76, 127, 0.32);
   color: var(--text-primary);
+  border-color: rgba(87, 215, 255, 0.2);
+  transform: translateY(-1px);
 }
 .h23s-tab.active {
-  background: var(--accent-blue);
+  background: linear-gradient(180deg, rgba(16, 49, 82, 0.94), rgba(8, 30, 57, 0.96));
   color: #fff;
+  border-color: rgba(70, 222, 255, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(57, 214, 255, 0.16), 0 0 22px rgba(37, 157, 235, 0.12);
 }
 
 .h23s-tab-label {
@@ -99,12 +152,19 @@
 /* ── Panels ── */
 
 .h23s-main {
-  padding: 0 24px 40px;
-  max-width: 900px;
+  padding: 0 0 40px;
+  max-width: none;
 }
 
 .h23s-panel {
   display: none;
+  padding: 26px 28px 30px;
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(8, 24, 49, 0.92), rgba(7, 18, 36, 0.94)),
+    radial-gradient(circle at top right, rgba(73, 206, 255, 0.07), transparent 34%);
+  border: 1px solid rgba(118, 190, 255, 0.14);
+  box-shadow: 0 22px 44px rgba(0,0,0,0.18);
 }
 .h23s-panel.active {
   display: block;
@@ -121,6 +181,7 @@
   font-size: 13px;
   color: var(--text-muted);
   margin: 0 0 24px 0;
+  line-height: 1.6;
 }
 .h23s-panel-desc code {
   background: var(--glass-secondary);
@@ -168,11 +229,11 @@
 .h23s-field input,
 .h23s-field select {
   width: 100%;
-  background: var(--glass-secondary);
-  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
   color: var(--text-primary);
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  border-radius: 12px;
   font-size: 14px;
   font-family: inherit;
   outline: none;
@@ -211,18 +272,19 @@
 /* ── Buttons ── */
 
 .h23s-btn-primary {
-  background: var(--accent-blue);
+  background: linear-gradient(180deg, rgba(27, 132, 255, 0.96), rgba(12, 96, 221, 0.96));
   color: #fff;
   border: none;
-  padding: 9px 24px;
-  border-radius: var(--radius-sm);
+  padding: 10px 24px;
+  border-radius: 12px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.15s;
 }
 .h23s-btn-primary:hover {
-  background: #3b82f6;
+  background: linear-gradient(180deg, rgba(53, 150, 255, 0.98), rgba(24, 110, 236, 0.98));
+  transform: translateY(-1px);
 }
 .h23s-btn-primary:disabled {
   opacity: 0.5;
@@ -230,18 +292,19 @@
 }
 
 .h23s-btn-secondary {
-  background: var(--glass-secondary);
+  background: rgba(255,255,255,0.05);
   color: var(--text-secondary);
-  border: 1px solid var(--glass-border);
-  padding: 8px 20px;
-  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 9px 18px;
+  border-radius: 12px;
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 .h23s-btn-secondary:hover {
-  background: var(--glass-border);
+  background: rgba(13, 76, 127, 0.24);
   color: var(--text-primary);
+  border-color: rgba(87, 215, 255, 0.2);
 }
 
 .h23s-btn-danger {

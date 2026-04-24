@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { writeYamlSafely } = require('./yaml-write-safety');
 
 // Sensor registry — optional. We lazy-load to keep tiles decoupled from the
 // engine's internal modules. If the engine/src/sensors module isn't present
@@ -81,7 +82,7 @@ const CORE_TILES = [
     icon: '⚡',
     mode: 'core-system-summary',
     description: 'Home23 uptime, thought count, node count, and freshness.',
-    sizeDefault: 'full',
+    sizeDefault: 'third',
     refreshMs: 30_000,
   },
   {
@@ -170,7 +171,12 @@ function loadYaml(filePath) {
 }
 
 function saveYaml(filePath, data) {
-  fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: 120 }), 'utf8');
+  return writeYamlSafely(filePath, data, {
+    yaml,
+    lineWidth: 120,
+    rootDir: path.resolve(__dirname, '..', '..', '..'),
+    logger: console,
+  });
 }
 
 function deepClone(value) {
@@ -773,9 +779,10 @@ class Home23TileService {
     this.stopBackgroundRefresh();
 
     const tiles = this.getTilesState();
-    const layout = materializeHomeLayout(tiles).filter((item) => item.enabled !== false);
-    for (const item of layout) {
-      const tile = item.tile;
+    // Background tile sensors should refresh independent of whether the tile is
+    // currently visible in the UI. Disabled dashboard tiles can still back live
+    // problem verifiers and telemetry surfaces.
+    for (const tile of tiles.customTiles) {
       if (!tile || tile.kind !== 'custom') continue;
       if (tile.mode !== 'ecowitt-weather' && tile.mode !== 'huum-sauna') continue;
 

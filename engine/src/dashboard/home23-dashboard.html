@@ -4,75 +4,154 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Home23</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="home23-dashboard.css">
   <link rel="stylesheet" href="/home23-chat.css">
 </head>
 <body>
   <div id="particles-js"></div>
-  <!-- Header -->
-  <div class="h23-header">
-    <div class="h23-header-left">
-      <div class="h23-logo">● Home23</div>
-      <div class="h23-subtitle" id="header-subtitle">AUTONOMOUS INTELLIGENCE · <a href="/home23/vibe-gallery" style="color:inherit;text-decoration:none;">🎨GALLERY</a></div>
-      <div class="h23-dashboard-identity" id="dashboard-identity-chip">Dashboard: Agent</div>
-    </div>
-    <div class="h23-header-right">
-      <div class="time-cluster">
-        <div class="time-loc">
-          <span class="time-flag" id="tz1-flag">🇺🇸</span>
-          <span class="time-display" id="tz1-time">--:--</span>
-          <span class="time-tz" id="tz1-label">--</span>
+  <div class="h23-app-shell">
+    <aside class="h23-sidebar">
+      <div class="h23-sidebar-brand">
+        <div class="h23-sidebar-orb" aria-hidden="true">
+          <span class="h23-sidebar-orb-ring ring-a"></span>
+          <span class="h23-sidebar-orb-ring ring-b"></span>
+          <span class="h23-sidebar-orb-core"></span>
         </div>
-        <div class="time-loc" id="tz2-container" style="display:none;">
-          <span class="time-flag" id="tz2-flag"></span>
-          <span class="time-display" id="tz2-time">--:--</span>
-          <span class="time-tz" id="tz2-label">--</span>
+        <div class="h23-sidebar-brand-copy">
+          <div class="h23-logo">Home23</div>
+          <div class="h23-subtitle" id="header-subtitle">AUTONOMOUS INTELLIGENCE</div>
         </div>
       </div>
-      <div class="cosmo-status" id="engine-status" title="Home23 engine status">
-        <span class="status-dot" id="engine-dot"></span>
-        <span id="engine-status-text">ENGINE</span>
-      </div>
-    </div>
-  </div>
 
-  <!-- Engine pulse bar -->
-  <div class="h23-pulse-bar" id="engine-pulse">
-    <span class="h23-pulse-dot" id="pulse-dot"></span>
-    <span class="h23-pulse-state" id="pulse-state">—</span>
-    <span class="h23-pulse-sep">·</span>
-    <span class="h23-pulse-phase" id="pulse-phase">—</span>
-    <span class="h23-pulse-sep">·</span>
-    <span class="h23-pulse-energy" id="pulse-energy">⚡ —</span>
-    <span class="h23-pulse-sep">·</span>
-    <span class="h23-pulse-cycle" id="pulse-cycle">cycle —</span>
-    <span class="h23-pulse-sep">·</span>
-    <span class="h23-pulse-ago" id="pulse-ago">—</span>
-    <span class="h23-pulse-sep">·</span>
-    <!-- 🔔 Pending Actions badge hidden — the NOTIFY stream now drains off-engine
-         via the promoter worker into the live-problems registry. See
-         docs/design/... Panel and API still exist for debugging. -->
-    <span class="h23-pulse-notifs" id="pulse-notifs" style="cursor:pointer;display:none;" onclick="openNotificationsPanel()">
-      <span id="pulse-notifs-badge">🔔 0</span>
-    </span>
-    <span class="h23-pulse-sep" id="pulse-signals-sep" style="display:none;">·</span>
-    <span class="h23-pulse-notifs" id="pulse-signals" style="cursor:pointer;display:none;" onclick="openSignalsPanel()" title="Signals — wins, resolutions, positive observations">
-      <span id="pulse-signals-badge">✨ 0</span>
-    </span>
-    <span class="h23-pulse-sep" id="pulse-actions-sep" style="display:none;">·</span>
-    <span class="h23-pulse-notifs" id="pulse-actions" style="cursor:pointer;display:none;" onclick="openActionsPanel()">
-      <span id="pulse-actions-badge">⚡ 0</span>
-    </span>
-    <span class="h23-pulse-sep" id="pulse-problems-sep" style="display:none;">·</span>
-    <span class="h23-pulse-notifs" id="pulse-problems" style="cursor:pointer;display:none;" onclick="openProblemsPanel()" title="Live problems — verifier-backed, auto-remediated">
-      <span id="pulse-problems-badge">🩺 0</span>
-    </span>
-    <span class="h23-pulse-sep" id="pulse-brain-sep" style="display:none;">·</span>
-    <span class="h23-pulse-notifs" id="pulse-brain" style="cursor:pointer;display:none;" onclick="openBrainStoragePanel()" title="Brain storage — disk vs memory counts, backups">
-      <span id="pulse-brain-badge">🧠 —</span>
-    </span>
-  </div>
+      <div class="h23-sidebar-scroll">
+        <nav class="h23-tabs h23-tabs-primary">
+          <button class="h23-tab active" data-tab="home" data-tab-label="Home">Home</button>
+          <button class="h23-tab" data-tab="intelligence" data-tab-label="Intelligence">Intelligence</button>
+          <button class="h23-tab" data-tab="query" data-tab-label="Query">Query</button>
+          <button class="h23-tab" data-tab="brain-map" data-tab-label="Brain Map">Brain Map</button>
+          <button class="h23-tab" data-tab="about" data-tab-label="About">About</button>
+          <button class="h23-tab h23-tab-settings" id="settings-btn" data-scope-tab="settings" data-tab-label="Settings">Settings</button>
+        </nav>
+
+        <div class="h23-sidebar-group">
+          <div class="h23-sidebar-group-label">Linked Spaces</div>
+          <div class="h23-linked-tabs" id="agent-tabs"></div>
+          <div class="h23-linked-tabs">
+            <button class="h23-tab h23-tab-external h23-tab-cosmo23" id="cosmo23-btn" data-scope-tab="cosmo23" data-tab-label="cosmo23">cosmo23</button>
+            <a class="h23-tab h23-tab-external h23-tab-evobrew" id="evobrew-btn" href="#" target="_blank" data-scope-tab="evobrew" data-tab-label="evobrew">evobrew</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="h23-sidebar-card" id="sidebar-status-card">
+        <div class="h23-sidebar-card-title" id="sidebar-version-label">Home23</div>
+        <div class="h23-sidebar-card-line" id="sidebar-status-line">Dashboard connected.</div>
+        <div class="h23-sidebar-card-line" id="sidebar-update-line">Watching for updates.</div>
+        <button class="h23-sidebar-card-button" id="sidebar-update-action" type="button">Check for updates</button>
+      </div>
+    </aside>
+
+    <div class="h23-shell-main">
+      <!-- Header -->
+      <div class="h23-header">
+        <div class="h23-header-left">
+          <div class="h23-header-agent">
+            <div class="h23-header-agent-icon" aria-hidden="true">◔</div>
+            <div class="h23-header-agent-copy">
+              <div class="h23-header-kicker">Agent</div>
+              <div class="h23-header-agent-name" id="header-agent-name">Agent</div>
+            </div>
+          </div>
+          <div class="h23-dashboard-identity" id="dashboard-identity-chip">PRIMARY AGENT</div>
+        </div>
+        <div class="h23-header-right">
+          <div class="time-cluster">
+            <div class="time-loc">
+              <span class="time-flag" id="tz1-flag">🇺🇸</span>
+              <span class="time-display" id="tz1-time">--:--</span>
+              <span class="time-tz" id="tz1-label">--</span>
+            </div>
+            <div class="time-loc" id="tz2-container" style="display:none;">
+              <span class="time-flag" id="tz2-flag"></span>
+              <span class="time-display" id="tz2-time">--:--</span>
+              <span class="time-tz" id="tz2-label">--</span>
+            </div>
+          </div>
+          <div class="cosmo-status" id="engine-status" title="Home23 engine status">
+            <span class="status-dot" id="engine-dot"></span>
+            <span id="engine-status-text">ENGINE</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Update notification bar -->
+      <div id="update-notification" class="h23-update-bar" style="display:none;">
+        <span id="update-notification-text"></span>
+        <button id="update-dismiss" style="background:none; border:none; color:rgba(255,255,255,0.6); cursor:pointer; font-size:16px; margin-left:12px;">&times;</button>
+      </div>
+
+      <!-- Engine overview band -->
+      <div class="h23-pulse-bar h23-overview-band" id="engine-pulse">
+        <div class="h23-overview-state-block">
+          <span class="h23-pulse-dot" id="pulse-dot"></span>
+          <div class="h23-overview-state-copy">
+            <div class="h23-overview-kicker">Engine State</div>
+            <div class="h23-pulse-state" id="pulse-state">—</div>
+            <div class="h23-pulse-phase" id="pulse-phase">—</div>
+          </div>
+        </div>
+
+        <div class="h23-overview-metric">
+          <label>Energy</label>
+          <div class="h23-overview-value" id="pulse-energy">⚡ —</div>
+        </div>
+
+        <div class="h23-overview-metric">
+          <label>Cycle</label>
+          <div class="h23-overview-value" id="pulse-cycle">cycle —</div>
+          <div class="h23-overview-sub" id="pulse-ago">—</div>
+        </div>
+
+        <div class="h23-overview-metric">
+          <label>Nodes</label>
+          <div class="h23-overview-value" id="pulse-node-count">—</div>
+        </div>
+
+        <div class="h23-overview-metric">
+          <label>Active Goals</label>
+          <div class="h23-overview-value" id="pulse-active-goals">—</div>
+        </div>
+
+        <div class="h23-overview-badges">
+          <!-- 🔔 Pending Actions badge hidden — the NOTIFY stream now drains off-engine
+               via the promoter worker into the live-problems registry. -->
+          <span class="h23-pulse-notifs" id="pulse-notifs" style="cursor:pointer;display:none;" onclick="openNotificationsPanel()">
+            <span id="pulse-notifs-badge">🔔 0</span>
+          </span>
+          <span class="h23-pulse-sep" id="pulse-signals-sep" style="display:none;">·</span>
+          <span class="h23-pulse-notifs" id="pulse-signals" style="cursor:pointer;display:none;" onclick="openSignalsPanel()" title="Signals — wins, resolutions, positive observations">
+            <span id="pulse-signals-badge">✨ 0</span>
+          </span>
+          <span class="h23-pulse-sep" id="pulse-actions-sep" style="display:none;">·</span>
+          <span class="h23-pulse-notifs" id="pulse-actions" style="cursor:pointer;display:none;" onclick="openActionsPanel()">
+            <span id="pulse-actions-badge">⚡ 0</span>
+          </span>
+          <span class="h23-pulse-sep" id="pulse-problems-sep" style="display:none;">·</span>
+          <span class="h23-pulse-notifs" id="pulse-problems" style="cursor:pointer;display:none;" onclick="openProblemsPanel()" title="Live problems — verifier-backed, auto-remediated">
+            <span id="pulse-problems-badge">🩺 0</span>
+          </span>
+          <span class="h23-pulse-sep" id="pulse-brain-sep" style="display:none;">·</span>
+          <span class="h23-pulse-notifs" id="pulse-brain" style="cursor:pointer;display:none;" onclick="openBrainStoragePanel()" title="Brain storage — disk vs memory counts, backups">
+            <span id="pulse-brain-badge">🧠 —</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="h23-tab-scope-bar">
+        <div class="h23-tab-scope-kicker" id="dashboard-scope-kicker">This Agent Surface</div>
+        <div class="h23-tab-scope-summary" id="dashboard-scope-summary">Home belongs to this dashboard agent.</div>
+      </div>
 
   <!-- Brain Storage panel -->
   <div class="h23-log-overlay" id="brain-storage-overlay" onclick="if(event.target===this)closeBrainStoragePanel()">
@@ -192,30 +271,6 @@
         <div id="signals-list" style="padding:12px;"></div>
       </div>
     </div>
-  </div>
-
-  <!-- Update notification bar -->
-  <div id="update-notification" class="h23-update-bar" style="display:none;">
-    <span id="update-notification-text"></span>
-    <button id="update-dismiss" style="background:none; border:none; color:rgba(255,255,255,0.6); cursor:pointer; font-size:16px; margin-left:12px;">&times;</button>
-  </div>
-
-  <!-- Tab bar -->
-  <nav class="h23-tabs">
-    <button class="h23-tab active" data-tab="home" data-tab-label="Home">Home</button>
-    <button class="h23-tab" data-tab="intelligence" data-tab-label="Intelligence">Intelligence</button>
-    <button class="h23-tab" data-tab="query" data-tab-label="🔎 Query">🔎 Query</button>
-    <button class="h23-tab" data-tab="brain-map" data-tab-label="🧬 Brain Map">🧬 Brain Map</button>
-    <button class="h23-tab" data-tab="about" data-tab-label="About">About</button>
-    <div id="agent-tabs"></div>
-    <button class="h23-tab h23-tab-settings" id="settings-btn" data-scope-tab="settings" data-tab-label="⚙ Settings">&#9881; Settings</button>
-    <button class="h23-tab h23-tab-external h23-tab-cosmo23" id="cosmo23-btn" data-scope-tab="cosmo23" data-tab-label="🔬 cosmo23">🔬 cosmo23</button>
-    <a class="h23-tab h23-tab-external h23-tab-evobrew" id="evobrew-btn" href="#" target="_blank" data-scope-tab="evobrew" data-tab-label="⚡ evobrew">⚡ evobrew</a>
-  </nav>
-
-  <div class="h23-tab-scope-bar">
-    <div class="h23-tab-scope-kicker" id="dashboard-scope-kicker">This Agent Surface</div>
-    <div class="h23-tab-scope-summary" id="dashboard-scope-summary">Home belongs to this dashboard agent.</div>
   </div>
 
   <!-- Home panel — current dashboard agent tiles (ReginaCosmo layout) -->
@@ -404,6 +459,8 @@
       </div>
     </div>
   </main>
+    </div>
+  </div>
 
   <!-- Chat overlay — the message-list + input subtree lives inside
        #chat-shared-template; it's cloned into the tile's slot at init and

@@ -105,7 +105,8 @@ function refreshDashboardScopeUI() {
     const meta = getDashboardScopeMeta(tabKey);
     if (!tab.dataset.tabLabel) tab.dataset.tabLabel = tab.textContent.trim();
     const label = tab.dataset.tabLabel;
-    tab.innerHTML = `<span class="h23-tab-label">${label}</span><span class="h23-tab-scope-chip scope-${meta.kind}">${meta.chip}</span>`;
+    const showChip = meta.kind === 'external' || meta.kind === 'peer';
+    tab.innerHTML = `<span class="h23-tab-label">${label}</span>${showChip ? `<span class="h23-tab-scope-chip scope-${meta.kind}">${meta.chip}</span>` : ''}`;
     tab.title = renderDashboardScopeText(meta, tabKey);
   });
 
@@ -139,14 +140,14 @@ async function loadDashboardScopeRegistry() {
 
 function refreshDashboardIdentityUI() {
   const chip = document.getElementById('dashboard-identity-chip');
+  const headerAgent = document.getElementById('header-agent-name');
   if (!chip || !primaryAgent) return;
 
   const currentName = primaryAgent.displayName || primaryAgent.name || 'Agent';
   const homePrimaryName = homePrimaryAgent?.displayName || homePrimaryAgent?.name || currentName;
   const isHomePrimary = !!primaryAgent.isPrimary || primaryAgent.name === homePrimaryAgent?.name;
-  chip.textContent = isHomePrimary
-    ? `Dashboard: ${currentName} · primary agent`
-    : `Dashboard: ${currentName} · secondary · Home primary: ${homePrimaryName}`;
+  if (headerAgent) headerAgent.textContent = currentName;
+  chip.textContent = isHomePrimary ? 'PRIMARY AGENT' : 'SECONDARY AGENT';
   chip.title = isHomePrimary
     ? `${currentName} is the current dashboard and the Home23 primary agent.`
     : `${currentName} owns this dashboard. ${homePrimaryName} is the Home23 primary agent.`;
@@ -1064,12 +1065,14 @@ function setEngineOnlineStatus(temporalState = 'awake') {
   const dot = document.getElementById('engine-dot');
   if (dot) dot.className = 'status-dot alive';
   setText('engine-status-text', temporalState === 'sleeping' ? 'ENGINE · SLEEPING' : 'ENGINE');
+  setText('sidebar-status-line', temporalState === 'sleeping' ? 'Engine sleeping.' : 'Engine online.');
 }
 
 function setEngineOfflineStatus() {
   const dot = document.getElementById('engine-dot');
   if (dot) dot.className = 'status-dot dead';
   setText('engine-status-text', 'ENGINE offline');
+  setText('sidebar-status-line', 'Engine offline.');
 }
 
 async function fetchEngineHealth(agent) {
@@ -1204,6 +1207,14 @@ async function loadAgents() {
     settingsBtn.addEventListener('click', () => {
       window.location.href = '/home23/settings';
     });
+  }
+
+  const sidebarUpdateButton = document.getElementById('sidebar-update-action');
+  if (sidebarUpdateButton && sidebarUpdateButton.dataset.bound !== 'true') {
+    sidebarUpdateButton.addEventListener('click', () => {
+      checkUpdateNotification({ showEvenIfCurrent: true }).catch(() => {});
+    });
+    sidebarUpdateButton.dataset.bound = 'true';
   }
 
   // Wire COSMO tab button
@@ -1374,7 +1385,7 @@ function renderAgentTabs() {
   // Only show tabs for other agents; Home belongs to the current dashboard agent.
   const others = agents.filter(a => a.name !== primaryAgent.name);
   container.innerHTML = others.map(a =>
-    `<button class="h23-tab" data-tab="agent-${a.name}" data-tab-label="🐢 ${a.displayName || a.name}">🐢 ${a.displayName || a.name}</button>`
+    `<button class="h23-tab" data-tab="agent-${a.name}" data-tab-label="${a.displayName || a.name}">${a.displayName || a.name}</button>`
   ).join('');
 }
 
@@ -1442,6 +1453,8 @@ function fallbackHomeLayout() {
     { tileId: 'thought-feed', size: 'third', tile: { id: 'thought-feed', kind: 'core' } },
     { tileId: 'vibe', size: 'third', tile: { id: 'vibe', kind: 'core' } },
     { tileId: 'chat', size: 'third', tile: { id: 'chat', kind: 'core' } },
+    { tileId: 'outside-weather', size: 'half', tile: { id: 'outside-weather', kind: 'custom' } },
+    { tileId: 'sauna-control', size: 'half', tile: { id: 'sauna-control', kind: 'custom' } },
     { tileId: 'system-summary', size: 'full', tile: { id: 'system-summary', kind: 'core' } },
     { tileId: 'brain-log', size: 'half', tile: { id: 'brain-log', kind: 'core' } },
     { tileId: 'dream-log', size: 'half', tile: { id: 'dream-log', kind: 'core' } },
@@ -1955,17 +1968,29 @@ async function loadHomeTiles() {
     galleryHrefId: 'home-vibe-gallery-link',
   }).catch(() => { /* best-effort */ });
 
-  const [engineHealth, summary, feederData, thoughtData, dreamData] = await Promise.all([
+  const stateUrl = `${base || ''}/api/state`;
+  const [engineHealth, summary, feederData, thoughtData, dreamData, systemState] = await Promise.all([
     fetchEngineHealth(primaryAgent).catch(() => null),
     apiFetch(`${base}/api/home/summary`, { timeoutMs: 4000 }).catch(() => null),
     apiFetch('/home23/feeder-status', { timeoutMs: 4000 }).catch(() => null),
     apiFetch(`${base}/api/thoughts?limit=120`, { timeoutMs: 5000 }).catch(() => null),
     apiFetch(`${base}/api/dreams?limit=20&lite=1`, { timeoutMs: 3000 }).catch(() => null),
+    fetch(stateUrl, { signal: AbortSignal.timeout(8_000) })
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null),
   ]);
 
   if (summary) {
     updateSystemTile(summary);
     seedPulseFromSummary(summary, engineHealth);
+  }
+
+  if (systemState || summary) {
+    updateOverviewMetrics(systemState || summary, summary);
+  }
+
+  if (systemState) {
+    updatePulseFromState(systemState);
   }
 
   if (engineHealth) {
@@ -2016,6 +2041,37 @@ function updateSystemTile(state) {
   }
 
   updatePulseFromState(state);
+}
+
+function extractNodeCount(state) {
+  const nodes = state?.memory?.nodes ?? state?.memoryNodes ?? state?.nodeCount;
+  if (Array.isArray(nodes)) return nodes.length;
+  if (typeof nodes === 'number') return nodes;
+  return null;
+}
+
+function extractActiveGoalCount(state) {
+  const active = state?.goals?.active ?? state?.activeGoals;
+  if (Array.isArray(active)) return active.length;
+  if (typeof active === 'number') return active;
+  if (active && typeof active === 'object') return Object.keys(active).length;
+  return null;
+}
+
+function formatCompactNumber(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  return Number(value).toLocaleString('en-US');
+}
+
+function updateOverviewMetrics(state, summary = null) {
+  const nodeCount = extractNodeCount(state) ?? extractNodeCount(summary);
+  const activeGoalCount = extractActiveGoalCount(state) ?? extractActiveGoalCount(summary);
+  const energy = state?.cognitiveState?.energy;
+  if (typeof energy === 'number') {
+    setText('pulse-energy', `⚡ ${Math.round(energy * 100)}%`);
+  }
+  setText('pulse-node-count', formatCompactNumber(nodeCount));
+  setText('pulse-active-goals', activeGoalCount != null ? String(activeGoalCount) : '—');
 }
 
 function updatePulseFromState(state) {
@@ -2834,19 +2890,36 @@ function setupIntelSynthButton() {
 
 // ── Update Notification ──
 
-async function checkUpdateNotification() {
+async function checkUpdateNotification({ showEvenIfCurrent = false } = {}) {
   try {
     const res = await fetch('/home23/api/settings/update-status');
     if (!res.ok) return;
     const data = await res.json();
-    if (!data.updateAvailable) return;
-
     const bar = document.getElementById('update-notification');
     const text = document.getElementById('update-notification-text');
-    if (!bar || !text) return;
+    const versionLabel = document.getElementById('sidebar-version-label');
+    const updateLine = document.getElementById('sidebar-update-line');
+    const sidebarButton = document.getElementById('sidebar-update-action');
 
-    text.textContent = `Home23 v${data.latestVersion} available \u2014 run home23 update in your terminal`;
-    bar.style.display = 'flex';
+    if (versionLabel && data.currentVersion) {
+      versionLabel.textContent = `Home23 v${data.currentVersion}`;
+    }
+
+    if (data.updateAvailable) {
+      if (bar && text) {
+        text.textContent = `Home23 v${data.latestVersion} available \u2014 run home23 update in your terminal`;
+        bar.style.display = 'flex';
+      }
+      if (updateLine) updateLine.textContent = `Update ready: v${data.latestVersion}.`;
+      if (sidebarButton) sidebarButton.textContent = 'Review update';
+    } else {
+      if (bar && text && showEvenIfCurrent) {
+        text.textContent = `Home23 is current at v${data.currentVersion || data.latestVersion || 'current'}.`;
+        bar.style.display = 'flex';
+      }
+      if (updateLine) updateLine.textContent = `Current version: v${data.currentVersion || data.latestVersion || 'current'}.`;
+      if (sidebarButton) sidebarButton.textContent = 'Check for updates';
+    }
 
     const dismissBtn = document.getElementById('update-dismiss');
     if (dismissBtn) {

@@ -4054,6 +4054,7 @@ class DashboardServer {
         const newAction = {
           actionId: `action_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           type: skipValidation ? 'complete_task' : 'validate_task',
+          idempotencyKey: `${skipValidation ? 'complete_task' : 'validate_task'}:${taskId}`,
           taskId,
           reason: reason || (skipValidation ? 'Manual completion from dashboard' : 'Manual validation from dashboard'),
           requestedAt: new Date().toISOString(),
@@ -4340,6 +4341,7 @@ class DashboardServer {
         const newAction = {
           actionId: `action_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           type: 'retry_task_validation',
+          idempotencyKey: `retry_task_validation:${taskId}`,
           taskId,
           requestedAt: new Date().toISOString(),
           source: 'dashboard_plan_tab',
@@ -4400,6 +4402,7 @@ class DashboardServer {
         const completeAction = {
           actionId,
           type: 'complete_plan',
+          idempotencyKey: `complete_plan:${plan.id}`,
           planId: plan.id,
           requestedAt: new Date().toISOString(),
           source: 'dashboard_plan_tab',
@@ -4466,9 +4469,15 @@ class DashboardServer {
         
         // Create inject plan action
         const actionId = `action_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const idempotencyKey = `inject_plan:${crypto
+          .createHash('sha256')
+          .update(`${domain}\0${context || ''}\0${executionMode || 'mixed'}`)
+          .digest('hex')
+          .slice(0, 16)}`;
         const injectAction = {
           actionId,
           type: 'inject_plan',
+          idempotencyKey,
           domain,
           context: context || '',
           executionMode: executionMode || 'mixed',
@@ -4678,9 +4687,15 @@ Be specific, actionable, and maintain research continuity.`;
         }
         
         const actionId = `action_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const idempotencyKey = `inject_plan:${crypto
+          .createHash('sha256')
+          .update(`${nextPlanSpec.domain}\0${nextPlanSpec.context || ''}\0${nextPlanSpec.executionMode || 'mixed'}`)
+          .digest('hex')
+          .slice(0, 16)}`;
         const injectAction = {
           actionId,
           type: 'inject_plan',
+          idempotencyKey,
           domain: nextPlanSpec.domain,
           context: nextPlanSpec.context,
           executionMode: nextPlanSpec.executionMode || 'mixed',
@@ -7543,9 +7558,15 @@ You are empowered to explore and understand. The user trusts you to discover the
         
         // Create spawn action
         const actionId = `action_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const idempotencyKey = `spawn_agent:document_compiler:${crypto
+          .createHash('sha256')
+          .update(`${systemId}\0${selectedQueries.map(q => q.id || q.timestamp || '').join(',')}`)
+          .digest('hex')
+          .slice(0, 16)}`;
         const spawnAction = {
           actionId,
           type: 'spawn_agent',
+          idempotencyKey,
           agentType: 'document_compiler',
           mission: JSON.stringify({
             goalId: `system_docs_${systemId}_${Date.now()}`,

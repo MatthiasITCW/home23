@@ -220,6 +220,23 @@ class ConfigLoader {
     this.config._instanceFeederOverridesApplied = prior.concat(applied);
   }
 
+  applyInstanceArchitectureOverrides(instanceConfig) {
+    const architectureOverrides = instanceConfig && instanceConfig.architecture;
+    if (!architectureOverrides || typeof architectureOverrides !== 'object') return;
+
+    const baseArchitecture = this.config.architecture && typeof this.config.architecture === 'object'
+      ? this.config.architecture
+      : {};
+
+    this.config.architecture = {
+      ...baseArchitecture,
+      ...architectureOverrides,
+    };
+
+    const prior = this.config._instanceArchitectureOverridesApplied || [];
+    this.config._instanceArchitectureOverridesApplied = prior.concat(['architecture']);
+  }
+
   /**
    * Load configuration from YAML file
    */
@@ -240,6 +257,7 @@ class ConfigLoader {
           // specific assignments win over the sweep.
           this.applyInstanceModelAssignments(instanceConfig);
           this.applyInstanceFeederOverrides(instanceConfig);
+          this.applyInstanceArchitectureOverrides(instanceConfig);
         } catch (_instanceErr) {
           // Instance config is best-effort — a malformed file should not break startup.
         }

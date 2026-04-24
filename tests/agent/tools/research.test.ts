@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { launchTool } from '../../../src/agent/tools/research.js';
+import { checkCosmoActiveRun, launchTool } from '../../../src/agent/tools/research.js';
 import type { ToolContext } from '../../../src/agent/types.js';
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -52,5 +52,31 @@ describe('research_launch', () => {
     assert.equal(capturedBody.runRoot, '/fake/instances/jerry/workspace/research-runs/' + capturedBody.runName);
     assert.equal(capturedBody.owner, 'jerry');
     assert.equal(capturedBody.topic, 'sauna HRV correlation');
+  });
+});
+
+describe('checkCosmoActiveRun', () => {
+  it('uses explicit health.activeRun when available', async () => {
+    (globalThis as any).fetch = async (url: any) => {
+      assert.ok(String(url).endsWith('/api/status'));
+      return {
+        ok: true,
+        json: async () => ({
+          running: false,
+          health: { activeRun: true, process: { count: 1 } },
+          activeContext: {
+            runName: 'run-health-contract',
+            topic: 'status contracts',
+            startedAt: '2026-04-24T15:00:00Z',
+          },
+          processStatus: { count: 0 },
+        }),
+      } as unknown as Response;
+    };
+
+    const active = await checkCosmoActiveRun(makeCtx());
+
+    assert.equal(active?.runName, 'run-health-contract');
+    assert.equal(active?.processCount, 1);
   });
 });

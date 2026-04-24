@@ -23,6 +23,11 @@ export interface PublicStateGoal {
 
 export interface PublicState {
   agent: string;
+  origin: {
+    agent: string;
+    protocol: 'home23-neighbor-state';
+    protocolVersion: number;
+  };
   activeGoals: PublicStateGoal[];
   recentObservations: VerifiedObservation[];
   currentFocus: string;
@@ -46,6 +51,11 @@ export async function buildPublicState(
 ): Promise<PublicState> {
   return {
     agent: deps.agent,
+    origin: {
+      agent: deps.agent,
+      protocol: 'home23-neighbor-state',
+      protocolVersion: 1,
+    },
     activeGoals: deps.getActiveGoals(),
     recentObservations: deps.getRecentObservations(recentCount),
     currentFocus: deps.getCurrentFocus(),

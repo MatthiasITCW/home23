@@ -217,9 +217,11 @@ function openListPopover({ anchor, items, onSelect, emptyText = 'Nothing to show
   if (!pop) {
     pop = document.createElement('div');
     pop.id = 'chat-list-popover';
-    pop.className = 'h23-chat-menu';   // reuses menu styling
+    pop.className = 'h23-chat-menu h23-chat-list-popover';   // reuses menu styling
     pop.setAttribute('role', 'menu');
     document.body.appendChild(pop);
+  } else {
+    pop.className = 'h23-chat-menu h23-chat-list-popover';
   }
   if (!items || items.length === 0) {
     pop.innerHTML = `<div style="padding:10px 12px;color:var(--text-muted);font-size:13px;font-style:italic;">${escapeHtml(emptyText)}</div>`;
@@ -233,11 +235,26 @@ function openListPopover({ anchor, items, onSelect, emptyText = 'Nothing to show
     `).join('');
   }
   const rect = anchor.getBoundingClientRect();
+  const viewportGap = 8;
+  const menuGap = 4;
+  const maxMenuHeight = 420;
+  const belowSpace = Math.max(0, window.innerHeight - rect.bottom - viewportGap - menuGap);
+  const aboveSpace = Math.max(0, rect.top - viewportGap - menuGap);
+  const placeAbove = belowSpace < 180 && aboveSpace > belowSpace;
+  const availableSpace = placeAbove ? aboveSpace : belowSpace;
+  const constrainedHeight = Math.max(140, Math.min(maxMenuHeight, availableSpace || maxMenuHeight));
+
   pop.style.position = 'fixed';
-  pop.style.top = `${rect.bottom + 4}px`;
+  pop.style.maxHeight = `${constrainedHeight}px`;
+  pop.style.overflowY = 'auto';
+  pop.style.overscrollBehavior = 'contain';
   pop.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 260))}px`;
   pop.style.right = '';
   pop.hidden = false;
+  const renderedHeight = Math.min(pop.scrollHeight, constrainedHeight);
+  pop.style.top = placeAbove
+    ? `${Math.max(viewportGap, rect.top - renderedHeight - menuGap)}px`
+    : `${Math.min(rect.bottom + menuGap, window.innerHeight - renderedHeight - viewportGap)}px`;
 
   const close = () => {
     pop.hidden = true;
