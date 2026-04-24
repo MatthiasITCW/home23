@@ -523,7 +523,7 @@ timeouts:
   operationTimeoutMs: 180000
   cyclePauseMs: 45000
 resources:
-  memoryLimitMB: 1024
+  memoryLimitMB: 4096
   memoryWarningThreshold: 0.8
   cpuWarningThreshold: 0.9
 cluster:

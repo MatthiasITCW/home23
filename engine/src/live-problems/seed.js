@@ -12,6 +12,7 @@
 function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
   const agent = agentName || process.env.HOME23_AGENT || 'agent';
   const dashPort = dashboardPort || process.env.DASHBOARD_PORT || process.env.COSMO_DASHBOARD_PORT || '5002';
+  const realtimePort = process.env.REALTIME_PORT || '5001';
   const harnessPort = bridgePort || process.env.BRIDGE_PORT || '5004';
   const harnessProc = `home23-${agent}-harness`;
   const dashProc = `home23-${agent}-dash`;
@@ -104,6 +105,27 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
           args: {
             severity: 'alert',
             text: `Dashboard ${dashProc} unreachable. pm2 restart and agent diagnosis both failed.`,
+          },
+          cooldownMin: 60,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
+      id: `${agent}_engine_admin_ping`,
+      claim: `Engine admin HTTP responding on :${realtimePort}`,
+      verifier: {
+        type: 'http_ping',
+        args: { url: `http://127.0.0.1:${realtimePort}/admin/thinking/stats`, timeoutMs: 5000 },
+      },
+      remediation: [
+        { type: 'pm2_restart', args: { name: `home23-${agent}` }, cooldownMin: 15 },
+        { type: 'dispatch_to_agent', args: { budgetHours: 2 }, cooldownMin: 15 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'alert',
+            text: `Engine admin on :${realtimePort} is not responding. Dashboard may show stale/fallback state even if the process is online.`,
           },
           cooldownMin: 60,
         },
