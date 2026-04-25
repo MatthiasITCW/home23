@@ -10,100 +10,75 @@
 </head>
 <body>
   <div id="particles-js"></div>
-  <div class="h23-app-shell h23s-app-shell">
-    <aside class="h23-sidebar">
-      <div class="h23-sidebar-brand">
-        <div class="h23-sidebar-orb" aria-hidden="true">
-          <span class="h23-sidebar-orb-ring ring-a"></span>
-          <span class="h23-sidebar-orb-ring ring-b"></span>
-          <span class="h23-sidebar-orb-core"></span>
+  <div class="h23s-app-shell">
+    <header class="h23s-topbar">
+      <div class="h23s-title-cluster">
+        <a class="h23s-home-button" href="/home23" aria-label="Back to dashboard">
+          <span aria-hidden="true">&#8962;</span>
+        </a>
+        <div>
+          <div class="h23s-kicker">Home23</div>
+          <h1 class="h23s-page-title">Settings</h1>
         </div>
-        <div class="h23-sidebar-brand-copy">
-          <div class="h23-logo">Home23</div>
-          <div class="h23-subtitle">AUTONOMOUS INTELLIGENCE</div>
+        <span class="h23s-mode-pill">Control Surface</span>
+      </div>
+      <div class="h23s-top-actions">
+        <a href="/home23" class="h23s-back-link">&larr; Back to Dashboard</a>
+        <div class="cosmo-status h23s-status-pill">
+          <span class="status-dot alive"></span>
+          <span>SETTINGS</span>
         </div>
       </div>
+    </header>
 
-      <div class="h23-sidebar-scroll">
-        <nav class="h23-tabs h23-tabs-primary">
-          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Home</span></a>
-          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Intelligence</span></a>
-          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Query</span></a>
-          <a class="h23-tab" href="/home23"><span class="h23-tab-label">Brain Map</span></a>
-          <a class="h23-tab" href="/home23"><span class="h23-tab-label">About</span></a>
-          <a class="h23-tab h23-tab-settings active" href="/home23/settings"><span class="h23-tab-label">Settings</span></a>
+    <div class="h23s-settings-layout">
+      <aside class="h23s-config-sidebar" aria-label="Settings sections">
+        <div class="h23s-sidebar-copy">
+          <div class="h23s-sidebar-kicker">Configuration Surface</div>
+          <p>Providers, agents, model defaults, feeder controls, tile layout, and system behavior all route through this screen.</p>
+        </div>
+
+        <nav class="h23s-tabs">
+          <button class="h23s-tab" data-stab="providers" data-tab-label="Providers" data-tab-icon="&#9711;">Providers</button>
+          <button class="h23s-tab" data-stab="agents" data-tab-label="Agents" data-tab-icon="&#9783;">Agents</button>
+          <button class="h23s-tab active" data-stab="models" data-tab-label="Models" data-tab-icon="&#9635;">Models</button>
+          <button class="h23s-tab" data-stab="query" data-tab-label="Query" data-tab-icon="&#9906;">Query</button>
+          <button class="h23s-tab" data-stab="feeder" data-tab-label="Feeder" data-tab-icon="&#8767;">Feeder</button>
+          <button class="h23s-tab" data-stab="skills" data-tab-label="Skills" data-tab-icon="&#10022;">Skills</button>
+          <button class="h23s-tab" data-stab="vibe" data-tab-label="Vibe" data-tab-icon="&#9786;">Vibe</button>
+          <button class="h23s-tab" data-stab="tiles" data-tab-label="Tiles" data-tab-icon="&#9638;">Tiles</button>
+          <button class="h23s-tab" data-stab="agency" data-tab-label="Agency" data-tab-icon="&#9783;">Agency</button>
+          <button class="h23s-tab" data-stab="system" data-tab-label="System" data-tab-icon="&#9881;">System</button>
         </nav>
-
-        <div class="h23-sidebar-group">
-          <div class="h23-sidebar-group-label">Linked Spaces</div>
-          <div class="h23-linked-tabs">
-            <a class="h23-tab" href="/home23"><span class="h23-tab-label">dashboard</span><span class="h23-tab-scope-chip scope-peer">agent</span></a>
-            <a class="h23-tab h23-tab-cosmo23" href="http://localhost:43210" target="_blank" rel="noopener"><span class="h23-tab-label">cosmo23</span><span class="h23-tab-scope-chip scope-external">external</span></a>
-            <a class="h23-tab h23-tab-evobrew" href="http://localhost:3415/?agent=jerry" target="_blank" rel="noopener"><span class="h23-tab-label">evobrew</span><span class="h23-tab-scope-chip scope-external">external</span></a>
-          </div>
-        </div>
-      </div>
-
-      <div class="h23-sidebar-card">
-        <div class="h23-sidebar-card-title">Settings Surface</div>
-        <div class="h23-sidebar-card-line">House-wide and agent-scoped controls live here.</div>
-        <div class="h23-sidebar-card-line">Dashboard shell now matches Home.</div>
-        <a class="h23-sidebar-card-button h23s-sidebar-button" href="/home23">Return to dashboard</a>
-      </div>
-    </aside>
-
-    <div class="h23-shell-main h23s-shell-main">
-      <header class="h23-header h23s-shell-header">
-        <div class="h23-header-left">
-          <div class="h23-header-agent">
-            <div class="h23-header-agent-icon" aria-hidden="true">⚙</div>
-            <div class="h23-header-agent-copy">
-              <div class="h23-header-kicker">Home23</div>
-              <div class="h23-header-agent-name">Settings</div>
-            </div>
-          </div>
-          <div class="h23-dashboard-identity">CONTROL SURFACE</div>
-        </div>
-        <div class="h23-header-right">
-          <a href="/home23" class="h23s-back-link">&larr; Dashboard</a>
-          <div class="cosmo-status">
-            <span class="status-dot alive"></span>
-            <span>SETTINGS</span>
-          </div>
-        </div>
-      </header>
-
-      <div class="h23-tab-scope-bar h23s-shell-intro">
-        <div class="h23-tab-scope-kicker">Configuration Surface</div>
-        <div class="h23-tab-scope-summary">Providers, agents, model defaults, feeder controls, tile layout, and system behavior all route through this screen.</div>
-      </div>
-
-      <nav class="h23s-tabs">
-        <button class="h23s-tab active" data-stab="providers" data-tab-label="Providers">Providers</button>
-        <button class="h23s-tab" data-stab="agents" data-tab-label="Agents">Agents</button>
-        <button class="h23s-tab" data-stab="models" data-tab-label="Models">Models</button>
-        <button class="h23s-tab" data-stab="query" data-tab-label="Query">Query</button>
-        <button class="h23s-tab" data-stab="feeder" data-tab-label="Feeder">Feeder</button>
-        <button class="h23s-tab" data-stab="skills" data-tab-label="Skills">Skills</button>
-        <button class="h23s-tab" data-stab="vibe" data-tab-label="Vibe">Vibe</button>
-        <button class="h23s-tab" data-stab="tiles" data-tab-label="Tiles">Tiles</button>
-        <button class="h23s-tab" data-stab="agency" data-tab-label="Agency">Agency</button>
-        <button class="h23s-tab" data-stab="system" data-tab-label="System">System</button>
-      </nav>
+      </aside>
 
       <main class="h23s-main">
-    <div class="h23s-section" id="settings-agent-scope" style="margin-bottom:20px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);border-radius:12px;">
-      <div style="display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap;">
-        <div style="min-width:280px;flex:1;">
-          <div id="settings-scope-kicker" style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent-blue);margin-bottom:6px;">Settings Scope</div>
-          <div id="settings-scope-summary" style="font-size:13px;color:var(--text-secondary);line-height:1.5;">Agent-scoped tabs target the selected agent. Providers, Skills, Vibe, Tiles, and System stay house-wide.</div>
+    <section class="h23s-surface-hero" aria-labelledby="settings-surface-title">
+      <div class="h23s-surface-title-row">
+        <div class="h23s-surface-icon" id="settings-surface-icon" aria-hidden="true">&#9635;</div>
+        <div>
+          <div class="h23s-surface-heading">
+            <h2 id="settings-surface-title">Models</h2>
+            <span class="h23s-scope-chip scope-mixed" id="settings-surface-chip">Mixed</span>
+          </div>
+          <p id="settings-surface-desc">Configure the default chat model for agents. Advanced routing and house-wide model catalogs are still available below, but they stay out of the main path.</p>
         </div>
-        <div class="h23s-field" id="settings-agent-select-field" style="margin:0;min-width:260px;">
+      </div>
+
+      <div class="h23s-scope-card" id="settings-agent-scope">
+        <div class="h23s-scope-copy">
+          <span class="h23s-scope-info" aria-hidden="true">i</span>
+          <div>
+            <div id="settings-scope-kicker">Mixed Scope</div>
+            <div id="settings-scope-summary">Agent-scoped tabs target the selected agent. Providers, Skills, Vibe, Tiles, and System stay house-wide.</div>
+          </div>
+        </div>
+        <div class="h23s-field" id="settings-agent-select-field">
           <label>Selected Agent</label>
           <select id="settings-agent-select"></select>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Onboarding Overlay (shown on first run when no providers + no agents) -->
     <div id="onboarding-overlay" class="h23s-onboarding" style="display:none;">
@@ -190,7 +165,7 @@
     </div>
 
     <!-- Providers Panel -->
-    <div class="h23s-panel active" id="panel-providers">
+    <div class="h23s-panel" id="panel-providers">
       <h2 class="h23s-panel-title">Providers &amp; API Keys</h2>
       <p class="h23s-panel-desc">OAuth is the preferred way to authenticate with Anthropic and ChatGPT. It's free with a Claude Max plan or ChatGPT Plus/Pro subscription and refreshes automatically. Use API keys below for all other providers or as a fallback.</p>
 
@@ -360,7 +335,7 @@
     </div>
 
     <!-- Models Panel -->
-    <div class="h23s-panel" id="panel-models">
+    <div class="h23s-panel active" id="panel-models">
       <h2 class="h23s-panel-title">Models</h2>
       <p class="h23s-panel-desc">Pick the normal chat model for <strong data-scope-label="models">the selected agent</strong>. Advanced routing and house-wide model catalogs are still available below, but they stay out of the main path.</p>
 

@@ -14,10 +14,53 @@ let settingsAgents = [];
 let settingsPrimaryAgent = null;
 let settingsCurrentAgent = null;
 let selectedSettingsAgent = null;
-let activeSettingsTab = 'providers';
+let activeSettingsTab = 'models';
 const tilesBroadcast = typeof BroadcastChannel !== 'undefined'
   ? new BroadcastChannel('home23-dashboard-tiles')
   : null;
+
+const SETTINGS_TAB_CHROME = {
+  providers: {
+    icon: '◎',
+    description: 'Connect provider accounts, manage API keys, and keep shared authentication in one house-wide place.',
+  },
+  agents: {
+    icon: '♷',
+    description: 'Create agents, choose the home primary, and inspect the multi-agent roster without mixing it into runtime defaults.',
+  },
+  models: {
+    icon: '▣',
+    description: 'Configure the default chat model for agents. Advanced routing and house-wide model catalogs are still available below, but they stay out of the main path.',
+  },
+  query: {
+    icon: '⌲',
+    description: 'Set the selected agent’s Query defaults for model, depth, PGS sweep behavior, and synthesis settings.',
+  },
+  feeder: {
+    icon: '≿',
+    description: 'Control document ingestion, watch paths, compiler behavior, converter settings, and live feeder operations.',
+  },
+  skills: {
+    icon: '✦',
+    description: 'Configure shared skills and credentials used by Home23 agents across the local system.',
+  },
+  vibe: {
+    icon: '☺',
+    description: 'Tune the house-wide image and visual generation layer without touching agent cognition.',
+  },
+  tiles: {
+    icon: '▦',
+    description: 'Choose which dashboard tiles exist, how they connect, and where they appear on Home23.',
+  },
+  agency: {
+    icon: '♷',
+    description: 'Review allow-listed actions, bridge controls, and the recent action trail for the selected agent.',
+  },
+  system: {
+    icon: '⚙',
+    description: 'Manage host-level ports, embeddings, chat defaults, and maintenance commands.',
+  },
+};
 
 const DEFAULT_SETTINGS_SCOPE_REGISTRY = {
   providers: {
@@ -141,7 +184,9 @@ function renderSettingsScopeChrome() {
     const tabKey = tab.dataset.stab;
     const label = tab.dataset.tabLabel || tab.textContent.trim();
     const meta = getScopeMeta(tabKey);
-    tab.innerHTML = `<span class="h23s-tab-label">${label}</span><span class="h23s-scope-chip scope-${meta.kind}">${meta.chip}</span>`;
+    const chrome = SETTINGS_TAB_CHROME[tabKey] || {};
+    const icon = tab.dataset.tabIcon || chrome.icon || '•';
+    tab.innerHTML = `<span class="h23s-tab-icon" aria-hidden="true">${icon}</span><span class="h23s-tab-label">${escapeHtml(label)}</span><span class="h23s-scope-chip scope-${meta.kind}">${escapeHtml(meta.chip)}</span>`;
   });
 
   document.querySelectorAll('.h23s-panel').forEach(panel => {
@@ -168,6 +213,25 @@ function renderSettingsScopeChrome() {
     badge.textContent = meta.chip;
     title.textContent = title.dataset.baseTitle;
   });
+}
+
+function refreshSettingsSurfaceHeader() {
+  const activeTab = document.querySelector(`.h23s-tab[data-stab="${activeSettingsTab}"]`);
+  const title = activeTab?.dataset.tabLabel || activeSettingsTab || 'Settings';
+  const chrome = SETTINGS_TAB_CHROME[activeSettingsTab] || {};
+  const meta = getScopeMeta();
+  const surfaceTitle = document.getElementById('settings-surface-title');
+  const surfaceDesc = document.getElementById('settings-surface-desc');
+  const surfaceIcon = document.getElementById('settings-surface-icon');
+  const surfaceChip = document.getElementById('settings-surface-chip');
+
+  if (surfaceTitle) surfaceTitle.textContent = title;
+  if (surfaceDesc) surfaceDesc.textContent = chrome.description || resolveScopeSummary(meta);
+  if (surfaceIcon) surfaceIcon.textContent = chrome.icon || activeTab?.dataset.tabIcon || '•';
+  if (surfaceChip) {
+    surfaceChip.className = `h23s-scope-chip scope-${meta.kind}`;
+    surfaceChip.textContent = meta.chip;
+  }
 }
 
 function refreshSettingsDocumentTitle() {
@@ -204,7 +268,7 @@ function refreshAgentScopeUI() {
         : scopeMeta.kind === 'roster'
           ? 'Multi-Agent Scope'
           : 'House-Wide Scope';
-    kicker.textContent = `${scopeLabel} · ${scopeMeta.chip}`;
+    kicker.textContent = scopeLabel;
   }
   if (summary) {
     summary.textContent = settingsAgents.length
@@ -215,6 +279,7 @@ function refreshAgentScopeUI() {
     el.textContent = selectedAgentLabel('selected agent');
   });
   renderSettingsScopeChrome();
+  refreshSettingsSurfaceHeader();
   refreshSettingsDocumentTitle();
 }
 
@@ -3972,6 +4037,8 @@ function startAgencyPoll() {
 // ── Init ──
 
 async function init() {
+  renderSettingsScopeChrome();
+  refreshSettingsSurfaceHeader();
   await loadScopeRegistry();
   renderSettingsScopeChrome();
   setupSubTabs();
