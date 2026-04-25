@@ -863,60 +863,6 @@ function renderModels(data) {
   }
   fillModelSelect();
 
-  // Image generation config — used by generate_image + Vibe
-  const imageProviderSel = document.getElementById('image-gen-provider');
-  const imageModelSel = document.getElementById('image-gen-model');
-  if (imageProviderSel && imageModelSel) {
-    imageProviderSel.innerHTML = '';
-    for (const [name, cfg] of Object.entries(data.imageProviders || {})) {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = cfg.displayName || PROVIDER_DISPLAY[name] || name;
-      imageProviderSel.appendChild(opt);
-    }
-
-    const fillImageModelSelect = () => {
-      const provider = imageProviderSel.value;
-      imageModelSel.innerHTML = '';
-      const models = data.imageProviders?.[provider]?.models || [];
-      for (const model of models) {
-        const opt = document.createElement('option');
-        opt.value = model;
-        opt.textContent = model;
-        if (model === data.imageGeneration?.model) opt.selected = true;
-        imageModelSel.appendChild(opt);
-      }
-    };
-
-    if (!imageProviderSel.dataset.bound) {
-      imageProviderSel.addEventListener('change', fillImageModelSelect);
-      imageProviderSel.dataset.bound = 'true';
-    }
-    imageProviderSel.value = data.imageGeneration?.provider || 'openai';
-    fillImageModelSelect();
-  }
-
-  // Engine role dropdowns — collect ALL models across ALL providers
-  const allModels = [];
-  for (const [provName, prov] of Object.entries(data.providers || {})) {
-    for (const m of (prov.defaultModels || [])) {
-      allModels.push({ model: m, provider: provName });
-    }
-  }
-  const roleKeys = ['thought', 'consolidation', 'dreaming', 'query'];
-  for (const role of roleKeys) {
-    const sel = document.getElementById(`engine-role-${role}`);
-    if (!sel) continue;
-    sel.innerHTML = '<option value="">Use Default</option>';
-    for (const { model, provider } of allModels) {
-      const opt = document.createElement('option');
-      opt.value = model;
-      opt.textContent = `${model}  (${PROVIDER_DISPLAY[provider] || provider})`;
-      if (data.engineRoles?.[role] === model) opt.selected = true;
-      sel.appendChild(opt);
-    }
-  }
-
   // Per-provider model lists
   const pmList = document.getElementById('provider-models-list');
   const providerOrder = MODEL_PROVIDER_ORDER;
@@ -998,12 +944,6 @@ async function saveModels() {
     }
   });
 
-  const engineRoles = {};
-  for (const role of ['thought', 'consolidation', 'dreaming', 'query']) {
-    const val = document.getElementById(`engine-role-${role}`)?.value;
-    if (val) engineRoles[role] = val;
-  }
-
   const body = {
     agent: selectedSettingsAgent,
     chat: {
@@ -1011,12 +951,7 @@ async function saveModels() {
       defaultModel: document.getElementById('models-default-model').value,
     },
     aliases,
-    imageGeneration: {
-      provider: document.getElementById('image-gen-provider')?.value || 'openai',
-      model: document.getElementById('image-gen-model')?.value || 'gpt-image-2',
-    },
     providerModels: collectProviderModels(),
-    engineRoles,
   };
 
   const statusEl = document.getElementById('models-status');
@@ -1960,6 +1895,8 @@ async function loadVibe() {
     const res = await fetch('/home23/api/settings/vibe');
     const data = await res.json();
     const v = data.vibe || {};
+    const imageGeneration = data.imageGeneration || {};
+    const imageProviders = data.imageProviders || {};
     const d = v.dreams || {};
     document.getElementById('vibe-autogen').checked = v.autoGenerate !== false;
     document.getElementById('vibe-gen-hours').value = v.generationIntervalHours ?? 12;
@@ -1969,9 +1906,41 @@ async function loadVibe() {
     document.getElementById('vibe-dreams-lookback').value = d.lookback ?? 3;
     document.getElementById('vibe-dreams-extraction').value = d.extraction === 'llm' ? 'llm' : 'heuristic';
     document.getElementById('vibe-source-paths').value = Array.isArray(v.sourcePaths) ? v.sourcePaths.join('\n') : '';
+    renderVibeImageGeneration(imageProviders, imageGeneration);
   } catch (err) {
     console.error('[vibe] load failed', err);
   }
+}
+
+function renderVibeImageGeneration(imageProviders, imageGeneration) {
+  const providerSel = document.getElementById('vibe-image-provider');
+  const modelSel = document.getElementById('vibe-image-model');
+  if (!providerSel || !modelSel) return;
+
+  const providerNames = Object.keys(imageProviders || {});
+  providerSel.innerHTML = providerNames.map((name) => {
+    const cfg = imageProviders[name] || {};
+    const selected = name === (imageGeneration.provider || 'openai') ? 'selected' : '';
+    return `<option value="${escapeHtml(name)}" ${selected}>${escapeHtml(cfg.displayName || PROVIDER_DISPLAY[name] || name)}</option>`;
+  }).join('');
+
+  const fillModels = () => {
+    const provider = providerSel.value || imageGeneration.provider || providerNames[0] || 'openai';
+    const models = imageProviders?.[provider]?.models || [];
+    modelSel.innerHTML = models.map((model) => {
+      const selected = model === imageGeneration.model ? 'selected' : '';
+      return `<option value="${escapeHtml(model)}" ${selected}>${escapeHtml(model)}</option>`;
+    }).join('');
+  };
+
+  if (!providerSel.dataset.boundVibeImage) {
+    providerSel.addEventListener('change', () => {
+      imageGeneration.model = '';
+      fillModels();
+    });
+    providerSel.dataset.boundVibeImage = 'true';
+  }
+  fillModels();
 }
 
 async function saveVibe() {
@@ -1992,6 +1961,10 @@ async function saveVibe() {
         lookback: Number(document.getElementById('vibe-dreams-lookback').value),
         extraction: document.getElementById('vibe-dreams-extraction').value,
       },
+    },
+    imageGeneration: {
+      provider: document.getElementById('vibe-image-provider')?.value || 'openai',
+      model: document.getElementById('vibe-image-model')?.value || 'gpt-image-2',
     },
   };
   try {

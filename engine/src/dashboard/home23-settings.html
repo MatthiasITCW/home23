@@ -355,10 +355,11 @@
     <!-- Models Panel -->
     <div class="h23s-panel" id="panel-models">
       <h2 class="h23s-panel-title">Models</h2>
-      <p class="h23s-panel-desc">The runtime sections below apply to <strong data-scope-label="models">the selected agent</strong>. The catalog sections at the bottom stay house-wide so every dashboard sees the same provider model list and aliases.</p>
+      <p class="h23s-panel-desc">Chat defaults and cognitive routing for <strong data-scope-label="models">the selected agent</strong>. House-wide provider catalogs and aliases are still here because they feed shared model pickers.</p>
 
       <div class="h23s-section">
-        <h3 class="h23s-section-title">Selected Agent Defaults</h3>
+        <h3 class="h23s-section-title">Chat Default</h3>
+        <p class="h23s-panel-desc" style="margin-top:0;">The model this agent uses for normal chat unless a conversation explicitly picks another model.</p>
         <div class="h23s-field-row">
           <div class="h23s-field">
             <label>Default Provider</label>
@@ -397,48 +398,8 @@
       </div>
 
       <div class="h23s-section">
-        <h3 class="h23s-section-title">Image Generation</h3>
-        <p class="h23s-panel-desc" style="margin-top:0;">Controls which image model Home23 uses for the agent <code>generate_image</code> tool and the dashboard Vibe pipeline. This hot-applies on the next generation request.</p>
-        <div class="h23s-field-row">
-          <div class="h23s-field">
-            <label>Provider</label>
-            <select id="image-gen-provider"></select>
-          </div>
-          <div class="h23s-field">
-            <label>Model</label>
-            <select id="image-gen-model"></select>
-          </div>
-        </div>
-      </div>
-
-      <div class="h23s-section">
-        <h3 class="h23s-section-title">Engine Roles</h3>
-        <p class="h23s-panel-desc" style="margin-top:0;">Override which model each cognitive role uses for <strong data-scope-label="models">the selected agent</strong>. Leave on "Use Default" to follow that agent's default model above.</p>
-        <div class="h23s-field-row">
-          <div class="h23s-field">
-            <label>Thought</label>
-            <select id="engine-role-thought"></select>
-          </div>
-          <div class="h23s-field">
-            <label>Consolidation</label>
-            <select id="engine-role-consolidation"></select>
-          </div>
-        </div>
-        <div class="h23s-field-row">
-          <div class="h23s-field">
-            <label>Dreaming</label>
-            <select id="engine-role-dreaming"></select>
-          </div>
-          <div class="h23s-field">
-            <label>Query</label>
-            <select id="engine-role-query"></select>
-          </div>
-        </div>
-      </div>
-
-      <div class="h23s-section">
         <h3 class="h23s-section-title">Cognitive Assignments</h3>
-        <p class="h23s-panel-desc" style="margin-top:0;">Per-slot control over which model every part of <strong data-scope-label="models">the selected agent</strong>'s engine uses. Each row is one place the engine calls out to a model. Set a provider + model, and optionally chain fallbacks that kick in on error or rate-limit.</p>
+        <p class="h23s-panel-desc" style="margin-top:0;">Advanced per-slot routing for the thinking engine. Each row is one internal model call path, with optional fallbacks for errors or rate limits.</p>
         <div id="model-assignments-list" style="display:flex;flex-direction:column;gap:10px;"></div>
         <div class="h23s-actions" style="border-top:none;padding-top:8px;">
           <button class="h23s-btn-primary" id="btn-save-assignments">Save Assignments</button>
@@ -749,6 +710,16 @@
           <div class="h23s-field">
             <label>Gallery Limit</label>
             <input type="number" id="vibe-gallery-limit" min="1" step="1" value="60">
+          </div>
+        </div>
+        <div class="h23s-field-row" style="margin-top:12px;">
+          <div class="h23s-field">
+            <label>Image Provider</label>
+            <select id="vibe-image-provider"></select>
+          </div>
+          <div class="h23s-field">
+            <label>Image Model</label>
+            <select id="vibe-image-model"></select>
           </div>
         </div>
       </div>

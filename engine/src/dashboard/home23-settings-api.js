@@ -1022,8 +1022,7 @@ function createSettingsRouter(home23Root) {
     const targetAgent = resolveRequestedAgent(agent);
     const roleModels = engineRoles && typeof engineRoles === 'object' ? engineRoles : {};
     const chatChanged = !!chat;
-    const engineRolesChanged = Object.keys(roleModels).length > 0;
-    const defaultModel = chat?.defaultModel;
+    const engineRolesChanged = engineRoles !== undefined;
     let restartedHarness = false;
     let restartedAgent = false;
     let homeConfigDirty = false;
@@ -1047,9 +1046,15 @@ function createSettingsRouter(home23Root) {
         agentConfig.chat.defaultModel = chat.defaultModel;
       }
 
-      if (!agentConfig.engine) agentConfig.engine = {};
-      for (const role of ['thought', 'consolidation', 'dreaming', 'query']) {
-        agentConfig.engine[role] = roleModels[role] || defaultModel || agentConfig.engine[role];
+      if (engineRolesChanged) {
+        if (!agentConfig.engine) agentConfig.engine = {};
+        for (const role of ['thought', 'consolidation', 'dreaming', 'query']) {
+          if (roleModels[role]) {
+            agentConfig.engine[role] = roleModels[role];
+          } else {
+            delete agentConfig.engine[role];
+          }
+        }
       }
       saveYaml(agentConfigPath, agentConfig);
 
@@ -1990,11 +1995,15 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
   router.get('/vibe', (_req, res) => {
     const homeConfig = loadYaml(path.join(home23Root, 'config', 'home.yaml'));
     const vibe = mergeVibeConfig(homeConfig.dashboard?.vibe || {});
-    res.json({ vibe });
+    res.json({
+      vibe,
+      imageGeneration: normalizeImageGenerationSettings(homeConfig.media?.imageGeneration || {}),
+      imageProviders: IMAGE_PROVIDER_CATALOG,
+    });
   });
 
   router.put('/vibe', (req, res) => {
-    const { vibe: input } = req.body || {};
+    const { vibe: input, imageGeneration } = req.body || {};
     if (!input || typeof input !== 'object') {
       return res.status(400).json({ ok: false, error: 'vibe object required' });
     }
@@ -2002,8 +2011,18 @@ NEVER restate raw brain state as a list. Have a take. React. Comment. If everyth
     const homeConfig = loadYaml(configPath);
     if (!homeConfig.dashboard) homeConfig.dashboard = {};
     homeConfig.dashboard.vibe = mergeVibeConfig(input);
+    if (imageGeneration && typeof imageGeneration === 'object') {
+      if (!homeConfig.media) homeConfig.media = {};
+      homeConfig.media.imageGeneration = normalizeImageGenerationSettings(imageGeneration);
+    }
     saveYaml(configPath, homeConfig);
-    res.json({ ok: true, vibe: homeConfig.dashboard.vibe, applied: ['vibe'], requiresRestart: [] });
+    res.json({
+      ok: true,
+      vibe: homeConfig.dashboard.vibe,
+      imageGeneration: normalizeImageGenerationSettings(homeConfig.media?.imageGeneration || {}),
+      applied: ['vibe', 'imageGeneration'],
+      requiresRestart: [],
+    });
   });
 
   // ─── Tiles (STEP 22) ──────────────────────────────────────────────────────
