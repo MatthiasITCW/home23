@@ -100,6 +100,8 @@ function renderDashboardScopeText(meta, tabKey = currentTab) {
 }
 
 function refreshDashboardScopeUI() {
+  document.body.classList.toggle('h23-external-focus', currentTab === 'cosmo23');
+
   document.querySelectorAll('.h23-tab[data-tab], .h23-tab[data-scope-tab]').forEach(tab => {
     const tabKey = tab.dataset.scopeTab || tab.dataset.tab;
     const meta = getDashboardScopeMeta(tabKey);

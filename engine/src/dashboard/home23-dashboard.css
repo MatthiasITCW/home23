@@ -2239,6 +2239,45 @@ body {
   gap: 12px;
 }
 
+body.h23-external-focus {
+  padding: 0;
+  overflow: hidden;
+  background: #f7f9fb;
+}
+
+body.h23-external-focus::before,
+body.h23-external-focus #particles-js,
+body.h23-external-focus .h23-sidebar,
+body.h23-external-focus .h23-header,
+body.h23-external-focus .h23-update-bar,
+body.h23-external-focus .h23-overview-band,
+body.h23-external-focus .h23-tab-scope-bar {
+  display: none !important;
+}
+
+body.h23-external-focus .h23-app-shell {
+  min-height: 100vh;
+  display: block;
+}
+
+body.h23-external-focus .h23-shell-main,
+body.h23-external-focus .h23-main {
+  width: 100vw;
+  min-height: 100vh;
+  gap: 0;
+  padding: 0;
+}
+
+body.h23-external-focus #cosmo23-frame-wrap {
+  height: 100vh !important;
+  min-height: 100vh;
+}
+
+body.h23-external-focus #cosmo23-refresh-btn {
+  top: 14px !important;
+  right: 18px !important;
+}
+
 .h23-header,
 .h23-pulse-bar,
 .h23-update-bar,
