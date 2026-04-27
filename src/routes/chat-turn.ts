@@ -1,9 +1,13 @@
 import type { Request, Response } from 'express';
 import type { AgentLoop } from '../agent/loop.js';
 import type { ConversationHistory } from '../agent/history.js';
+import type { MediaAttachment } from '../types.js';
 import { TurnStore } from '../chat/turn-store.js';
 import { turnBus } from '../chat/turn-bus.js';
 import { isTurnEnvelope, isTurnEvent } from '../chat/turn-types.js';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join, extname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export interface ChatTurnConfig {
   agentName: string;
@@ -11,6 +15,8 @@ export interface ChatTurnConfig {
   history: ConversationHistory;
   token?: string;
   modelAliases?: Record<string, { provider: string; model: string }>;
+  /** Absolute path to instances/<agent>/. Used as upload root for chat image attachments. */
+  instanceDir?: string;
 }
 
 function checkAuth(req: Request, res: Response, token?: string): boolean {
@@ -28,12 +34,43 @@ export function createTurnStartHandler(config: ChatTurnConfig) {
   return async (req: Request, res: Response): Promise<void> => {
     if (!checkAuth(req, res, config.token)) return;
 
-    const { chatId, message, model } = req.body ?? {};
+    const { chatId, message, model, images } = req.body ?? {};
     if (!chatId || typeof chatId !== 'string') {
       res.status(400).json({ error: 'chatId required' }); return;
     }
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'message required' }); return;
+    }
+
+    const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+    const MAX_IMAGES = 6;
+    const MAX_BYTES = 10 * 1024 * 1024;
+    const validatedImages: Array<{ buf: Buffer; mimeType: string; fileName?: string }> = [];
+    if (images !== undefined) {
+      if (!Array.isArray(images)) {
+        res.status(400).json({ error: 'images must be an array' }); return;
+      }
+      if (images.length > MAX_IMAGES) {
+        res.status(413).json({ error: `too many images (max ${MAX_IMAGES})` }); return;
+      }
+      for (const img of images) {
+        if (!img || typeof img.data !== 'string' || typeof img.mimeType !== 'string') {
+          res.status(400).json({ error: 'each image needs data (base64) and mimeType' }); return;
+        }
+        if (!ALLOWED_MIME.has(img.mimeType)) {
+          res.status(415).json({ error: `unsupported mime ${img.mimeType}` }); return;
+        }
+        let buf: Buffer;
+        try { buf = Buffer.from(img.data, 'base64'); }
+        catch { res.status(400).json({ error: 'invalid base64' }); return; }
+        if (buf.length === 0) {
+          res.status(400).json({ error: 'empty image' }); return;
+        }
+        if (buf.length > MAX_BYTES) {
+          res.status(413).json({ error: `image exceeds ${MAX_BYTES} bytes` }); return;
+        }
+        validatedImages.push({ buf, mimeType: img.mimeType, fileName: typeof img.fileName === 'string' ? img.fileName : undefined });
+      }
     }
 
     // Reject concurrent runs for same chatId — surface the already-running turn
@@ -59,15 +96,41 @@ export function createTurnStartHandler(config: ChatTurnConfig) {
       }
     }
 
+    // Generate turnId early so image filenames can use it.
+    const turnId = `t_${Date.now()}_${randomUUID().slice(0, 8)}`;
+
+    const media: MediaAttachment[] = [];
+    if (validatedImages.length > 0) {
+      if (!config.instanceDir) {
+        res.status(500).json({ error: 'instanceDir not configured' }); return;
+      }
+      const uploadDir = join(config.instanceDir, 'uploads', 'chat');
+      mkdirSync(uploadDir, { recursive: true });
+      const extByMime: Record<string, string> = {
+        'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
+      };
+      for (let i = 0; i < validatedImages.length; i++) {
+        const v = validatedImages[i]!;
+        const ext = extByMime[v.mimeType] ?? extname(v.fileName ?? '') ?? '.bin';
+        const p = join(uploadDir, `${turnId}-${i}${ext}`);
+        writeFileSync(p, v.buf);
+        media.push({ type: 'image', path: p, mimeType: v.mimeType, fileName: v.fileName });
+      }
+    }
+
     try {
-      const { turnId, response } = await config.agent.runWithTurn(chatId, message, { modelOverride });
+      const { turnId: actualTurnId, response } = await config.agent.runWithTurn(chatId, message, {
+        turnId,
+        modelOverride,
+        media: media.length > 0 ? media : undefined,
+      });
 
       // Detach — don't await. Swallow errors (already persisted to JSONL as error envelope).
       response.catch(err => {
-        console.error(`[chat-turn] ${config.agentName} ${turnId} error:`, err?.message || err);
+        console.error(`[chat-turn] ${config.agentName} ${actualTurnId} error:`, err?.message || err);
       });
 
-      res.json({ turn_id: turnId });
+      res.json({ turn_id: actualTurnId });
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
       console.error(`[chat-turn] ${config.agentName} start error:`, m);

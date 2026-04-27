@@ -799,7 +799,7 @@ async function main(): Promise<void> {
   const BRIDGE_PORT = config.ports?.bridge ?? 5004;
   const bridgeToken = config.channels?.webhooks?.token ?? process.env.BRIDGE_TOKEN ?? '';
   const bridgeApp = (await import('express')).default();
-  bridgeApp.use((await import('express')).default.json({ limit: '10mb' }));
+  bridgeApp.use((await import('express')).default.json({ limit: '90mb' }));
 
   // CORS for evobrew
   bridgeApp.use((_req: any, res: any, next: any) => {
@@ -1054,6 +1054,7 @@ async function main(): Promise<void> {
     history,
     token: bridgeToken || undefined,
     modelAliases: MODEL_ALIASES,
+    instanceDir: INSTANCE_DIR,
   };
   bridgeApp.post('/api/chat/turn', createTurnStartHandler(chatTurnConfig));
   bridgeApp.get('/api/chat/stream', createTurnStreamHandler(chatTurnConfig));
