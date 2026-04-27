@@ -10,31 +10,85 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="masthead">
-      <div class="masthead-copy">
-        <p class="eyebrow">Home23 COSMO</p>
-        <h1>COSMO 2.3</h1>
-        <p class="masthead-text">Launch Home23-managed research runs, inspect local run brains, and query completed knowledge from this workspace.</p>
+    <aside class="side-rail" aria-label="Home23 linked spaces">
+      <div class="brand-lockup">
+        <div class="brand-orbit" aria-hidden="true"><span></span></div>
+        <div>
+          <div class="brand-name">Home23</div>
+          <div class="brand-subtitle">Autonomous Intelligence</div>
+        </div>
       </div>
-      <div class="masthead-status">
-        <div class="status-chip" id="hero-run-status">Idle</div>
-        <div class="status-chip subtle" id="hero-setup-status">Setup pending</div>
+
+      <nav class="side-nav" aria-label="Home23">
+        <button class="side-nav-btn" type="button" data-view-target="query"><span class="side-icon">⌕</span>Query</button>
+        <button class="side-nav-btn" type="button" data-view-target="map"><span class="side-icon">✧</span>Brain Map</button>
+        <a class="side-nav-btn" href="http://localhost:5002/home23" target="_top"><span class="side-icon">ⓘ</span>About</a>
+        <a class="side-nav-btn" href="http://localhost:5002/home23/settings" target="_top"><span class="side-icon">⚙</span>Settings</a>
+      </nav>
+
+      <div class="side-section">
+        <div class="side-section-title">Linked Spaces</div>
+        <a class="space-link" href="http://localhost:5002/home23" target="_top">
+          <span class="space-mark">◇</span>
+          <span>Jerry</span>
+          <strong>Agent</strong>
+        </a>
+        <div class="space-link active">
+          <span class="space-mark">⌁</span>
+          <span>cosmo23</span>
+          <strong>External</strong>
+        </div>
+        <a class="space-link" href="http://localhost:3415" target="_top">
+          <span class="space-mark">↯</span>
+          <span>evobrew</span>
+          <strong>External</strong>
+        </a>
       </div>
-    </header>
 
-    <nav class="top-nav" aria-label="Primary">
-      <button class="top-nav-btn" type="button" data-view="launch">Launch</button>
-      <button class="top-nav-btn" type="button" data-view="brains">Brains</button>
-      <button class="top-nav-btn" type="button" data-view="watch">Watch</button>
-      <button class="top-nav-btn" type="button" data-view="query">Query</button>
-      <button class="top-nav-btn" type="button" data-view="map">Brain Map</button>
-      <button class="top-nav-btn" type="button" data-view="intelligence">Intelligence</button>
-      <button class="top-nav-btn" type="button" data-view="hub">Hub</button>
-      <button class="top-nav-btn" type="button" data-view="interactive">Interactive</button>
-      <button class="top-nav-btn tab-disabled" type="button" data-view="ingest" disabled>Ingest</button>
-    </nav>
+      <div class="version-card">
+        <h2>Home23 v0.5.5</h2>
+        <div class="version-line"><span class="ok-dot"></span>Engine online</div>
+        <div class="version-line"><span class="info-dot"></span>Update ready: v0.6.0.</div>
+        <a class="review-update" href="http://localhost:5002/home23/settings" target="_top">Review update</a>
+      </div>
+    </aside>
 
-    <main class="view-stack">
+    <div class="workspace-shell">
+      <div class="workspace-actions">
+        <button class="ghost-btn refresh-shell-btn" type="button" id="refresh-app-btn">↻ Refresh</button>
+      </div>
+
+      <header class="masthead">
+        <div class="masthead-copy">
+          <p class="eyebrow">Home23 COSMO</p>
+          <h1>COSMO 2.3</h1>
+          <p class="masthead-text">Launch Home23-managed research runs, inspect local run brains, and query completed knowledge from this workspace.</p>
+        </div>
+        <div class="masthead-status">
+          <div class="status-card">
+            <span>Status</span>
+            <strong id="hero-run-status">Idle</strong>
+          </div>
+          <div class="status-card">
+            <span>Active Profile</span>
+            <strong id="hero-setup-status">Setup pending</strong>
+          </div>
+        </div>
+      </header>
+
+      <nav class="top-nav" aria-label="Primary">
+        <button class="top-nav-btn" type="button" data-view="launch"><span>↗</span>Launch</button>
+        <button class="top-nav-btn" type="button" data-view="brains"><span>♧</span>Brains</button>
+        <button class="top-nav-btn" type="button" data-view="watch"><span>◎</span>Watch</button>
+        <button class="top-nav-btn" type="button" data-view="query"><span>⌕</span>Query</button>
+        <button class="top-nav-btn" type="button" data-view="map"><span>✣</span>Brain Map</button>
+        <button class="top-nav-btn" type="button" data-view="intelligence"><span>∥</span>Intelligence</button>
+        <button class="top-nav-btn" type="button" data-view="hub"><span>▦</span>Hub</button>
+        <button class="top-nav-btn" type="button" data-view="interactive"><span>▱</span>Interactive</button>
+        <button class="top-nav-btn tab-disabled" type="button" data-view="ingest" disabled><span>☁</span>Ingest</button>
+      </nav>
+
+      <main class="view-stack">
       <section class="view" id="view-launch">
         <div class="launch-layout">
           <section class="panel">
@@ -49,7 +103,7 @@
             <form id="launch-form" class="form-stack">
               <div class="form-grid compact-grid">
                 <label class="field span-2">
-                  <span>Topic</span>
+                  <span>Topic *</span>
                   <input type="text" name="topic" placeholder="What should COSMO research?">
                 </label>
 
@@ -60,7 +114,7 @@
 
                 <label class="field">
                   <span>Run Name</span>
-                  <input type="text" name="runName" placeholder="optional">
+                  <input type="text" name="runName" placeholder="e.g., quarterly-analysis-01">
                 </label>
 
                 <label class="field">
@@ -145,7 +199,7 @@
               </details>
 
               <div class="form-actions">
-                <button type="submit" class="primary-btn">Start Research</button>
+                <button type="submit" class="primary-btn">↗ Launch Research</button>
                 <button type="button" class="ghost-btn" data-view-target="brains">Open Brain Workspace</button>
               </div>
             </form>
@@ -751,7 +805,8 @@
         <p>Start a run to ingest documents.</p>
       </div>
     </section>
-    </main>
+      </main>
+    </div>
   </div>
 
   <div class="toast-stack" id="toast-stack"></div>

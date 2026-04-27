@@ -200,6 +200,15 @@ class CosmoStandaloneApp {
     });
 
     onClick('refresh-setup-btn', () => this.loadSetupStatus());
+    onClick('refresh-app-btn', async () => {
+      await Promise.all([
+        this.loadSetupStatus(),
+        this.loadModels(),
+        this.loadStatus(),
+        this.loadBrains()
+      ]);
+      this.showToast('COSMO workspace refreshed');
+    });
     onClick('import-oauth-btn', () => this.importOAuthFromCLI());
     onClick('start-oauth-btn', () => this.startOAuth());
     onClick('complete-oauth-btn', () => this.completeOAuth());
@@ -340,6 +349,10 @@ class CosmoStandaloneApp {
       return;
     }
     this.initialViewResolved = true;
+    if (this.managedByHome23) {
+      this.switchView('launch');
+      return;
+    }
     this.switchView(this.brains.length > 0 ? 'brains' : 'launch');
   }
 
@@ -492,33 +505,70 @@ class CosmoStandaloneApp {
       { id: 'ollama-cloud', label: 'Cloud' }
     ];
     const bar = document.getElementById('setup-summary');
-    bar.innerHTML = '';
-    allProviders.forEach(p => {
-      const isConfigured = !!providers[p.id]?.configured;
-      const state = isConfigured ? 'connected' : 'disabled';
-      const dot = document.createElement('span');
-      dot.className = 'provider-status-dot';
-      dot.dataset.state = state;
-      dot.innerHTML = `<span class="dot"></span><span>${escapeHtml(p.label)}</span>`;
-      bar.appendChild(dot);
-    });
-
-    // Update the panel header for managed mode
-    const setupPanel = document.querySelector('#view-launch .launch-layout > aside.panel');
-    if (setupPanel) {
-      const eyebrow = setupPanel.querySelector('.panel-head .eyebrow');
-      const heading = setupPanel.querySelector('.panel-head h2');
-      if (eyebrow) eyebrow.textContent = 'Home23';
-      if (heading) heading.textContent = 'Providers And Models';
+    if (bar) {
+      bar.innerHTML = '';
+      allProviders.forEach(p => {
+        const isConfigured = !!providers[p.id]?.configured;
+        const state = isConfigured ? 'connected' : 'disabled';
+        const dot = document.createElement('span');
+        dot.className = 'provider-status-dot';
+        dot.dataset.state = state;
+        dot.innerHTML = `<span class="dot"></span><span>${escapeHtml(p.label)}</span>`;
+        bar.appendChild(dot);
+      });
     }
 
-    // Replace the setup form content with managed mode view
-    const form = document.getElementById('setup-form');
-    if (!form) return;
+    // Replace the standalone setup panel with Home23 workspace context.
+    const setupPanel = document.querySelector('#view-launch .launch-layout > aside.panel');
+    if (setupPanel) {
+      const connectedCount = allProviders.filter(p => !!providers[p.id]?.configured).length;
+      setupPanel.classList.add('launch-insights-panel');
+      setupPanel.innerHTML = `
+        <section class="insight-card">
+          <div class="insight-card-head">
+            <span class="insight-icon">◷</span>
+            <h2>Research at a glance</h2>
+          </div>
+          <div class="glance-list">
+            <div class="glance-item">
+              <span class="glance-icon warm">⌬</span>
+              <div><strong>Home23-managed</strong><span>Runs are executed and tracked by Home23.</span></div>
+            </div>
+            <div class="glance-item">
+              <span class="glance-icon cool">▧</span>
+              <div><strong>Local knowledge</strong><span>Runs, brains, and results stay in this workspace.</span></div>
+            </div>
+            <div class="glance-item">
+              <span class="glance-icon warm">✎</span>
+              <div><strong>Built for depth</strong><span>Guided exploration with configurable depth and review.</span></div>
+            </div>
+          </div>
+          <div class="provider-mini-summary">
+            <strong>${connectedCount}/${allProviders.length}</strong>
+            <span>providers connected through Home23 Settings</span>
+          </div>
+        </section>
+
+        <section class="insight-card">
+          <div class="insight-card-head compact">
+            <h2>Recent Runs</h2>
+            <button type="button" class="link-btn" data-view-target="brains">View all runs</button>
+          </div>
+          <div class="recent-runs-list" id="recent-runs-list"></div>
+        </section>
+      `;
+      setupPanel.querySelectorAll('[data-view-target]').forEach(button => {
+        button.addEventListener('click', () => this.switchView(button.dataset.viewTarget));
+      });
+      this.renderLaunchInsights();
+      return;
+    }
 
     // HOME23 manages provider config, model catalog, and imported brain roots.
     // Keep this panel read-only so the bundled COSMO UI does not imply local
     // setup is authoritative.
+    const form = document.getElementById('setup-form');
+    if (!form) return;
     const modelCatalogDetails = form.querySelector('details.section-disclosure:has(#catalog-openai-models)');
     const brainDirsDetails = form.querySelector('details.section-disclosure:has(#brain-directories)');
     if (modelCatalogDetails) modelCatalogDetails.remove();
@@ -985,6 +1035,7 @@ class CosmoStandaloneApp {
       this.renderQueryBrains();
       this.renderMapBrains();
       this.renderIntelBrains();
+      this.renderLaunchInsights();
 
       if (this.brains.length === 0) {
         this.selectedBrainId = null;
@@ -1141,6 +1192,44 @@ class CosmoStandaloneApp {
         </div>
       `;
       container.appendChild(card);
+    });
+  }
+
+  renderLaunchInsights() {
+    const container = document.getElementById('recent-runs-list');
+    if (!container) return;
+
+    const localRuns = this.brains
+      .filter(brain => brain.sourceType === 'local')
+      .slice(0, 3);
+
+    if (localRuns.length === 0) {
+      container.innerHTML = '<div class="recent-empty">No local COSMO runs yet.</div>';
+      return;
+    }
+
+    container.innerHTML = localRuns.map(brain => {
+      const status = brain.isActive ? 'In Progress' : 'Completed';
+      const statusClass = brain.isActive ? 'active' : 'complete';
+      const cycles = Number.isFinite(brain.cycles) ? `${brain.cycles} cycles` : 'Saved run';
+      const date = brain.modifiedDate ? this.formatDate(brain.modifiedDate) : 'Recent';
+      return `
+        <button type="button" class="recent-run-row" data-brain-id="${escapeHtml(brain.routeKey)}">
+          <span>
+            <strong>${escapeHtml(brain.displayName)}</strong>
+            <small>${escapeHtml(date)} · ${escapeHtml(cycles)}</small>
+          </span>
+          <em class="${statusClass}">${escapeHtml(status)}</em>
+          <b>›</b>
+        </button>
+      `;
+    }).join('');
+
+    container.querySelectorAll('[data-brain-id]').forEach(row => {
+      row.addEventListener('click', async () => {
+        await this.selectBrain(row.dataset.brainId, { syncQuery: true });
+        this.switchView('brains');
+      });
     });
   }
 

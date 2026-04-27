@@ -35,7 +35,7 @@ corrupts runtime state with encrypted strings that later get shipped as literal
 bearer tokens. First observed as `401 unauthorized: encrypted:...` errors during
 smoke testing (2026-04-10).
 
-There are currently **11 patches** in this file. Patches 1–3 are the config/key
+There are currently **12 patches** in this file. Patches 1–3 are the config/key
 plumbing fixes from the initial integration. Patch 4 is a small admin HTTP
 surface that lets Home23 use cosmo23 as an OAuth broker (Step 18).
 
@@ -587,6 +587,39 @@ running, launching, context-without-process, and process-without-context states.
 
 ---
 
+## Patch 12 — Home23 COSMO workspace redesign
+
+**Files touched:**
+- `cosmo23/public/index.html`
+- `cosmo23/public/app.js`
+- `cosmo23/public/styles.css`
+
+**Problem:** after Patch 11 fixed the data defaults, the bundled COSMO23 UI
+still looked and behaved like a bolted-on standalone app. The launch surface
+competed with the old setup panel, navigation was visually flat, and the user
+could not immediately tell that this was the Home23-managed COSMO workspace.
+
+**Fix:** the public UI now uses a Home23 shell:
+
+- left rail with Home23 branding, primary workspace links, linked spaces, and
+  status card
+- masthead card with status and active profile cards
+- cleaner horizontal tab navigation
+- launch form promoted as the primary workflow
+- managed setup panel replaced with research-at-a-glance and recent local runs
+- refresh action that reloads setup, models, status, and brain library together
+- responsive rules for collapsing the rail and preserving readable launch cards
+
+**Effect under Home23:** the first screen now matches the Home23 workspace
+model: launch on the left, local knowledge context on the right, recent runs
+visible immediately, and no standalone provider setup clutter.
+
+**Effect under standalone COSMO:** standalone mode still has the setup form
+available because the right-side replacement only runs when setup status reports
+`managed_by_home23`.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -621,3 +654,6 @@ running, launching, context-without-process, and process-without-context states.
   app. Home23-managed mode now defaults to local runs, selects the latest local
   COSMO run, hides standalone setup controls, and uses the Home23 run model
   defaults (`MiniMax-M2.7`, `nemotron-3-nano:30b`, `kimi-k2.6`).
+- **2026-04-27** — Patch 12 added to redesign the Home23-managed COSMO23 UI
+  around the Home23 shell, launch-first workflow, research-at-a-glance panel,
+  and visible recent local runs.
