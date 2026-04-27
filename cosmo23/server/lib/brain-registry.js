@@ -53,6 +53,35 @@ async function pathExists(targetPath) {
   }
 }
 
+async function resolveScannableRunPath(dirPath, entry) {
+  const runPath = path.join(dirPath, entry.name);
+  if (entry.isDirectory()) {
+    return {
+      runPath,
+      identityPath: await fsp.realpath(runPath).catch(() => path.resolve(runPath))
+    };
+  }
+
+  // HOME23 PATCH — Patch 7 stores agent-owned research runs in the agent
+  // workspace and leaves cosmo23/runs/<name> as a symlink alias. Treat those
+  // aliases as local run directories so the COSMO23 library can see them.
+  if (entry.isSymbolicLink()) {
+    try {
+      const [stat, realPath] = await Promise.all([
+        fsp.stat(runPath),
+        fsp.realpath(runPath)
+      ]);
+      if (stat.isDirectory()) {
+        return { runPath, identityPath: realPath };
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 async function loadJsonIfPresent(filePath) {
   if (!(await pathExists(filePath))) {
     return null;
@@ -268,12 +297,13 @@ async function listBrains(options) {
 
     const entries = await fsp.readdir(dirPath, { withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isDirectory()) {
+      const scannable = await resolveScannableRunPath(dirPath, entry);
+      if (!scannable) {
         continue;
       }
 
-      const runPath = path.join(dirPath, entry.name);
-      const key = path.resolve(runPath);
+      const { runPath, identityPath } = scannable;
+      const key = path.resolve(identityPath);
       if (seenPaths.has(key)) {
         continue;
       }

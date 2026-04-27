@@ -115,6 +115,46 @@ test('GET /api/brains/:brainId returns continuation detail for the selected run'
   });
 });
 
+test('GET /api/brains includes symlinked local run aliases', async () => {
+  const root = await makeTempDir();
+  const localRunsPath = path.join(root, 'runs');
+  const externalRunPath = path.join(root, 'agent-workspace', 'research-runs', 'maf-low-heart-rate');
+  await writeRunMetadata(externalRunPath, {
+    topic: 'MAF low heart rate training'
+  });
+  await fs.mkdir(localRunsPath, { recursive: true });
+  await fs.symlink(externalRunPath, path.join(localRunsPath, 'maf-low-heart-rate'));
+
+  const app = express();
+  app.use(express.json());
+  app.use(createBrainsRouter({
+    getRunsOptions: async () => ({
+      localRunsPath,
+      referenceRunsPaths: [],
+      activeRunPath: null
+    }),
+    getActiveContext: () => null,
+    listBrains,
+    resolveBrainBySelector,
+    launchResearch: async () => {
+      throw new Error('launch should not be called');
+    }
+  }));
+
+  await withServer(app, async baseUrl => {
+    const brainsPayload = await (await fetch(`${baseUrl}/api/brains`)).json();
+    assert.equal(brainsPayload.count, 1);
+    assert.equal(brainsPayload.brains[0].name, 'maf-low-heart-rate');
+    assert.equal(brainsPayload.brains[0].path, path.join(localRunsPath, 'maf-low-heart-rate'));
+
+    const detailResponse = await fetch(`${baseUrl}/api/brains/maf-low-heart-rate`);
+    assert.equal(detailResponse.status, 200);
+    const detailPayload = await detailResponse.json();
+    assert.equal(detailPayload.brain.topic, 'MAF low heart rate training');
+    assert.equal(detailPayload.brain.nodes, 1);
+  });
+});
+
 test('POST /api/continue/:brainId merges latest snapshot settings and writes a new snapshot after launch', async () => {
   const root = await makeTempDir();
   const localRunsPath = path.join(root, 'runs');

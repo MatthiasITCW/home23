@@ -35,7 +35,7 @@ corrupts runtime state with encrypted strings that later get shipped as literal
 bearer tokens. First observed as `401 unauthorized: encrypted:...` errors during
 smoke testing (2026-04-10).
 
-There are currently **9 patches** in this file. Patches 1–3 are the config/key
+There are currently **11 patches** in this file. Patches 1–3 are the config/key
 plumbing fixes from the initial integration. Patch 4 is a small admin HTTP
 surface that lets Home23 use cosmo23 as an OAuth broker (Step 18).
 
@@ -415,6 +415,90 @@ pre-existing runPath collision refusal.
 
 ---
 
+## Patch 10 — `cosmo23/server/lib/brain-registry.js` · symlinked run discovery
+
+**Problem:** Patch 7 intentionally leaves
+`cosmo23/runs/<runName>` as a symlink to the launching agent's workspace run
+directory. But `listBrains()` only accepted `Dirent.isDirectory()` entries,
+so those symlink aliases were skipped. Result: a completed Home23-launched
+research run could visibly exist in `cosmo23/runs/` and still be absent from
+the COSMO23 Brains library.
+
+**Fix:** when scanning a runs root, accept symlink entries whose target is a
+directory. Dedupe by real path so the same run is not double-listed if both
+the workspace target and the symlink alias are configured roots.
+
+```js
+// HOME23 PATCH
+if (entry.isSymbolicLink()) {
+  const [stat, realPath] = await Promise.all([
+    fsp.stat(runPath),
+    fsp.realpath(runPath)
+  ]);
+  if (stat.isDirectory()) {
+    return { runPath, identityPath: realPath };
+  }
+}
+```
+
+**Effect under Home23:** new agent-owned research runs appear in COSMO23's
+Brains library through their legacy `cosmo23/runs/<runName>` alias.
+
+**Effect under standalone COSMO:** unchanged for normal directories; broken
+symlinks and symlinks to files are ignored.
+
+**Test coverage:** `cosmo23/server/lib/brains-router.test.js` includes a
+symlinked local run alias and verifies `/api/brains` plus detail lookup.
+
+---
+
+## Patch 11 — Home23-managed COSMO23 UI defaults
+
+**Files touched:**
+- `cosmo23/public/index.html`
+- `cosmo23/public/app.js`
+- `cosmo23/server/config/model-catalog.js`
+
+**Problem:** the bundled COSMO23 web UI still behaved like standalone COSMO:
+the masthead said `COSMO Standalone`, launch copy referred to generic local
+setup, the provider sidebar exposed model catalog / brain directory controls
+even though Home23 owns those settings, Brains defaulted to `All locations`
+across hundreds of external archives, and the selected brain defaulted to the
+constantly modified Jerry/Forrest agent brains instead of the latest local
+COSMO research run. Launch defaults also pointed at OpenAI GPT-5.2 / GPT-5 mini,
+while current Home23 COSMO runs use the MiniMax + Ollama Cloud stack.
+
+**Fix:** when `/api/setup/status` reports `managed_by_home23`, the UI now:
+
+- labels the shell as `Home23 COSMO`
+- defaults the Brains library to `Local`
+- orders Local / Jerry / Forrest before external archives
+- selects the newest local COSMO run by default when no run is active
+- keeps the provider panel read-only and points settings changes to Home23
+- removes standalone model-catalog and brain-directory controls from the
+  managed provider panel
+- updates query copy and uses selected brain detail counts when available
+- changes built-in launch defaults to:
+  - primary: `MiniMax-M2.7`
+  - fast: `nemotron-3-nano:30b`
+  - strategic: `kimi-k2.6`
+  - query/PGS: `MiniMax-M2.7`
+
+**Effect under Home23:** the COSMO23 app opens to the local run workspace
+instead of a 293-run archive dump, Launch defaults match known-good Home23
+research settings, and Query follows the selected local run with accurate
+node/edge counts.
+
+**Effect under standalone COSMO:** non-managed mode keeps the existing setup
+flow; only the static masthead copy is more neutral.
+
+**Verification:** browser audit on `http://localhost:43210` after restarting
+`home23-cosmo23`: Brains defaulted to `Local (5)`, selected `trail-running`
+with `229 nodes / 718 edges`, Query selected `trail-running`, and Launch
+selected `MiniMax-M2.7`, `Nemotron 3 Nano 30B`, `Kimi K2.6`.
+
+---
+
 ## Patch 8 — `cosmo23/lib/query-engine.js` · `loadBrainState` sidecar rehydration
 
 **Why:** Home23's persistence layer was updated (V8-heap fix, ~2026-04-15)
@@ -530,3 +614,10 @@ running, launching, context-without-process, and process-without-context states.
   this reporting bug — the graph was there the whole time.
 - **2026-04-24** — Patch 9 added to split COSMO status truth into an explicit
   health contract while preserving the legacy `running` boolean.
+- **2026-04-27** — Patch 10 added so the Brains library follows Patch 7's
+  symlink aliases in `cosmo23/runs/`. Without this, runs were present on disk
+  but invisible in COSMO23.
+- **2026-04-27** — Patch 11 added after browser-auditing the bundled COSMO23
+  app. Home23-managed mode now defaults to local runs, selects the latest local
+  COSMO run, hides standalone setup controls, and uses the Home23 run model
+  defaults (`MiniMax-M2.7`, `nemotron-3-nano:30b`, `kimi-k2.6`).

@@ -82,12 +82,12 @@ const BUILTIN_MODEL_CATALOG = {
     }
   },
   defaults: {
-    queryModel: 'gpt-5.2',
-    pgsSweepModel: null,
+    queryModel: 'MiniMax-M2.7',
+    pgsSweepModel: 'MiniMax-M2.7',
     launch: {
-      primary: 'gpt-5.2',
-      fast: 'gpt-5-mini',
-      strategic: 'gpt-5.2'
+      primary: 'MiniMax-M2.7',
+      fast: 'nemotron-3-nano:30b',
+      strategic: 'kimi-k2.6'
     },
     embeddings: {
       provider: 'openai',

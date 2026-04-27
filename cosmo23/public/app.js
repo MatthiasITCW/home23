@@ -56,6 +56,8 @@ const FORM_DEFAULTS = {
   enableExperimental: false
 };
 
+const HOME23_PRIMARY_SOURCE_LABELS = new Set(['Local', 'Jerry', 'Forrest']);
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -129,6 +131,7 @@ class CosmoStandaloneApp {
     this.selectedBrainDetail = null;
     this.selectedBrainTab = 'overview';
     this.brainFilter = 'all';
+    this.brainFilterTouched = false;
     this.brainSearch = '';
     this.brainDetailRequestId = 0;
     this.initialViewResolved = false;
@@ -232,6 +235,7 @@ class CosmoStandaloneApp {
     if (locationFilter) {
       locationFilter.addEventListener('change', () => {
         this.brainFilter = locationFilter.value;
+        this.brainFilterTouched = true;
         this.renderBrainLibrary();
       });
     }
@@ -468,6 +472,15 @@ class CosmoStandaloneApp {
     const providers = setup.providers || {};
     const settingsUrl = `${window.location.protocol}//${window.location.hostname}:${this.home23DashboardPort}/home23/settings`;
 
+    const mastheadEyebrow = document.querySelector('.masthead .eyebrow');
+    const mastheadText = document.querySelector('.masthead .masthead-text');
+    if (mastheadEyebrow) mastheadEyebrow.textContent = 'Home23 COSMO';
+    if (mastheadText) mastheadText.textContent = 'Launch Home23-managed research runs, inspect local run brains, and query completed knowledge from this workspace.';
+
+    if (!this.brainFilterTouched && this.brainFilter === 'all') {
+      this.brainFilter = 'loc:Local';
+    }
+
     // Build provider status dots for the summary bar
     const allProviders = [
       { id: 'anthropic', label: 'Anthropic' },
@@ -503,7 +516,9 @@ class CosmoStandaloneApp {
     const form = document.getElementById('setup-form');
     if (!form) return;
 
-    // Detach Model Catalog and Brain Directories details elements (preserve live DOM nodes)
+    // HOME23 manages provider config, model catalog, and imported brain roots.
+    // Keep this panel read-only so the bundled COSMO UI does not imply local
+    // setup is authoritative.
     const modelCatalogDetails = form.querySelector('details.section-disclosure:has(#catalog-openai-models)');
     const brainDirsDetails = form.querySelector('details.section-disclosure:has(#brain-directories)');
     if (modelCatalogDetails) modelCatalogDetails.remove();
@@ -542,9 +557,6 @@ class CosmoStandaloneApp {
       </div>
     `;
 
-    // Re-append preserved DOM nodes (retains live textarea values and event listeners)
-    if (modelCatalogDetails) form.appendChild(modelCatalogDetails);
-    if (brainDirsDetails) form.appendChild(brainDirsDetails);
   }
 
   renderProviderStatusBar(setup, providerStatus, oauthStatus, codexOAuthStatus) {
@@ -896,10 +908,14 @@ class CosmoStandaloneApp {
     }
 
     const defaults = this.modelCatalog.defaults || {};
-    document.getElementById('catalog-query-model').value = defaults.queryModel || '';
-    document.getElementById('catalog-pgs-model').value = defaults.pgsSweepModel || '';
-    document.getElementById('catalog-local-primary').value = defaults.local?.primary || '';
-    document.getElementById('catalog-local-fast').value = defaults.local?.fast || '';
+    const setValue = (id, value) => {
+      const element = document.getElementById(id);
+      if (element) element.value = value || '';
+    };
+    setValue('catalog-query-model', defaults.queryModel);
+    setValue('catalog-pgs-model', defaults.pgsSweepModel);
+    setValue('catalog-local-primary', defaults.local?.primary);
+    setValue('catalog-local-fast', defaults.local?.fast);
   }
 
   async loadModelCatalog() {
@@ -963,7 +979,7 @@ class CosmoStandaloneApp {
   async loadBrains(options = {}) {
     try {
       const result = await this.api('/api/brains');
-      this.brains = result.brains || [];
+      this.brains = this.orderBrainsForDisplay(result.brains || []);
       this.renderLocationFilters();
       this.renderBrainLibrary();
       this.renderQueryBrains();
@@ -978,20 +994,50 @@ class CosmoStandaloneApp {
         return;
       }
 
-      const activePreferredId = this.getActiveBrainId();
-      const preferredId = options.preferredId && this.brains.some(brain => brain.routeKey === options.preferredId)
-        ? options.preferredId
-        : activePreferredId
-          ? activePreferredId
-        : this.selectedBrainId && this.brains.some(brain => brain.routeKey === this.selectedBrainId)
-          ? this.selectedBrainId
-          : this.brains[0].routeKey;
+      const preferredId = this.choosePreferredBrainId(options);
 
       await this.selectBrain(preferredId, { syncQuery: true, silent: true });
       this.applyInitialView();
     } catch (error) {
       this.showToast(`Brain scan failed: ${error.message}`, 'error');
     }
+  }
+
+  orderBrainsForDisplay(brains) {
+    if (!this.managedByHome23) {
+      return brains;
+    }
+
+    const rank = brain => {
+      if (brain.sourceType === 'local') return 0;
+      if (brain.sourceLabel === 'Jerry') return 1;
+      if (brain.sourceLabel === 'Forrest') return 2;
+      return 3;
+    };
+
+    return [...brains].sort((left, right) => {
+      const rankDiff = rank(left) - rank(right);
+      if (rankDiff !== 0) return rankDiff;
+      return (right.modified || 0) - (left.modified || 0);
+    });
+  }
+
+  choosePreferredBrainId(options = {}) {
+    const activePreferredId = this.getActiveBrainId();
+    if (options.preferredId && this.brains.some(brain => brain.routeKey === options.preferredId)) {
+      return options.preferredId;
+    }
+    if (activePreferredId) {
+      return activePreferredId;
+    }
+    if (this.selectedBrainId && this.brains.some(brain => brain.routeKey === this.selectedBrainId)) {
+      return this.selectedBrainId;
+    }
+    if (this.managedByHome23) {
+      const localBrain = this.brains.find(brain => brain.sourceType === 'local');
+      if (localBrain) return localBrain.routeKey;
+    }
+    return this.brains[0].routeKey;
   }
 
   renderLocationFilters() {
@@ -1005,7 +1051,15 @@ class CosmoStandaloneApp {
     });
 
     select.innerHTML = `<option value="all">All locations (${this.brains.length})</option>`;
-    for (const [label, count] of Object.entries(locations).sort((a, b) => b[1] - a[1])) {
+    const sortedLocations = Object.entries(locations).sort((a, b) => {
+      if (this.managedByHome23) {
+        const aPrimary = HOME23_PRIMARY_SOURCE_LABELS.has(a[0]) ? 0 : 1;
+        const bPrimary = HOME23_PRIMARY_SOURCE_LABELS.has(b[0]) ? 0 : 1;
+        if (aPrimary !== bPrimary) return aPrimary - bPrimary;
+      }
+      return b[1] - a[1];
+    });
+    for (const [label, count] of sortedLocations) {
       const opt = document.createElement('option');
       opt.value = `loc:${label}`;
       opt.textContent = `${label} (${count})`;
@@ -1291,6 +1345,11 @@ class CosmoStandaloneApp {
     // For the active run, re-fetch live counts (brain list may be stale)
     let nodes = brain.nodes;
     let edges = brain.edges;
+    const selectedDetailBrain = this.selectedBrainDetail?.brain;
+    if (selectedDetailBrain?.routeKey === brain.routeKey) {
+      nodes = selectedDetailBrain.nodes ?? nodes;
+      edges = selectedDetailBrain.edges ?? edges;
+    }
     const isActiveRun = this.activeContext && (
       brain.name === this.activeContext.runName ||
       brain.routeKey === this.activeContext.brainId
