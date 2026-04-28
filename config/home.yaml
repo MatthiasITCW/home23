@@ -88,6 +88,7 @@ dashboard:
         config:
           request:
             path: /status
+            method: GET
           display:
             valuePath: summary
             statusPath: status
@@ -101,9 +102,29 @@ dashboard:
                 path: pool.heatState
               - label: Spa Heat
                 path: spa.heatState
+              - label: Pump RPM
+                path: pump.rpm
+              - label: Flow
+                path: pump.gpm
               - label: Active
                 path: activeCircuitsText
-          actions: []
+          actions:
+            - id: lights-on
+              label: Lights On
+              method: POST
+              path: /circuits/501
+              confirmationText: Turn pool lights on?
+              fields: []
+              bodyTemplate:
+                state: 1
+            - id: lights-off
+              label: Lights Off
+              method: POST
+              path: /circuits/501
+              confirmationText: Turn pool lights off?
+              fields: []
+              bodyTemplate:
+                state: 0
 screenlogic:
   enabled: true
   host: ''

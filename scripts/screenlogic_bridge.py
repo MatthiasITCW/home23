@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Home23 ScreenLogic bridge.
 
-Read-only local HTTP facade for Pentair ScreenLogic. The bridge keeps the
-GPL screenlogicpy dependency out of the MIT Home23 code path by using it only
-as an optional runtime dependency.
+Local HTTP facade for Pentair ScreenLogic. The bridge keeps the GPL
+screenlogicpy dependency out of the MIT Home23 code path by using it only as
+an optional runtime dependency.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import urlparse
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -205,11 +206,42 @@ def active_circuit_names(circuits: list[dict[str, Any]]) -> list[str]:
     return active
 
 
+def normalize_pump(raw: Any) -> dict[str, Any]:
+    pump = first_value(raw, ("pump", "pumps")) or {}
+    if isinstance(pump, dict):
+        primary = pump.get("0") or pump.get(0) or next((val for val in pump.values() if isinstance(val, dict)), {})
+    elif isinstance(pump, list):
+        primary = next((val for val in pump if isinstance(val, dict)), {})
+    else:
+        primary = {}
+
+    return {
+        "state": first_display_value(primary, ("state", "status")),
+        "rpm": first_display_value(primary, ("rpm_now", "rpm", "speed")),
+        "watts": first_display_value(primary, ("watts_now", "watts", "power")),
+        "gpm": first_display_value(primary, ("gpm_now", "gpm", "flow")),
+    }
+
+
+def normalize_chlorinator(raw: Any) -> dict[str, Any]:
+    scg = first_value(raw, ("scg", "chlorinator", "salt_chlorine_generator")) or {}
+    return {
+        "present": bool(first_display_value(scg, ("scg_present", "present"))),
+        "state": first_display_value(scg, ("state", "status")),
+        "saltPpm": first_display_value(scg, ("salt_ppm", "salt", "saltPpm")),
+        "poolSetPoint": first_display_value(scg, ("pool_setpoint", "poolSetPoint")),
+        "spaSetPoint": first_display_value(scg, ("spa_setpoint", "spaSetPoint")),
+        "superChlorinate": first_display_value(scg, ("super_chlorinate", "superChlorinate")),
+    }
+
+
 def normalize_status(raw: Any, connected: bool, bridge_status: str, error: str | None) -> dict[str, Any]:
     pool = normalize_body(raw, "pool")
     spa = normalize_body(raw, "spa")
     circuits = normalize_circuits(raw)
     active = active_circuit_names(circuits)
+    pump = normalize_pump(raw)
+    chlorinator = normalize_chlorinator(raw)
 
     summary_bits = []
     if pool.get("temperature") is not None:
@@ -231,6 +263,8 @@ def normalize_status(raw: Any, connected: bool, bridge_status: str, error: str |
         "circuits": circuits,
         "activeCircuits": active,
         "activeCircuitsText": ", ".join(active) if active else "None",
+        "pump": pump,
+        "chlorinator": chlorinator,
         "chemistry": first_value(raw, ("chemistry", "chem", "intellichem")),
         "raw": raw,
         "error": error,
@@ -252,6 +286,8 @@ class ScreenLogicWorker:
         self.bridge_status = "starting"
         self.gateway = None
         self.stop_event: asyncio.Event | None = None
+        self.loop_obj: asyncio.AbstractEventLoop | None = None
+        self.io_lock: asyncio.Lock | None = None
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -336,12 +372,46 @@ class ScreenLogicWorker:
         self.set_state(status="connected", connected=True)
 
     async def update_once(self) -> None:
+        if self.io_lock is not None:
+            async with self.io_lock:
+                await self._update_once_unlocked()
+            return
+        await self._update_once_unlocked()
+
+    async def _update_once_unlocked(self) -> None:
         if self.gateway is None:
             await self.connect()
         await self.gateway.async_update()
         self.set_state(raw=self.gateway.get_data(), status="connected", connected=True)
 
+    async def set_circuit(self, circuit_id: int, state: int) -> dict[str, Any]:
+        if state not in (0, 1):
+            raise ValueError("state must be 0 or 1")
+        if self.io_lock is None:
+            raise RuntimeError("ScreenLogic worker is not ready")
+
+        async with self.io_lock:
+            if self.gateway is None:
+                await self.connect()
+            await self.gateway.async_set_circuit(int(circuit_id), int(state))
+            await asyncio.sleep(0.75)
+            await self.gateway.async_update()
+            self.set_state(raw=self.gateway.get_data(), status="connected", connected=True)
+            return {
+                "ok": True,
+                "circuitId": int(circuit_id),
+                "state": int(state),
+                "status": "applied",
+            }
+
+    def submit(self, coro: Any) -> Any:
+        if self.loop_obj is None:
+            raise RuntimeError("ScreenLogic worker loop is not ready")
+        return asyncio.run_coroutine_threadsafe(coro, self.loop_obj)
+
     async def loop(self) -> None:
+        self.loop_obj = asyncio.get_running_loop()
+        self.io_lock = asyncio.Lock()
         self.stop_event = asyncio.Event()
         if not self.enabled:
             self.set_state(status="disabled", error="SCREENLOGIC_ENABLED=false", connected=False)
@@ -392,13 +462,44 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length).decode("utf-8")
+        if not raw.strip():
+            return {}
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise ValueError("JSON body must be an object")
+        return payload
+
     def do_GET(self) -> None:
-        if self.path in {"/", "/status"}:
+        path = urlparse(self.path).path
+        if path in {"/", "/status"}:
             self.send_json(200, worker.snapshot())
             return
-        if self.path == "/health":
+        if path == "/health":
             snap = worker.snapshot()
             self.send_json(200 if snap["bridge"]["status"] not in {"error"} else 503, snap["bridge"])
+            return
+        self.send_json(404, {"ok": False, "error": "not found"})
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        parts = [part for part in path.split("/") if part]
+        if len(parts) == 2 and parts[0] == "circuits":
+            try:
+                circuit_id = int(parts[1])
+                payload = self.read_json_body()
+                state = payload.get("state")
+                if isinstance(state, str):
+                    state = 1 if state.lower() in {"1", "on", "true"} else 0
+                future = worker.submit(worker.set_circuit(circuit_id, int(state)))
+                result = future.result(timeout=20)
+                self.send_json(200, result)
+            except Exception as exc:
+                self.send_json(400, {"ok": False, "error": str(exc)})
             return
         self.send_json(404, {"ok": False, "error": "not found"})
 
