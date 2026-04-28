@@ -84,6 +84,9 @@ export function generateEcosystem(home23Root) {
   lines.push(`const homeConfig = loadYaml(path.join(HOME23, 'config', 'home.yaml'));`);
   lines.push(`const secrets = loadYaml(path.join(HOME23, 'config', 'secrets.yaml'));`);
   lines.push(`const ollamaLocalUrl = homeConfig.providers?.['ollama-local']?.baseUrl || 'http://127.0.0.1:11434';`);
+  lines.push(`const screenlogicConfig = homeConfig.screenlogic || {};`);
+  lines.push(`const screenlogicVenvPython = path.join(HOME23, 'runtime', 'screenlogic-venv', 'bin', 'python');`);
+  lines.push(`const screenlogicPython = screenlogicConfig.python || (fs.existsSync(screenlogicVenvPython) ? screenlogicVenvPython : 'python3');`);
   lines.push(``);
   lines.push(`// Cosmo23 OAuth encryption key — read from secrets.yaml (init generates it)`);
   lines.push(`const cosmo23EncryptionKey = secrets.cosmo23?.encryptionKey || '';`);
@@ -203,6 +206,28 @@ export function generateEcosystem(home23Root) {
   lines.push(`        EVOBREW_CONFIG_DIR: path.join(HOME23, 'evobrew'),`);
   lines.push(`        HOME23_MANAGED: 'true',`);
   lines.push(`        NODE_ENV: 'production',`);
+  lines.push(`      },`);
+  lines.push(`    },`);
+
+  // ScreenLogic — shared personal house integration
+  lines.push(``);
+  lines.push(`    // ── screenlogic (shared personal tile bridge) ──`);
+  lines.push(`    {`);
+  lines.push(`      name: 'home23-screenlogic',`);
+  lines.push(`      script: path.join(HOME23, 'scripts', 'screenlogic_bridge.py'),`);
+  lines.push(`      interpreter: screenlogicPython,`);
+  lines.push(`      cwd: HOME23,`);
+  lines.push(`      autorestart: true, watch: false, merge_logs: true,`);
+  lines.push(`      out_file: path.join(HOME23, 'logs', 'screenlogic-out.log'),`);
+  lines.push(`      error_file: path.join(HOME23, 'logs', 'screenlogic-err.log'),`);
+  lines.push(`      env: {`);
+  lines.push(`        SCREENLOGIC_ENABLED: String(screenlogicConfig.enabled !== false),`);
+  lines.push(`        SCREENLOGIC_HOST: String(screenlogicConfig.host || ''),`);
+  lines.push(`        SCREENLOGIC_ADAPTER_PORT: String(screenlogicConfig.adapterPort || 80),`);
+  lines.push(`        SCREENLOGIC_BRIDGE_HOST: String(screenlogicConfig.bridgeHost || '127.0.0.1'),`);
+  lines.push(`        SCREENLOGIC_BRIDGE_PORT: String(screenlogicConfig.bridgePort || 5023),`);
+  lines.push(`        SCREENLOGIC_POLL_SECONDS: String(screenlogicConfig.pollSeconds || 60),`);
+  lines.push(`        SCREENLOGIC_DISCOVERY: String(screenlogicConfig.discovery !== false),`);
   lines.push(`      },`);
   lines.push(`    },`);
 

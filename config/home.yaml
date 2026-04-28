@@ -40,6 +40,9 @@ dashboard:
       - tileId: sauna-control
         enabled: false
         size: half
+      - tileId: pool-screenlogic
+        enabled: true
+        size: half
       - tileId: system-summary
         enabled: true
         size: full
@@ -74,6 +77,41 @@ dashboard:
           startDefaults:
             targetTemperature: 190
             duration: 180
+      - id: pool-screenlogic
+        kind: custom
+        title: Pool
+        icon: 🏊
+        mode: generic-http-json
+        connectionId: jtr-screenlogic
+        refreshMs: 30000
+        sizeDefault: half
+        config:
+          request:
+            path: /status
+          display:
+            valuePath: summary
+            statusPath: status
+            subtitlePath: bridge.lastUpdate
+            metrics:
+              - label: Pool
+                path: pool.temperature
+              - label: Spa
+                path: spa.temperature
+              - label: Pool Heat
+                path: pool.heatState
+              - label: Spa Heat
+                path: spa.heatState
+              - label: Active
+                path: activeCircuitsText
+          actions: []
+screenlogic:
+  enabled: true
+  host: ''
+  adapterPort: 80
+  discovery: true
+  bridgeHost: 127.0.0.1
+  bridgePort: 5023
+  pollSeconds: 60
 providers:
   ollama-cloud:
     baseUrl: https://ollama.com/v1

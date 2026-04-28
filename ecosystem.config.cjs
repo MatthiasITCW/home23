@@ -18,6 +18,9 @@ function loadYaml(filePath) {
 const homeConfig = loadYaml(path.join(HOME23, 'config', 'home.yaml'));
 const secrets = loadYaml(path.join(HOME23, 'config', 'secrets.yaml'));
 const ollamaLocalUrl = homeConfig.providers?.['ollama-local']?.baseUrl || 'http://127.0.0.1:11434';
+const screenlogicConfig = homeConfig.screenlogic || {};
+const screenlogicVenvPython = path.join(HOME23, 'runtime', 'screenlogic-venv', 'bin', 'python');
+const screenlogicPython = screenlogicConfig.python || (fs.existsSync(screenlogicVenvPython) ? screenlogicVenvPython : 'python3');
 
 // Cosmo23 OAuth encryption key — read from secrets.yaml (init generates it)
 const cosmo23EncryptionKey = secrets.cosmo23?.encryptionKey || '';
@@ -140,6 +143,26 @@ module.exports = {
         EVOBREW_CONFIG_DIR: path.join(HOME23, 'evobrew'),
         HOME23_MANAGED: 'true',
         NODE_ENV: 'production',
+      },
+    },
+
+    // ── screenlogic (shared personal tile bridge) ──
+    {
+      name: 'home23-screenlogic',
+      script: path.join(HOME23, 'scripts', 'screenlogic_bridge.py'),
+      interpreter: screenlogicPython,
+      cwd: HOME23,
+      autorestart: true, watch: false, merge_logs: true,
+      out_file: path.join(HOME23, 'logs', 'screenlogic-out.log'),
+      error_file: path.join(HOME23, 'logs', 'screenlogic-err.log'),
+      env: {
+        SCREENLOGIC_ENABLED: String(screenlogicConfig.enabled !== false),
+        SCREENLOGIC_HOST: String(screenlogicConfig.host || ''),
+        SCREENLOGIC_ADAPTER_PORT: String(screenlogicConfig.adapterPort || 80),
+        SCREENLOGIC_BRIDGE_HOST: String(screenlogicConfig.bridgeHost || '127.0.0.1'),
+        SCREENLOGIC_BRIDGE_PORT: String(screenlogicConfig.bridgePort || 5023),
+        SCREENLOGIC_POLL_SECONDS: String(screenlogicConfig.pollSeconds || 60),
+        SCREENLOGIC_DISCOVERY: String(screenlogicConfig.discovery !== false),
       },
     },
 

@@ -92,6 +92,19 @@ export async function runStart(home23Root, agentName) {
     console.log('  Check logs/cosmo23-err.log for details');
   }
 
+  // Start ScreenLogic bridge (shared personal tile bridge) if present in the ecosystem.
+  try {
+    const jlist3 = exec('pm2 jlist');
+    const procs3 = JSON.parse(jlist3);
+    const screenlogicRunning = procs3.some(p => p.name === 'home23-screenlogic' && p.pm2_env?.status === 'online');
+    if (!screenlogicRunning) {
+      console.log('Starting ScreenLogic bridge...');
+      execSync(`pm2 start ${ecosystemPath} --only home23-screenlogic`, { cwd: home23Root, stdio: 'inherit' });
+    }
+  } catch {
+    console.log('  (ScreenLogic bridge not started)');
+  }
+
   // Find dashboard port for the URL
   let dashPort = 5002;
   try {
@@ -149,6 +162,10 @@ export async function runStop(home23Root, agentName) {
     try {
       execSync('pm2 stop home23-cosmo23', { stdio: 'pipe' });
       console.log('  home23-cosmo23: stopped');
+    } catch { /* not running */ }
+    try {
+      execSync('pm2 stop home23-screenlogic', { stdio: 'pipe' });
+      console.log('  home23-screenlogic: stopped');
     } catch { /* not running */ }
     try {
       execSync(`pm2 stop ${ecosystemPath}`, { cwd: home23Root, stdio: 'inherit' });
