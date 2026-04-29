@@ -209,11 +209,49 @@ def active_circuit_names(circuits: list[dict[str, Any]]) -> list[str]:
 COLOR_LIGHT_COMMANDS = {
     "all_off": 0,
     "all_on": 1,
+    "color_set": 2,
+    "color_sync": 3,
+    "color_swim": 4,
+    "party": 5,
+    "romance": 6,
+    "caribbean": 7,
+    "american": 8,
+    "sunset": 9,
+    "royal": 10,
+    "save": 11,
+    "recall": 12,
     "blue": 13,
     "green": 14,
     "red": 15,
     "white": 16,
     "magenta": 17,
+    "next_mode": 19,
+    "reset": 20,
+    "hold": 21,
+}
+
+COLOR_LIGHT_LABELS = {
+    0: "All Off",
+    1: "All On",
+    2: "Color Set",
+    3: "Sync",
+    4: "Swim",
+    5: "Party",
+    6: "Romance",
+    7: "Caribbean",
+    8: "American",
+    9: "Sunset",
+    10: "Royal",
+    11: "Save",
+    12: "Recall",
+    13: "Blue",
+    14: "Green",
+    15: "Red",
+    16: "White",
+    17: "Magenta",
+    19: "Next",
+    20: "Reset",
+    21: "Hold",
 }
 
 
@@ -238,7 +276,7 @@ def normalize_pump(raw: Any) -> dict[str, Any]:
     }
 
 
-def normalize_lights(raw: Any, circuits: list[dict[str, Any]]) -> dict[str, Any]:
+def normalize_lights(raw: Any, circuits: list[dict[str, Any]], last_command: dict[str, Any] | None = None) -> dict[str, Any]:
     light = next((circuit for circuit in circuits if str(circuit.get("name", "")).lower() == "lights"), None)
     if light is None:
         light = next((circuit for circuit in circuits if "light" in str(circuit.get("name", "")).lower()), None)
@@ -255,19 +293,23 @@ def normalize_lights(raw: Any, circuits: list[dict[str, Any]]) -> dict[str, Any]
     if color_set is None and isinstance(raw_circuit, dict):
         color_set = first_display_value(raw_circuit.get("color"), ("color_set",))
 
-    color_name = None
+    preset_color_name = None
     colors = first_value(raw, ("color",))
     if isinstance(colors, list) and isinstance(color_set, int) and 0 <= color_set < len(colors):
-        color_name = first_display_value(colors[color_set], ("name",))
+        preset_color_name = first_display_value(colors[color_set], ("name",))
 
     state = light.get("state") if light else None
+    command_label = last_command.get("label") if isinstance(last_command, dict) else None
+    color_name = command_label or preset_color_name
     return {
         "id": light.get("id") if light else None,
         "name": light.get("name") if light else "Lights",
         "state": state,
         "stateText": "On" if is_on(state) else "Off",
         "colorSet": color_set,
+        "presetColorName": preset_color_name,
         "colorName": color_name,
+        "lastCommand": last_command,
         "summary": f"{'On' if is_on(state) else 'Off'} · {color_name}" if color_name else ("On" if is_on(state) else "Off"),
     }
 
@@ -284,13 +326,19 @@ def normalize_chlorinator(raw: Any) -> dict[str, Any]:
     }
 
 
-def normalize_status(raw: Any, connected: bool, bridge_status: str, error: str | None) -> dict[str, Any]:
+def normalize_status(
+    raw: Any,
+    connected: bool,
+    bridge_status: str,
+    error: str | None,
+    last_light_command: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     pool = normalize_body(raw, "pool")
     spa = normalize_body(raw, "spa")
     circuits = normalize_circuits(raw)
     active = active_circuit_names(circuits)
     pump = normalize_pump(raw)
-    lights = normalize_lights(raw, circuits)
+    lights = normalize_lights(raw, circuits, last_light_command)
     chlorinator = normalize_chlorinator(raw)
     pool["temperatureText"] = f"{pool['temperature']}F" if pool.get("temperature") is not None else None
     pool["operatingState"] = "Running" if is_on(pump.get("state")) or "Pool" in active else "Idle"
@@ -352,10 +400,12 @@ class ScreenLogicWorker:
         self.stop_event: asyncio.Event | None = None
         self.loop_obj: asyncio.AbstractEventLoop | None = None
         self.io_lock: asyncio.Lock | None = None
+        self.last_light_command: dict[str, Any] | None = None
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             raw = json_safe(self.latest_raw)
+            last_light_command = json_safe(self.last_light_command)
             return {
                 "bridge": {
                     "service": "home23-screenlogic",
@@ -369,7 +419,7 @@ class ScreenLogicWorker:
                     "pollSeconds": self.poll_seconds,
                     "discovery": self.use_discovery,
                 },
-                **normalize_status(raw, self.connected, self.bridge_status, self.last_error),
+                **normalize_status(raw, self.connected, self.bridge_status, self.last_error, last_light_command),
                 "fetchedAt": self.last_update,
             }
 
@@ -480,10 +530,17 @@ class ScreenLogicWorker:
             await self.gateway.async_set_color_lights(int(command))
             await asyncio.sleep(1.25)
             await self.gateway.async_update()
+            label = COLOR_LIGHT_LABELS.get(int(command), str(command))
+            self.last_light_command = {
+                "command": int(command),
+                "label": label,
+                "at": iso_now(),
+            }
             self.set_state(raw=self.gateway.get_data(), status="connected", connected=True)
             return {
                 "ok": True,
                 "command": int(command),
+                "label": label,
                 "status": "applied",
             }
 

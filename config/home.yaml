@@ -119,6 +119,22 @@ dashboard:
               fields: []
               bodyTemplate:
                 state: 0
+            - id: lights-next
+              label: Next
+              method: POST
+              path: /lights/color
+              confirmationText: Cycle pool lights to the next mode?
+              fields: []
+              bodyTemplate:
+                command: 19
+            - id: lights-sync
+              label: Sync
+              method: POST
+              path: /lights/color
+              confirmationText: Sync pool lights?
+              fields: []
+              bodyTemplate:
+                command: 3
             - id: lights-blue
               label: Blue
               method: POST
