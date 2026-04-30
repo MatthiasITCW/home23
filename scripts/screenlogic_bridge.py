@@ -316,13 +316,21 @@ def normalize_lights(raw: Any, circuits: list[dict[str, Any]], last_command: dic
 
 def normalize_chlorinator(raw: Any) -> dict[str, Any]:
     scg = first_value(raw, ("scg", "chlorinator", "salt_chlorine_generator")) or {}
+    state = first_display_value(scg, ("state", "status"))
+    salt_ppm = first_display_value(scg, ("salt_ppm", "salt", "saltPpm"))
+    pool_setpoint = first_display_value(scg, ("pool_setpoint", "poolSetPoint"))
+    super_chlorinate = first_display_value(scg, ("super_chlorinate", "superChlorinate"))
     return {
         "present": bool(first_display_value(scg, ("scg_present", "present"))),
-        "state": first_display_value(scg, ("state", "status")),
-        "saltPpm": first_display_value(scg, ("salt_ppm", "salt", "saltPpm")),
-        "poolSetPoint": first_display_value(scg, ("pool_setpoint", "poolSetPoint")),
+        "state": state,
+        "stateText": "On" if is_on(state) else "Off",
+        "saltPpm": salt_ppm,
+        "saltText": f"{salt_ppm} ppm" if salt_ppm is not None else None,
+        "poolSetPoint": pool_setpoint,
+        "poolSetPointText": f"{pool_setpoint}%" if pool_setpoint is not None else None,
         "spaSetPoint": first_display_value(scg, ("spa_setpoint", "spaSetPoint")),
-        "superChlorinate": first_display_value(scg, ("super_chlorinate", "superChlorinate")),
+        "superChlorinate": super_chlorinate,
+        "superChlorinateText": "On" if is_on(super_chlorinate) else "Off",
     }
 
 

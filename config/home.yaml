@@ -102,6 +102,12 @@ dashboard:
                 path: lights.stateText
               - label: Color
                 path: lights.colorName
+              - label: Salt
+                path: chlorinator.saltText
+              - label: Chlor %
+                path: chlorinator.poolSetPointText
+              - label: Cell
+                path: chlorinator.stateText
           actions:
             - id: lights-on
               label: On
