@@ -404,11 +404,31 @@ class ThinkingMachine {
           agendaIds: [],  // filled in below
         };
 
-        // Persist agenda candidates from the final (keep) critique pass
+        // Persist compiled motor intents from the kept thought. This is not
+        // allowed to be silent: even "no action" becomes an auditable motor
+        // decision so kept thoughts cannot masquerade as action.
         const agendaIds = [];
         const motorActions = [];
-        if (this.agendaStore && Array.isArray(finalVerdict.agendaCandidates) && finalVerdict.agendaCandidates.length > 0) {
-          for (const ac of finalVerdict.agendaCandidates) {
+        const motorPlan = this.motorCortex?.compileMotorIntents
+          ? this.motorCortex.compileMotorIntents({ thought, finalVerdict, candidate, referencedNodes: dive.referencedNodes })
+          : { accepted: Array.isArray(finalVerdict.agendaCandidates) ? finalVerdict.agendaCandidates : [], decisions: [] };
+
+        for (const decision of motorPlan.decisions || []) {
+          const audit = {
+            agendaId: null,
+            status: decision.status,
+            action: null,
+            target: null,
+            source: decision.source || null,
+            content: decision.content || null,
+            detail: decision.detail || null,
+          };
+          motorActions.push(audit);
+          this._emit('MotorActionRouted', cycleSessionId, audit);
+        }
+
+        if (this.agendaStore && Array.isArray(motorPlan.accepted) && motorPlan.accepted.length > 0) {
+          for (const ac of motorPlan.accepted) {
             const rec = this.agendaStore.add({
               content: ac.content,
               kind: ac.kind,
@@ -425,6 +445,7 @@ class ThinkingMachine {
                 content: rec.content,
                 kind: rec.kind,
                 topicTags: rec.topicTags,
+                source: ac.source || null,
               });
               if (this.motorCortex?.actOnAgendaItem) {
                 const motorAction = await this.motorCortex.actOnAgendaItem(rec, {
@@ -438,6 +459,8 @@ class ThinkingMachine {
                   status: motorAction.status,
                   action: motorAction.action?.action || null,
                   target: motorAction.action?.target || motorAction.action?.problemId || null,
+                  source: ac.source || null,
+                  content: rec.content,
                   detail: motorAction.action?.detail || motorAction.detail || null,
                 });
                 this._emit('MotorActionRouted', cycleSessionId, {
@@ -445,10 +468,38 @@ class ThinkingMachine {
                   status: motorAction.status,
                   action: motorAction.action?.action || null,
                   target: motorAction.action?.target || motorAction.action?.problemId || null,
+                  source: ac.source || null,
+                  content: rec.content,
                   detail: motorAction.action?.detail || motorAction.detail || null,
                 });
               }
+            } else {
+              const audit = {
+                agendaId: null,
+                status: 'rejected',
+                action: null,
+                target: null,
+                source: ac.source || null,
+                content: ac.content,
+                detail: 'agenda store policy rejected compiled motor intent',
+              };
+              motorActions.push(audit);
+              this._emit('MotorActionRouted', cycleSessionId, audit);
             }
+          }
+        } else if (!this.agendaStore && Array.isArray(motorPlan.accepted) && motorPlan.accepted.length > 0) {
+          for (const ac of motorPlan.accepted) {
+            const audit = {
+              agendaId: null,
+              status: 'rejected',
+              action: null,
+              target: null,
+              source: ac.source || null,
+              content: ac.content,
+              detail: 'agenda store unavailable',
+            };
+            motorActions.push(audit);
+            this._emit('MotorActionRouted', cycleSessionId, audit);
           }
         }
         thought.agendaIds = agendaIds;

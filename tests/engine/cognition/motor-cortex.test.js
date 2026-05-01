@@ -63,3 +63,41 @@ test('motor cortex rejects agenda items that fail policy without executing', asy
   assert.equal(executed, false);
   assert.match(result.detail, /policy/);
 });
+
+test('motor compiler records filtered critique candidates instead of silently dropping them', () => {
+  const motor = new MotorCortex({
+    logger,
+    canAct: () => false,
+  });
+
+  const plan = motor.compileMotorIntents({
+    thoughtText: 'The thought is useful but has no directly executable engine repair.',
+    finalVerdict: {
+      agendaCandidates: [],
+      raw: '```json\n{"verdict":"keep","agendaCandidates":[{"content":"Compare the April 17 run HR/elevation profile to historical Huber Woods runs.","kind":"idea","topicTags":["health"]}]}\n```',
+    },
+  });
+
+  assert.equal(plan.accepted.length, 0);
+  assert.equal(plan.decisions.length, 1);
+  assert.equal(plan.decisions[0].status, 'rejected');
+  assert.equal(plan.decisions[0].source, 'critique_raw_agenda');
+  assert.match(plan.decisions[0].detail, /filter rejected/);
+});
+
+test('motor compiler emits no_action when a kept thought has no bounded intent', () => {
+  const motor = new MotorCortex({
+    logger,
+    canAct: () => true,
+  });
+
+  const plan = motor.compileMotorIntents({
+    thoughtText: 'This is interpretive framing about jtr and contains no concrete operational task.',
+    finalVerdict: { agendaCandidates: [], raw: '```json\n{"verdict":"keep","agendaCandidates":[]}\n```' },
+  });
+
+  assert.equal(plan.accepted.length, 0);
+  assert.equal(plan.decisions.length, 1);
+  assert.equal(plan.decisions[0].status, 'no_action');
+  assert.match(plan.decisions[0].detail, /no bounded motor intent/);
+});
