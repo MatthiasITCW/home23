@@ -102,6 +102,16 @@ const CORE_TILES = [
     refreshMs: 30_000,
   },
   {
+    id: 'good-life',
+    kind: 'core',
+    title: 'Good Life',
+    icon: '⊙',
+    mode: 'core-good-life',
+    description: 'Current autonomous policy, lane health, commitments, and regulator action.',
+    sizeDefault: 'third',
+    refreshMs: 30_000,
+  },
+  {
     id: 'brain-log',
     kind: 'core',
     title: 'Brain Log',

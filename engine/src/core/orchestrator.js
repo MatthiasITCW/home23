@@ -62,6 +62,7 @@ const { ArcReportGenerator } = require('../system/arc-report-generator');
 const { cosmoEvents } = require('../realtime/event-emitter');
 const { getActiveClusterSummary } = require('../memory/active-clusters');
 const { NoticePass } = require('../sleep/notice-pass');
+const { readGoodLifeSleepPolicy } = require('../good-life/sleep-policy');
 
 /**
  * Phase 2B Orchestrator - GPT-5.2 Version
@@ -1299,8 +1300,11 @@ class Orchestrator {
       // Deep sleep consolidation - COORDINATE BOTH SYSTEMS
       // Check both cognitive state (mental fatigue) and temporal state (biological rhythms)
       const cognitiveState = this.stateModulator.getState();
+      const goodLifeSleep = readGoodLifeSleepPolicy(this.logsDir);
       const shouldSleepCognitive = (cognitiveState.mode === 'sleeping');
       const shouldSleepTemporal = (rhythmState.state === 'sleeping');
+      const shouldSleepGoodLife = Boolean(goodLifeSleep.forceSleep);
+      const suppressNewSleep = Boolean(goodLifeSleep.suppressNewSleep) && !this.sleepSession.active;
       
       // In dream mode, FORCE sleep if not already sleeping
       if (this.config.execution?.dreamMode && cognitiveState.mode !== 'sleeping') {
@@ -1308,9 +1312,18 @@ class Orchestrator {
         this.stateModulator.transitionToMode('sleeping');
         this.temporal.enterSleep();
       }
+      if (shouldSleepGoodLife && cognitiveState.mode !== 'sleeping') {
+        this.logger.info('💤 Good Life policy triggering sleep', {
+          mode: goodLifeSleep.mode,
+          reason: goodLifeSleep.reason,
+          cycle: this.cycleCount,
+        });
+        this.stateModulator.transitionToMode('sleeping');
+        this.temporal.enterSleep();
+      }
 
       // Sleep if EITHER system triggers (intentional dual-system design)
-      if (shouldSleepCognitive || shouldSleepTemporal || this.config.execution?.dreamMode) {
+      if (!suppressNewSleep && (shouldSleepCognitive || shouldSleepTemporal || shouldSleepGoodLife || this.config.execution?.dreamMode)) {
         // Initialize sleep session if just starting
         if (!this.sleepSession.active) {
           this.sleepSession.active = true;
@@ -1334,7 +1347,8 @@ class Orchestrator {
 
         // Calculate sleep progress
         const cyclesAsleep = this.cycleCount - this.sleepSession.startCycle;
-        const minCyclesRemaining = Math.max(0, this.sleepSession.minimumCycles - cyclesAsleep);
+        const requiredSleepCycles = Math.max(this.sleepSession.minimumCycles, goodLifeSleep.minimumCycles || 0);
+        const minCyclesRemaining = Math.max(0, requiredSleepCycles - cyclesAsleep);
         
         // Synchronize both systems
         if (shouldSleepCognitive && rhythmState.state !== 'sleeping') {
@@ -1421,9 +1435,12 @@ class Orchestrator {
         // Check if should wake up (both systems must agree or minimum cycles met)
         // In dream mode, never wake (stays asleep until maxCycles)
         const cyclesCompleted = cyclesAsleep + 1;
-        const wakeThreshold = this.config.cognitiveState?.wakeThreshold || 0.35;
+        const wakeThreshold = Math.max(
+          this.config.cognitiveState?.wakeThreshold || 0.35,
+          goodLifeSleep.wakeThreshold || 0
+        );
         const energyRestored = cognitiveState.energy >= wakeThreshold;
-        const minimumMet = cyclesCompleted >= this.sleepSession.minimumCycles;
+        const minimumMet = cyclesCompleted >= requiredSleepCycles;
         
         if (!this.config.execution?.dreamModeSettings?.preventWake && minimumMet && energyRestored) {
           this.logger.info('');
@@ -1433,7 +1450,8 @@ class Orchestrator {
           this.logger.info('✅ Sleep metrics:', {
             totalSleepCycles: cyclesCompleted,
             energyRestored: cognitiveState.energy.toFixed(3),
-            consolidationPerformed: this.sleepSession.consolidationRun
+            consolidationPerformed: this.sleepSession.consolidationRun,
+            goodLifePolicy: goodLifeSleep.mode,
           });
           this.logger.info('');
           

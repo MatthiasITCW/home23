@@ -49,6 +49,9 @@ dashboard:
       - tileId: system-summary
         enabled: true
         size: third
+      - tileId: good-life
+        enabled: true
+        size: third
       - tileId: dream-log
         enabled: true
         size: half

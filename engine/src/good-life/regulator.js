@@ -6,6 +6,7 @@ const path = require('path');
 
 const AUTO_ACT_MODES = new Set(['repair', 'recover', 'help']);
 const DEFAULT_THROTTLE_MS = 60 * 60 * 1000;
+const MAX_DAILY_SELF_MAINTENANCE_ACTIONS = 4;
 
 class GoodLifeRegulator {
   constructor(opts = {}) {
@@ -27,6 +28,8 @@ class GoodLifeRegulator {
     const evaluation = obs.payload;
     const agenda = this._agendaFromEvaluation(evaluation);
     if (!agenda) return { status: 'ignored' };
+    const usefulness = this._usefulnessContract(evaluation, agenda);
+    if (!usefulness.passes) return { status: 'blocked_usefulness_gate', reason: usefulness.reason };
 
     const key = this._actionKey(evaluation);
     const state = this._readState();
@@ -34,6 +37,9 @@ class GoodLifeRegulator {
     const nowMs = Date.now();
     if (last?.at && nowMs - Date.parse(last.at) < this.throttleMs) {
       return { status: 'throttled', key };
+    }
+    if (this._selfMaintenanceBudgetExceeded(state, evaluation, usefulness)) {
+      return { status: 'blocked_self_maintenance_budget', key };
     }
 
     const agendaStore = this.getAgendaStore();
@@ -51,6 +57,7 @@ class GoodLifeRegulator {
           summary: evaluation.summary || null,
           policy: evaluation.policy?.mode || null,
           lanes: agenda.lanes,
+          usefulnessContract: usefulness,
         },
       });
     } else {
@@ -65,7 +72,9 @@ class GoodLifeRegulator {
         agendaId: record.id,
         mode: evaluation.policy.mode,
         summary: evaluation.summary,
+        usefulnessContract: usefulness,
       },
+      daily: this._nextDailyState(state.daily, evaluation, usefulness, record.id),
     });
 
     const shouldAct = AUTO_ACT_MODES.has(evaluation.policy.mode)
@@ -142,6 +151,7 @@ class GoodLifeRegulator {
         summary: evaluation.summary || null,
         policy: evaluation.policy?.mode || null,
         lanes: agenda.lanes,
+        usefulnessContract: this._usefulnessContract(evaluation, agenda),
       },
       createdAt: now,
       updatedAt: now,
@@ -152,6 +162,54 @@ class GoodLifeRegulator {
     };
     fs.appendFileSync(this.agendaPath, JSON.stringify({ type: 'add', id, record }) + '\n', 'utf8');
     return record;
+  }
+
+  _usefulnessContract(evaluation, agenda) {
+    const mode = evaluation.policy?.mode || 'observe';
+    const text = String(agenda?.content || '').toLowerCase();
+    if (mode === 'repair') return { passes: true, category: 'resolves-drift', reason: 'repair clears verified viability drift' };
+    if (mode === 'recover') return { passes: true, category: 'restores-usefulness', reason: 'recover returns loop to useful jtr-visible work' };
+    if (mode === 'help') return { passes: true, category: 'visible-progress', reason: 'help produces jtr-visible progress' };
+    if (mode === 'learn' && /\b(crystallize|grounded|evidence|discard)\b/.test(text)) {
+      return { passes: true, category: 'grounded-learning', reason: 'learning has an evidence/discard stop condition' };
+    }
+    if (mode === 'rest' && /\bwithout losing active obligations\b/.test(text)) {
+      return { passes: true, category: 'reduces-friction', reason: 'rest lowers loop pressure while preserving obligations' };
+    }
+    return { passes: false, category: 'churn', reason: `mode ${mode} lacks a usefulness contract` };
+  }
+
+  _selfMaintenanceBudgetExceeded(state, evaluation, usefulness) {
+    const mode = evaluation.policy?.mode || 'observe';
+    if (mode === 'repair' || usefulness.category === 'visible-progress') return false;
+    if (evaluation.lanes?.viability?.status === 'critical') return false;
+    const daily = this._currentDailyState(state.daily);
+    return daily.selfMaintenanceActions >= MAX_DAILY_SELF_MAINTENANCE_ACTIONS;
+  }
+
+  _nextDailyState(existing, evaluation, usefulness, agendaId) {
+    const daily = this._currentDailyState(existing);
+    if (usefulness?.category !== 'visible-progress') daily.selfMaintenanceActions++;
+    daily.actions.push({
+      at: new Date().toISOString(),
+      agendaId,
+      mode: evaluation.policy?.mode || 'observe',
+      category: usefulness?.category || 'unknown',
+    });
+    daily.actions = daily.actions.slice(-50);
+    return daily;
+  }
+
+  _currentDailyState(existing) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (!existing || existing.date !== today) {
+      return { date: today, selfMaintenanceActions: 0, actions: [] };
+    }
+    return {
+      date: existing.date,
+      selfMaintenanceActions: Number(existing.selfMaintenanceActions || 0),
+      actions: Array.isArray(existing.actions) ? existing.actions : [],
+    };
   }
 
   _actionKey(evaluation) {

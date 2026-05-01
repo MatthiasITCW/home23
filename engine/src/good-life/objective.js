@@ -166,6 +166,8 @@ class GoodLifeObjective {
       discovery: s.discovery || null,
       thinkingMachine: s.thinkingMachine || null,
       publish: s.publish || null,
+      actions: s.actions || null,
+      goodLife: s.goodLife || null,
     };
   }
 }

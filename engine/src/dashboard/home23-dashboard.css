@@ -2633,6 +2633,47 @@ body.h23-external-focus #cosmo23-refresh-btn {
   min-height: var(--home-summary-tile-min-height);
 }
 
+.h23-home-item[data-home-tile-id="good-life"] {
+  grid-column: span 4;
+  min-height: var(--home-summary-tile-min-height);
+}
+
+.h23-tile-goodlife {
+  gap: 10px;
+}
+
+.h23-goodlife-policy {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.h23-goodlife-summary,
+.h23-goodlife-meta {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.h23-goodlife-lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.h23-goodlife-lane {
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.05);
+}
+
+.h23-goodlife-lane.critical { color: #ff9f9f; border-color: rgba(255,120,120,0.45); }
+.h23-goodlife-lane.strained { color: #ffd38a; border-color: rgba(255,190,90,0.45); }
+.h23-goodlife-lane.healthy { color: #9ee8bf; border-color: rgba(120,220,160,0.35); }
+
 .h23-home-item[data-home-tile-id="brain-log"],
 .h23-home-item[data-home-tile-id="dream-log"] {
   grid-column: span 6;

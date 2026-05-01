@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -95,4 +95,39 @@ test('GoodLifeRegulator throttles repeated equivalent policy pulses', async () =
   assert.equal((await regulator.handleObservation(recoverObservation())).status, 'queued_no_motor');
   assert.equal((await regulator.handleObservation(recoverObservation())).status, 'throttled');
   assert.equal(added, 1);
+});
+
+test('GoodLifeRegulator blocks modes without a usefulness contract', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  const regulator = new GoodLifeRegulator({ brainDir: dir });
+  const obs = recoverObservation();
+  obs.payload.policy.mode = 'observe';
+
+  const result = await regulator.handleObservation(obs);
+  assert.equal(result.status, 'ignored');
+});
+
+test('GoodLifeRegulator caps repeated self-maintenance actions per day', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  writeFileSync(join(dir, 'good-life-regulator-state.json'), JSON.stringify({
+    daily: {
+      date: new Date().toISOString().slice(0, 10),
+      selfMaintenanceActions: 4,
+      actions: [],
+    },
+  }));
+  let added = 0;
+  const regulator = new GoodLifeRegulator({
+    brainDir: dir,
+    getAgendaStore: () => ({
+      add(params) {
+        added++;
+        return { id: `ag-${added}`, content: params.content, status: 'candidate' };
+      },
+    }),
+  });
+
+  const blocked = await regulator.handleObservation(recoverObservation());
+  assert.equal(blocked.status, 'blocked_self_maintenance_budget');
+  assert.equal(added, 0);
 });

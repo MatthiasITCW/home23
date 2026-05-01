@@ -15,6 +15,8 @@ import { ChannelClass, makeObservation } from '../contract.js';
 const require = createRequire(import.meta.url);
 const { GoodLifeObjective } = require('../../good-life/objective.js');
 const { GoodLifeLedger } = require('../../good-life/ledger.js');
+const { GoodLifeCommitments } = require('../../good-life/commitments.js');
+const { GoodLifeTrends } = require('../../good-life/trends.js');
 
 export class GoodLifeChannel extends PollChannel {
   constructor({
@@ -30,6 +32,8 @@ export class GoodLifeChannel extends PollChannel {
     super({ id, class: ChannelClass.DOMAIN, intervalMs, initialDelayMs });
     this.objective = objective || new GoodLifeObjective();
     this.ledger = ledger || (brainDir ? new GoodLifeLedger({ brainDir, logger }) : null);
+    this.commitments = brainDir ? new GoodLifeCommitments({ brainDir, logger }) : null;
+    this.trends = brainDir ? new GoodLifeTrends({ brainDir, logger }) : null;
     this.getSnapshot = typeof getSnapshot === 'function' ? getSnapshot : (() => ({}));
     this.logger = logger || console;
   }
@@ -41,6 +45,8 @@ export class GoodLifeChannel extends PollChannel {
       now: new Date().toISOString(),
     });
     if (this.ledger) this.ledger.append(evaluation);
+    if (this.commitments) this.commitments.update(evaluation);
+    if (this.trends) this.trends.append(evaluation);
     return [evaluation];
   }
 

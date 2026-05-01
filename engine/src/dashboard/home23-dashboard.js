@@ -1479,6 +1479,7 @@ function fallbackHomeLayout() {
     { tileId: 'outside-weather', size: 'half', tile: { id: 'outside-weather', kind: 'custom' } },
     { tileId: 'sauna-control', size: 'half', tile: { id: 'sauna-control', kind: 'custom' } },
     { tileId: 'system-summary', size: 'full', tile: { id: 'system-summary', kind: 'core' } },
+    { tileId: 'good-life', size: 'third', tile: { id: 'good-life', kind: 'core' } },
     { tileId: 'brain-log', size: 'half', tile: { id: 'brain-log', kind: 'core' } },
     { tileId: 'dream-log', size: 'half', tile: { id: 'dream-log', kind: 'core' } },
     { tileId: 'feeder', size: 'full', tile: { id: 'feeder', kind: 'core' } },
@@ -1577,6 +1578,18 @@ function renderSystemSummaryTile() {
   `;
 }
 
+function renderGoodLifeTile() {
+  return `
+    <div class="h23-tile h23-tile-goodlife">
+      <div class="h23-tile-header"><span class="icon">⊙</span> Good Life</div>
+      <div class="h23-goodlife-policy" id="goodlife-policy">Loading...</div>
+      <div class="h23-goodlife-summary" id="goodlife-summary"></div>
+      <div class="h23-goodlife-lanes" id="goodlife-lanes"></div>
+      <div class="h23-goodlife-meta" id="goodlife-meta"></div>
+    </div>
+  `;
+}
+
 function renderBrainLogTile() {
   return `
     <div class="h23-tile h23-tile-brainlog h23-tile-log" onclick="openLogOverlay('brain')">
@@ -1652,6 +1665,9 @@ function renderHomeLayoutItem(item) {
       break;
     case 'system-summary':
       markup = renderSystemSummaryTile();
+      break;
+    case 'good-life':
+      markup = renderGoodLifeTile();
       break;
     case 'brain-log':
       markup = renderBrainLogTile();
@@ -1992,7 +2008,7 @@ async function loadHomeTiles() {
   }).catch(() => { /* best-effort */ });
 
   const stateUrl = `${base || ''}/api/state`;
-  const [engineHealth, summary, feederData, thoughtData, dreamData, systemState] = await Promise.all([
+  const [engineHealth, summary, feederData, thoughtData, dreamData, systemState, goodLifeData] = await Promise.all([
     fetchEngineHealth(primaryAgent).catch(() => null),
     apiFetch(`${base}/api/home/summary`, { timeoutMs: 4000 }).catch(() => null),
     apiFetch('/home23/feeder-status', { timeoutMs: 4000 }).catch(() => null),
@@ -2001,6 +2017,7 @@ async function loadHomeTiles() {
     fetch(stateUrl, { signal: AbortSignal.timeout(8_000) })
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null),
+    apiFetch(`${base}/api/good-life`, { timeoutMs: 4000 }).catch(() => null),
   ]);
 
   if (summary) {
@@ -2026,6 +2043,7 @@ async function loadHomeTiles() {
   }
 
   if (feederData) updateFeederTile(feederData);
+  if (goodLifeData) updateGoodLifeTile(goodLifeData);
 
   if (thoughtData) {
     const thoughts = thoughtData.thoughts || thoughtData.journal || thoughtData || [];
@@ -2039,6 +2057,29 @@ async function loadHomeTiles() {
     _cachedDreams = dreams;
     updateDreamLog(dreams);
   }
+}
+
+function updateGoodLifeTile(data) {
+  const state = data?.state || null;
+  if (!state) {
+    setText('goodlife-policy', 'No Good Life state yet');
+    setText('goodlife-summary', '');
+    setHtml('goodlife-lanes', '');
+    setText('goodlife-meta', '');
+    return;
+  }
+  const policy = state.policy?.mode || 'observe';
+  setText('goodlife-policy', policy.toUpperCase());
+  setText('goodlife-summary', state.summary || state.policy?.reason || '');
+  const laneHtml = Object.entries(state.lanes || {}).map(([name, lane]) => {
+    const status = lane?.status || 'unknown';
+    return `<span class="h23-goodlife-lane ${escapeHtml(status)}">${escapeHtml(name)} · ${escapeHtml(status)}</span>`;
+  }).join('');
+  setHtml('goodlife-lanes', laneHtml);
+  const reg = data?.regulator || {};
+  const latest = Object.entries(reg).filter(([k]) => k !== 'daily').slice(-1)[0]?.[1];
+  const action = latest?.agendaId ? `agenda ${latest.agendaId}` : 'no routed action yet';
+  setText('goodlife-meta', `${state.evaluatedAt ? timeSince(new Date(state.evaluatedAt)) + ' ago' : 'freshness unknown'} · ${action}`);
 }
 
 function updateSystemTile(state) {
@@ -2753,6 +2794,11 @@ async function apiFetch(url, options = {}) {
 function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
+}
+
+function setHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
 }
 
 function getTimestampMs(value) {

@@ -218,6 +218,11 @@ class CrashRecoveryManager {
             attempts: this.recoveryAttempts
           });
 
+          // Recovery has completed. Keep the recovery journal as historical
+          // evidence, but do not leave the runtime crash flag latched; Good Life
+          // treats this flag as an active recovery condition.
+          this.crashDetected = false;
+
           return checkpoint.state;
         } catch (error) {
           this.logger.warn('[CrashRecovery] Failed to load checkpoint', {

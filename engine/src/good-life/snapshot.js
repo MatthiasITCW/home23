@@ -24,6 +24,7 @@ function buildGoodLifeSnapshot({
     discovery: orchestrator?.discoveryEngine?.getStats?.() || null,
     thinkingMachine: orchestrator?.thinkingMachine?.getStats?.() || null,
     publish: summarizePublish(runtimeRoot),
+    goodLife: summarizeGoodLife(runtimeRoot),
     surfaces: summarizeSurfaces(workspacePath),
     sleep: {
       active: Boolean(orchestrator?.sleepSession?.active),
@@ -85,6 +86,14 @@ function summarizePublish(runtimeRoot) {
     lastLedgerWriteAt: stat,
     lastUsefulOutputAt: toIsoTime(useful?.at || useful?.timestamp || stat),
     sampled: rows.length,
+  };
+}
+
+function summarizeGoodLife(runtimeRoot) {
+  return {
+    commitments: readJson(path.join(runtimeRoot || '', 'good-life-commitments.json')),
+    trends: readJson(path.join(runtimeRoot || '', 'good-life-trends-current.json')),
+    regulator: readJson(path.join(runtimeRoot || '', 'good-life-regulator-state.json')),
   };
 }
 

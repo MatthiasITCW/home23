@@ -4782,6 +4782,42 @@ Be specific, actionable, and maintain research continuity.`;
       }
     });
 
+    this.app.get('/api/good-life', async (req, res) => {
+      try {
+        const fsSync = require('fs');
+        const readJson = (name) => {
+          try {
+            const file = path.join(this.logsDir || '', name);
+            if (!fsSync.existsSync(file)) return null;
+            return JSON.parse(fsSync.readFileSync(file, 'utf8'));
+          } catch {
+            return null;
+          }
+        };
+        const tailJsonl = (name, limit = 20) => {
+          try {
+            const file = path.join(this.logsDir || '', name);
+            if (!fsSync.existsSync(file)) return [];
+            return fsSync.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).slice(-limit).map(line => {
+              try { return JSON.parse(line); } catch { return null; }
+            }).filter(Boolean);
+          } catch {
+            return [];
+          }
+        };
+        res.json({
+          ok: true,
+          state: readJson('good-life-state.json'),
+          commitments: readJson('good-life-commitments.json'),
+          trends: readJson('good-life-trends-current.json'),
+          regulator: readJson('good-life-regulator-state.json'),
+          ledgerTail: tailJsonl('good-life-ledger.jsonl', 10),
+        });
+      } catch (error) {
+        res.status(500).json({ ok: false, error: error.message });
+      }
+    });
+
     this.app.get('/api/state', async (req, res) => {
       try {
         const wantsFull = req.query.full === '1' || req.query.full === 'true';
