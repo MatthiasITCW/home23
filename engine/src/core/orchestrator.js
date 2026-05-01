@@ -27,6 +27,7 @@ const { filterEligibleNodes, checkSurfaceFreshness, SURFACE_BUDGETS } = require(
 const { buildTemporalContext } = require('./temporal-context');
 const { DiscoveryEngine } = require('../cognition/discovery-engine');
 const { ThinkingMachine } = require('../cognition/thinking-machine');
+const { MotorCortex } = require('../cognition/motor-cortex');
 const { ConversationSalience } = require('../cognition/conversation-salience');
 
 // Evidence Receipt Trail — Cryptographic Evidence Schema
@@ -151,6 +152,7 @@ class Orchestrator {
     // Only starts when cognitionMode is 'thinking_machine'. Legacy roles are
     // completely untouched when flag is 'legacy_roles'.
     this.thinkingMachine = null;
+    this.motorCortex = null;
     
     // Sleep session tracking (cycle-based)
     this.sleepSession = {
@@ -674,6 +676,12 @@ class Orchestrator {
         const eventLedger = brainDir ? new EventLedger(brainDir, { logger: this.logger }) : null;
         this.agendaStore = brainDir ? new AgendaStore({ brainDir, logger: this.logger }) : null;
         if (this.agendaStore) this.agendaStore.startDecayReview();
+        this.motorCortex = new MotorCortex({
+          agendaStore: this.agendaStore,
+          logger: this.logger,
+          executeAgendaItem: (item, opts = {}) => this.executeAgendaItem(item, opts),
+          canAct: (item) => Boolean(this.inferAgendaAction(item) || this.isBoundedOperationalAgendaItem(item)),
+        });
         this.thinkingMachine = new ThinkingMachine({
           unifiedClient: pipelineClient,
           memory: this.memory,
@@ -682,6 +690,7 @@ class Orchestrator {
             discardedLogPath: brainDir ? path.join(brainDir, 'discarded-thoughts.jsonl') : null,
             eventLedger,
             agendaStore: this.agendaStore,
+            motorCortex: this.motorCortex,
             // Step 24 back-pressure threshold (informational warn; strict
             // gating deferred).
             cyclesWithoutReceiptThreshold: this.config.osEngine?.crystallization?.backpressure?.cyclesWithoutReceiptThreshold || 10,

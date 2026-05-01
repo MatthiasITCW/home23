@@ -90,6 +90,7 @@ class ThinkingMachine {
 
     this.eventLedger = this.config.eventLedger || null;  // EventLedger instance (optional)
     this.agendaStore = this.config.agendaStore || null;  // AgendaStore instance (optional)
+    this.motorCortex = this.config.motorCortex || null;  // Bounded agenda -> action router (optional)
 
     // Retain the N most-recent kept thoughts with full provenance so the
     // observability panel can show them with PGS edges + critique passes.
@@ -351,17 +352,6 @@ class ThinkingMachine {
 
       // Route by verdict: keep → emit + log; discard → silence (write to discarded.jsonl only)
       if (finalVerdict.verdict === 'keep') {
-        if (this.emitThought) {
-          try { this.emitThought(thought); } catch (e) {
-            this.logger.warn?.('[thinking-machine] emitThought failed', { error: e?.message });
-          }
-        }
-        if (this.logThought) {
-          try { await this.logThought(thought); } catch (e) {
-            this.logger.warn?.('[thinking-machine] logThought failed', { error: e?.message });
-          }
-        }
-
         // Event: MemoryCandidateCreated (kept thought enters promotion pipeline)
         this._emit('MemoryCandidateCreated', cycleSessionId, {
           source: 'thinking-machine',
@@ -416,6 +406,7 @@ class ThinkingMachine {
 
         // Persist agenda candidates from the final (keep) critique pass
         const agendaIds = [];
+        const motorActions = [];
         if (this.agendaStore && Array.isArray(finalVerdict.agendaCandidates) && finalVerdict.agendaCandidates.length > 0) {
           for (const ac of finalVerdict.agendaCandidates) {
             const rec = this.agendaStore.add({
@@ -435,11 +426,46 @@ class ThinkingMachine {
                 kind: rec.kind,
                 topicTags: rec.topicTags,
               });
+              if (this.motorCortex?.actOnAgendaItem) {
+                const motorAction = await this.motorCortex.actOnAgendaItem(rec, {
+                  cycleSessionId,
+                  candidateSignal: candidate.signal,
+                  referencedNodes: dive.referencedNodes,
+                  actor: 'motor-cortex',
+                });
+                motorActions.push({
+                  agendaId: rec.id,
+                  status: motorAction.status,
+                  action: motorAction.action?.action || null,
+                  target: motorAction.action?.target || motorAction.action?.problemId || null,
+                  detail: motorAction.action?.detail || motorAction.detail || null,
+                });
+                this._emit('MotorActionRouted', cycleSessionId, {
+                  agendaId: rec.id,
+                  status: motorAction.status,
+                  action: motorAction.action?.action || null,
+                  target: motorAction.action?.target || motorAction.action?.problemId || null,
+                  detail: motorAction.action?.detail || motorAction.detail || null,
+                });
+              }
             }
           }
         }
         thought.agendaIds = agendaIds;
+        thought.motorActions = motorActions;
         recentEntry.agendaIds = agendaIds;
+        recentEntry.motorActions = motorActions;
+
+        if (this.emitThought) {
+          try { this.emitThought(thought); } catch (e) {
+            this.logger.warn?.('[thinking-machine] emitThought failed', { error: e?.message });
+          }
+        }
+        if (this.logThought) {
+          try { await this.logThought(thought); } catch (e) {
+            this.logger.warn?.('[thinking-machine] logThought failed', { error: e?.message });
+          }
+        }
 
         // Ring-buffer: newest first, cap at recentThoughtsMax
         this.recentThoughts.unshift(recentEntry);
