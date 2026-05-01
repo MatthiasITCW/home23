@@ -59,7 +59,7 @@ const ABSTRACT_OPENERS = [
   'cross-reference ',
   're-examine ',
 ];
-const OPERATIONAL_AGENDA_ANCHORS = /(?:api\b|endpoint\b|dashboard\b|shortcut\b|health\b|sauna\b|pressure\b|sensor\b|bridge\b|correlation\b|cron\b|pm2\b|process\b|syntaxerror\b|harness\b|chrome cdp\b|disk\b|port\b|run-intraday-review\.js\b|lib\/time\.js\b|ettimehm\b|ticker-home23\b|health shortcut\b|brain-housekeeping\b|node count\b|regression\b|recent\.md\b|heartbeat\.md\b|cleanup\b|alerting\b|watchdog\b)/i;
+const OPERATIONAL_AGENDA_ANCHORS = /(?:api\b|endpoint\b|dashboard\b|shortcut\b|health\b|sauna\b|pressure\b|sensor\b|bridge\b|correlation\b|cron\b|pm2\b|process\b|syntaxerror\b|harness\b|chrome cdp\b|disk\b|port\b|run-intraday-review\.js\b|lib\/time\.js\b|ettimehm\b|ticker-home23\b|health shortcut\b|brain-housekeeping\b|node count\b|regression\b|recent\.md\b|heartbeat\.md\b|good-life\b|good life\b|cleanup\b|alerting\b|watchdog\b)/i;
 const BOUNDED_ARTIFACT_HINTS = /(?:goal[_-]\d+|run-intraday-review\.js|lib\/time\.js|ettimehm|health shortcut|shortcut bridge|ticker-home23|chrome cdp|recent\.md|heartbeat\.md|personal\.md|field[- ]report[- ]cycle|test-discord-delivery)/i;
 const DIRECT_DECISION_OPENERS = /^(clarify focus:|decide:|what should|which should|is the pragmatic answer|should the|does the system|does monitoring|should monitoring)/i;
 const RESEARCH_ARCHEOLOGY_OPENERS = /^(follow the node|consider what deliberate absence|map which other nodes|locate and read|answer explicitly: why is jtr|answer the stated question: what is the primary purpose|test whether home23 can be induced|re-examine the truncated node|trace the|map the|locate the|find any documented instances|corroborate whether|cross-reference the)/i;
@@ -647,6 +647,7 @@ class AgendaStore {
     if (/^(build|fix|resolve|verify|investigate|audit|restore|re-enable|determine|check)\b/i.test(text.trim())) score += 1;
     if (/\bnode\s+\d+\b/i.test(text) && OPERATIONAL_AGENDA_ANCHORS.test(text)) score += 1;
     if (rec.sourceSignal === 'observation-delta' || rec.sourceSignal === 'anomaly') score += 2;
+    if (rec.sourceSignal === 'good-life') score += 4;
     if (rec.sourceSignal === 'novelty') score -= 1;
 
     return score;
@@ -672,6 +673,7 @@ class AgendaStore {
     if (researchArcheology) return false;
     if (META_RESEARCH_PHRASES.test(text)) return false;
     if (sourceSignal === 'novelty' && !concreteOperationalTarget) return false;
+    if (sourceSignal === 'good-life') return actionOpener && concreteOperationalTarget;
     if (broadTheoryPrompt && !operationalAnchor && !boundedArtifact) return false;
     if ((envelope.kind || params.kind) === 'idea' && !(operationalAnchor && actionOpener) && !boundedArtifact) return false;
     if (directDecision) return (operationalAnchor || boundedArtifact) && concreteOperationalTarget;
@@ -703,6 +705,9 @@ class AgendaStore {
     }
     if (/(node count|brain node|regression|brain-housekeeping)/.test(text) || /(brain|regression|integrity)/.test(joinedTags)) {
       return 'brain-regression';
+    }
+    if (/(good life|good-life|recovery drift|repair drift|usefulness drift|friction drift)/.test(text) || /(good-life)/.test(joinedTags)) {
+      return 'good-life';
     }
     return tags[0] || rec.kind || 'misc';
   }

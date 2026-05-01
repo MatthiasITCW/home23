@@ -78,6 +78,20 @@ test('agenda policy keeps bounded operational investigations', () => {
   });
 });
 
+test('agenda policy keeps bounded Good Life regulator cards', () => {
+  withStore((store) => {
+    const rec = store.add({
+      sourceSignal: 'good-life',
+      kind: 'idea',
+      content: 'Diagnose Good Life repair drift using instances/jerry/brain/good-life-state.json, instances/jerry/brain/good-life-ledger.jsonl, and engine logs; restore verified Home23 engine evidence.',
+      topicTags: ['good-life', 'good-life:repair'],
+    });
+
+    assert.ok(rec);
+    assert.equal(rec.sourceSignal, 'good-life');
+  });
+});
+
 test('agenda policy caps the surfaced working set', () => {
   withStore((store) => {
     for (const content of [

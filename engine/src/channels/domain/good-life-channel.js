@@ -20,13 +20,14 @@ export class GoodLifeChannel extends PollChannel {
   constructor({
     id = 'domain.good-life',
     intervalMs = 5 * 60 * 1000,
+    initialDelayMs = 0,
     objective = null,
     ledger = null,
     getSnapshot = null,
     brainDir = null,
     logger = null,
   } = {}) {
-    super({ id, class: ChannelClass.DOMAIN, intervalMs });
+    super({ id, class: ChannelClass.DOMAIN, intervalMs, initialDelayMs });
     this.objective = objective || new GoodLifeObjective();
     this.ledger = ledger || (brainDir ? new GoodLifeLedger({ brainDir, logger }) : null);
     this.getSnapshot = typeof getSnapshot === 'function' ? getSnapshot : (() => ({}));

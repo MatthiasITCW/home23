@@ -12,12 +12,13 @@
 import { Channel } from '../contract.js';
 
 export class PollChannel extends Channel {
-  constructor({ id, class: cls, intervalMs }) {
+  constructor({ id, class: cls, intervalMs, initialDelayMs = 0 }) {
     super({ id, class: cls });
     if (typeof intervalMs !== 'number' || intervalMs <= 0) {
       throw new Error(`PollChannel requires positive intervalMs, got ${intervalMs}`);
     }
     this.intervalMs = intervalMs;
+    this.initialDelayMs = Math.max(0, Number(initialDelayMs) || 0);
     this._running = false;
     this._queue = [];
     this._waiters = [];
@@ -39,7 +40,7 @@ export class PollChannel extends Channel {
         this._timer = setTimeout(tick, this.intervalMs);
       }
     };
-    this._timer = setTimeout(tick, 0);
+    this._timer = setTimeout(tick, this.initialDelayMs);
   }
 
   stop() {

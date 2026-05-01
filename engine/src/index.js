@@ -790,6 +790,24 @@ async function main() {
       }
     });
 
+    const { GoodLifeRegulator } = require('./good-life/regulator.js');
+    const goodLifeRegulator = new GoodLifeRegulator({
+      brainDir: runtimeRoot,
+      logger,
+      getAgendaStore: () => orchestrator?.agendaStore || null,
+      getMotorCortex: () => orchestrator?.motorCortex || null,
+    });
+    channelBus.on('observation', (obs) => {
+      if (obs?.channelId !== 'domain.good-life') return;
+      goodLifeRegulator.handleObservation(obs)
+        .then((result) => {
+          if (result?.status && result.status !== 'ignored' && result.status !== 'throttled') {
+            logger.info?.('[good-life] regulator routed policy', result);
+          }
+        })
+        .catch((err) => logger.warn?.('[good-life] regulator failed:', err?.message || err));
+    });
+
     // Phase 5: activate DecayWorker against MemoryIngest.
     const parseDurMs = (s, fallbackMs) => {
       if (!s) return fallbackMs;
@@ -935,6 +953,7 @@ async function main() {
           : path.join(path.dirname(runtimeRoot), 'workspace');
         channelBus.register(new GoodLifeChannel({
           intervalMs: parseDurMs(readers.goodLife.poll, 5 * 60 * 1000),
+          initialDelayMs: parseDurMs(readers.goodLife.initialDelay, 20 * 1000),
           brainDir: runtimeRoot,
           logger,
           getSnapshot: () => buildGoodLifeSnapshot({
