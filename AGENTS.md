@@ -27,9 +27,27 @@ curl -s http://localhost:43210/api/status | python3 -c "import sys,json; d=json.
 
 ## Priority Work
 
-Good Life autonomy is the current first-class direction for the Home23 engine loop. Treat it as live engine governance, not research theater and not COSMO23 work. The immediate remaining operational issue is the one open live problem: diagnose the host CPU/contention signal that may explain catalog-refresh / heartbeat / Pi-health regressions.
+Good Life autonomy is the current first-class direction for the Home23 engine loop. Treat it as live engine governance, not research theater and not COSMO23 work.
+
+Immediate operational truth as of 2026-05-01:
+- Health bridge wrapper writes can be fresh while HealthKit metric dates are stale. Do not trust `~/.health_log.jsonl` mtime alone.
+- The Pi health endpoint `http://jtrpi.local:8765/api/health/dashboard` was unreachable from the Mac at 2026-05-01 15:06 EDT (`No route to host`), and the newest HRV metric date in the Mac log was `2026-04-21`.
+- The next real repair is upstream health/Pi reachability or HealthKit export freshness, not another correlation UI.
+- Remaining Good Life operational issue: diagnose the host CPU/contention signal that may explain catalog-refresh / heartbeat / Pi-health regressions.
 
 ### Recent completions (most recent first)
+
+#### Done: Health Bridge Semantic Freshness + Tick Scheduler Repair (2026-05-01)
+
+The brain correctly identified that the pressure/health/correlation stack could look alive while operating on stale health data. Fixed Home23 so freshness means semantic metric freshness, not just log file mtime.
+
+- `scripts/log-health.sh` — now writes `~/.health_log.status.json`, rejects stale HealthKit payloads, and stops appending fresh wrapper timestamps around old health metrics.
+- `engine/src/live-problems/verifiers.js` — added `jsonl_metric_date_fresh` verifier for nested metric dates such as `metrics.heartRateVariability.date`.
+- `engine/src/live-problems/seed.js` — `health_log_fresh` now checks both file mtime and HRV metric date freshness.
+- `engine/src/channels/domain/health-channel.js` — stale health payloads become `UNCERTIFIED` with lower confidence instead of `COLLECTED`.
+- `scripts/analyzers/correlate-pressure-hrv.js` — correlation artifacts now label stale HRV data as historical-only and forbid operational interpretation until the health bridge is fresh.
+- Verified current state: pressure log is current, health endpoint is unreachable from the Mac, latest HRV metric date is `2026-04-21`, correlation artifact generated with stale warning.
+- Also fixed old `tick-orb-bot` live scheduler defects in `/Users/jtr/_JTR23_/cosmo-home_2.3/projects/tick-orb-bot/`: restored `etTimeHM` export and recreated missing `heartbeat.sh`, `dead-day-check.sh`, and `close-truth-check.sh`. Manual intraday review and all three guard scripts pass.
 
 #### Done: Good Life Governance Surfaces + Routing Fix (2026-05-01)
 

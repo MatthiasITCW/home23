@@ -23,10 +23,23 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
   return [
     {
       id: 'health_log_fresh',
-      claim: 'iOS Health Shortcut writing ~/.health_log.jsonl within last 6h',
+      claim: 'Health bridge has fresh semantic HealthKit data, not just fresh wrapper writes',
       verifier: {
-        type: 'file_mtime',
-        args: { path: '~/.health_log.jsonl', maxAgeMin: 360 },
+        type: 'composed',
+        args: {
+          op: 'all_of',
+          verifiers: [
+            { type: 'file_mtime', args: { path: '~/.health_log.jsonl', maxAgeMin: 360 } },
+            {
+              type: 'jsonl_metric_date_fresh',
+              args: {
+                path: '~/.health_log.jsonl',
+                metricDateField: 'metrics.heartRateVariability.date',
+                maxAgeDays: 3,
+              },
+            },
+          ],
+        },
       },
       remediation: [
         // Step 1: try to re-trigger the iOS Shortcut autonomously (if bridge configured).

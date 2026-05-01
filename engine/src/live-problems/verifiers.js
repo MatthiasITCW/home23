@@ -455,6 +455,74 @@ verifiers.jsonl_recent_match = async function jsonl_recent_match(args = {}) {
 };
 
 /**
+ * Check that a JSONL bridge is not merely being written, but contains recent
+ * semantic data. This catches the Health bridge failure mode where cron keeps
+ * appending fresh wrapper timestamps around stale HealthKit payloads.
+ *
+ * args: {
+ *   path: "~/.health_log.jsonl",
+ *   metricDateField: "metrics.heartRateVariability.date",
+ *   maxAgeDays: 3,
+ *   maxLines?: 5000
+ * }
+ */
+verifiers.jsonl_metric_date_fresh = async function jsonlMetricDateFresh(args = {}) {
+  const { path: filePath } = args;
+  if (!filePath) return { ok: false, detail: 'path required' };
+  const full = filePath.replace(/^~/, os.homedir());
+  if (!fs.existsSync(full)) return { ok: false, detail: `missing: ${filePath}` };
+
+  const metricDateField = args.metricDateField || 'metrics.heartRateVariability.date';
+  const maxAgeDays = Number.isFinite(args.maxAgeDays) ? args.maxAgeDays : 3;
+  const maxLines = Math.min(args.maxLines || 5000, 50000);
+
+  try {
+    const raw = fs.readFileSync(full, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    const start = Math.max(0, lines.length - maxLines);
+    let newest = null;
+    let newestEntryTs = null;
+    let scanned = 0;
+
+    for (let i = start; i < lines.length; i++) {
+      let entry;
+      try { entry = JSON.parse(lines[i]); } catch { continue; }
+      scanned++;
+      const value = walkPath(entry, metricDateField);
+      const day = typeof value === 'string' ? value.slice(0, 10) : null;
+      const ms = day ? Date.parse(`${day}T00:00:00Z`) : NaN;
+      if (!Number.isFinite(ms)) continue;
+      if (!newest || ms > newest.ms) {
+        newest = { day, ms };
+        newestEntryTs = entry.ts || null;
+      }
+    }
+
+    if (!newest) {
+      return {
+        ok: false,
+        detail: `no parseable metric date at ${metricDateField}; scanned ${scanned}`,
+        observed: { scanned, metricDateField },
+      };
+    }
+
+    const today = new Date();
+    const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    const ageDays = Math.floor((todayUtc - newest.ms) / 86400000);
+    const ok = ageDays <= maxAgeDays;
+    return {
+      ok,
+      detail: ok
+        ? `${metricDateField} fresh (${newest.day}, ${ageDays}d old)`
+        : `${metricDateField} stale (${newest.day}, ${ageDays}d old, threshold ${maxAgeDays}d)`,
+      observed: { metricDateField, newestMetricDate: newest.day, newestEntryTs, ageDays, maxAgeDays, scanned },
+    };
+  } catch (err) {
+    return { ok: false, detail: `read failed: ${err.message}` };
+  }
+};
+
+/**
  * Compose other verifiers. op=all_of → ok iff every child ok; op=any_of → ok
  * iff any child ok. Each child is a full verifier spec {type, args}. Evaluated
  * serially; each child gets the same ctx.

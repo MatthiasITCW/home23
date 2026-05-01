@@ -161,12 +161,24 @@ function rThreshold(n) {
   return 2 / Math.sqrt(Math.max(1, n - 2));
 }
 
+function ageDaysForDate(dateStr) {
+  if (!dateStr) return null;
+  const ms = Date.parse(`${dateStr}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return null;
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.floor((todayUtc - ms) / 86400000);
+}
+
 // ─── Render ───────────────────────────────────────────────────────────
 
 function render(pressure, hrvByDate, paired, results) {
   const dates = Object.keys(hrvByDate).sort();
   const pStart = pressure[0]?.ts.toISOString().slice(0, 10) || 'n/a';
   const pEnd = pressure[pressure.length - 1]?.ts.toISOString().slice(0, 10) || 'n/a';
+  const latestHrvDate = dates[dates.length - 1] || null;
+  const hrvAgeDays = ageDaysForDate(latestHrvDate);
+  const healthFresh = hrvAgeDays != null && hrvAgeDays <= 3;
   const thresh = rThreshold(paired.length);
 
   const lines = [
@@ -180,9 +192,20 @@ function render(pressure, hrvByDate, paired, results) {
     '## Data',
     `- Pressure samples: **${pressure.length}** 5-min readings from ${pStart} to ${pEnd}`,
     `- HRV readings: **${dates.length}** distinct dates (${dates.join(', ') || 'none'})`,
+    `- Latest HRV metric date: **${latestHrvDate || 'none'}**${hrvAgeDays == null ? '' : ` (${hrvAgeDays} days old)`}`,
+    `- Health bridge freshness: **${healthFresh ? 'fresh enough' : 'STALE'}**`,
     `- Paired observations (HRV date + ≥10 pressure samples in window): **${paired.length}**`,
     '',
   ];
+
+  if (!healthFresh) {
+    lines.push(
+      '## Health bridge stale',
+      '',
+      'This run is historical only. The Mac health log may have fresh wrapper timestamps, but the newest HRV metric date is stale, so these correlations must not be treated as current dashboard intelligence.',
+      '',
+    );
+  }
 
   if (paired.length < 3) {
     lines.push(
@@ -228,6 +251,9 @@ function render(pressure, hrvByDate, paired, results) {
     lines.push(
       '## Reading',
       `- With n=${paired.length}, rough two-tailed p<0.05 threshold for Pearson |r| is ≈ **${thresh?.toFixed(2) ?? 'n/a'}**.`,
+      healthFresh
+        ? '- Health data is fresh enough for this to be interpreted as a current signal.'
+        : '- Health data is stale; fix the Health bridge before using these numbers operationally.',
       '- HRV has high day-to-day variance from non-pressure factors (sleep quality, exercise, alcohol, illness). ' +
       'Small n + large non-pressure noise makes early signals fragile — judge by direction first, magnitude second.',
       '- Re-run daily. If |r| stabilizes above 0.4 across consecutive runs, escalate to a dashboard tile + pressure-drop → HRV-risk bridge-chat alert.',

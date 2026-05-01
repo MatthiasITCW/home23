@@ -9,6 +9,25 @@
 import { TailChannel } from '../base/tail-channel.js';
 import { ChannelClass, makeObservation } from '../contract.js';
 
+function parseMetricDay(value) {
+  if (!value) return null;
+  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function newestMetricDate(metrics) {
+  let newest = null;
+  const metricDates = {};
+  for (const [key, value] of Object.entries(metrics || {})) {
+    const date = value && typeof value === 'object' ? value.date : null;
+    if (!date) continue;
+    metricDates[key] = date;
+    const parsed = parseMetricDay(date);
+    if (parsed && (!newest || parsed > newest)) newest = parsed;
+  }
+  return { newest, metricDates };
+}
+
 export class HealthChannel extends TailChannel {
   constructor({ path, id = 'domain.health' }) {
     super({ id, class: ChannelClass.DOMAIN, path });
@@ -20,6 +39,11 @@ export class HealthChannel extends TailChannel {
     try { obj = JSON.parse(line); } catch { return null; }
     const m = obj.metrics || {};
     const get = (k) => (m[k] && typeof m[k].value !== 'undefined') ? m[k].value : null;
+    const { newest, metricDates } = newestMetricDate(m);
+    const dataAgeDays = newest
+      ? Math.floor((Date.now() - newest.getTime()) / 86400000)
+      : null;
+    const semanticStale = dataAgeDays == null || dataAgeDays > 3;
     const payload = {
       ts: obj.ts,
       hrv:          get('heartRateVariability'),
@@ -31,6 +55,10 @@ export class HealthChannel extends TailChannel {
       exerciseMin:  get('exerciseMinutes'),
       oxygenSat:    get('oxygenSaturation'),
       respiratoryRate: get('respiratoryRate'),
+      metricDates,
+      healthDataEndDate: obj.health_data_end_date || (newest ? newest.toISOString().slice(0, 10) : null),
+      healthDataAgeDays: obj.health_data_age_days ?? dataAgeDays,
+      semanticStale: obj.semantic_stale ?? semanticStale,
     };
     return { payload, sourceRef: `health:${obj.ts}`, producedAt: obj.ts };
   }
@@ -38,7 +66,10 @@ export class HealthChannel extends TailChannel {
   verify(parsed) {
     return makeObservation({
       channelId: this.id, sourceRef: parsed.sourceRef, payload: parsed.payload,
-      flag: 'COLLECTED', confidence: 0.95, producedAt: parsed.producedAt, verifierId: 'health:kit-export',
+      flag: parsed.payload.semanticStale ? 'UNCERTIFIED' : 'COLLECTED',
+      confidence: parsed.payload.semanticStale ? 0.45 : 0.95,
+      producedAt: parsed.producedAt,
+      verifierId: parsed.payload.semanticStale ? 'health:kit-export-stale' : 'health:kit-export',
     });
   }
 
