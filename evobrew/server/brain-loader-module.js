@@ -11,6 +11,7 @@ const { promisify } = require('util');
 const gunzip = promisify(zlib.gunzip);
 
 const { BrainQueryEngine } = require('../lib/brain-query-engine');
+const { hydrateStateMemory } = require('../lib/memory-sidecar');
 const os = require('os');
 
 let brainLoader = null;
@@ -52,18 +53,20 @@ async function loadBrain(brainPath) {
   const compressed = await fs.readFile(statePath);
   const decompressed = await gunzip(compressed);
   const state = JSON.parse(decompressed.toString());
+  const hydration = await hydrateStateMemory(brainPath, state);
 
   brainLoader = {
     brainPath: path.resolve(brainPath),
-    state,
-    nodes: state.memory?.nodes || [],
-    edges: state.memory?.edges || []
+    state: hydration.state,
+    nodes: hydration.state.memory?.nodes || [],
+    edges: hydration.state.memory?.edges || [],
+    memorySource: hydration.source
   };
 
   // QueryEngine handles missing OpenAI gracefully (falls back to keyword search)
   const embeddingsKey = getEmbeddingsApiKey();
   brainQueryEngine = new BrainQueryEngine(brainPath, embeddingsKey);
-  console.log(`✅ Brain loaded: ${brainLoader.nodes.length} nodes, ${brainLoader.edges.length} edges\n`);
+  console.log(`✅ Brain loaded: ${brainLoader.nodes.length} nodes, ${brainLoader.edges.length} edges (${hydration.source})\n`);
   
   return { brainLoader, brainQueryEngine };
 }

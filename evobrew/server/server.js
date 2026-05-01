@@ -5328,7 +5328,16 @@ app.get('/api/brains/list', async (req, res) => {
           await fs.access(statePath);
           let nodeCount = null;
           let estimated = false;
-          if (withCounts) {
+          const snapshotPath = path.join(brainPath, 'brain-snapshot.json');
+          if (fsSync.existsSync(snapshotPath)) {
+            try {
+              const snapshot = JSON.parse(await fs.readFile(snapshotPath, 'utf8'));
+              nodeCount = Number(snapshot.nodeCount || snapshot.nodes?.count || 0);
+              estimated = false;
+            } catch {
+              estimated = true;
+            }
+          } else if (withCounts) {
             try {
               const compressed = await fs.readFile(statePath);
               const decompressed = await gunzip(compressed);

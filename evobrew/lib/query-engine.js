@@ -20,6 +20,7 @@ const { ContextTracker } = require('./context-tracker');
 const AnthropicClient = require('./anthropic-client');
 const { PGSEngine } = require('./pgs-engine');
 const { getModelId } = require('./model-selection');
+const { hydrateStateMemory } = require('./memory-sidecar');
 
 const CLUSTER_SNAPSHOT_DEFAULT_TTL = Number.parseInt(
   process.env.COSMO_CLUSTER_SNAPSHOT_TTL || '4000',
@@ -707,7 +708,12 @@ STYLE:
     try {
       const compressed = await fs.readFile(this.stateFile);
       const decompressed = await gunzip(compressed);
-      return JSON.parse(decompressed.toString());
+      const state = JSON.parse(decompressed.toString());
+      const hydration = await hydrateStateMemory(this.runtimeDir, state);
+      if (hydration.hydrated) {
+        console.log(`[QueryEngine] Hydrated memory sidecars: ${hydration.nodes} nodes, ${hydration.edges} edges`);
+      }
+      return hydration.state;
     } catch (error) {
       console.error('Failed to load brain state:', error.message);
       console.error('Attempted to load from:', this.stateFile);
