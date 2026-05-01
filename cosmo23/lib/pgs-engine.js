@@ -123,7 +123,14 @@ class PGSEngine {
 
     // ─── Session tracking & mode handling ────────────────────────────────
     const session = await this.loadSession(pgsSessionId);
-    const searchedIds = new Set(session?.searchedPartitionIds || []);
+    // HOME23 PATCH — old zero-node PGS runs can leave session files with
+    // impossible searched counts (for example 1155/1). Clamp session state to
+    // the current partition set so progress math and continue/targeted modes
+    // do not inherit stale partition IDs from a different graph.
+    const validPartitionIds = new Set(partitions.map(p => String(p.id)));
+    const searchedIds = new Set(
+      (session?.searchedPartitionIds || []).filter(id => validPartitionIds.has(String(id)))
+    );
 
     let partitionsToSweep;
     switch (mode) {
@@ -831,6 +838,13 @@ class PGSEngine {
     // Only enforce minimum if configured (default 0 = no forced minimum)
     if (minSweepPartitions > 0 && selected.length < minSweepPartitions) {
       selected = ranked.slice(0, minSweepPartitions);
+    }
+
+    // HOME23 PATCH — PGS should never route to zero partitions when a graph is
+    // present. Live Home23 brains can have partitions without centroid
+    // embeddings, making every similarity 0 and causing "0/0 sweeps completed".
+    if (selected.length === 0 && ranked.length > 0) {
+      selected = ranked.slice(0, 1);
     }
 
     if (selected.length > maxSweepPartitions) {

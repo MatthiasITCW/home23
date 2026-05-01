@@ -35,7 +35,7 @@ corrupts runtime state with encrypted strings that later get shipped as literal
 bearer tokens. First observed as `401 unauthorized: encrypted:...` errors during
 smoke testing (2026-04-10).
 
-There are currently **14 patches** in this file. Patches 1–3 are the config/key
+There are currently **16 patches** in this file. Patches 1–3 are the config/key
 plumbing fixes from the initial integration. Patch 4 is a small admin HTTP
 surface that lets Home23 use cosmo23 as an OAuth broker (Step 18).
 
@@ -802,6 +802,43 @@ preservation.
 
 ---
 
+## Patch 16 — Streaming sidecar hydration for Query/PGS
+
+**Files touched:**
+- `cosmo23/lib/memory-sidecar.js`
+- `cosmo23/lib/query-engine.js`
+
+**Problem:** Patch 8 taught the COSMO23 query engine that Home23 brains may
+store memory in `memory-nodes.jsonl.gz` / `memory-edges.jsonl.gz`, but it
+implemented hydration by gunzipping the full JSONL file and calling
+`.toString().split('\n')`. That reintroduced the V8 max-string failure mode
+that sidecars were designed to avoid. On Jerry's live brain, the catch block
+swallowed the sidecar load failure and Query/PGS continued with
+`state.json.gz`'s empty inline arrays, producing `Brain loaded: 0 nodes, 0 edges`
+in the Home23 main dashboard Query tab.
+
+**Fix:** replace the all-at-once sidecar read with a streaming JSONL reader
+that parses one record per line through `readline` + `zlib.createGunzip()`.
+The query engine now calls `hydrateStateMemory()` and fails loudly if
+`brain-snapshot.json` says a real brain exists but hydration returns zero nodes.
+PGS session accounting also clamps stale `pgs-sessions/*.json` searched IDs to
+the current partition set, and routing falls back to the top partition when a
+real graph has no partition above the relevance threshold.
+
+**Effect under Home23:** Home23's main dashboard Query tab, which routes to
+COSMO23 `/api/brain/:id/query/stream`, sees the real live graph for Query and
+PGS instead of a one-partition empty graph. Old zero-node `default` sessions no
+longer display impossible negative remaining counts.
+
+**Effect under standalone COSMO:** legacy inline `state.json.gz` brains still
+load unchanged; sidecar brains load without constructing one giant string.
+
+**Verification:** focused sidecar tests pass for both COSMO23 and Evobrew, and
+a standalone `QueryEngine('instances/jerry/brain').loadBrainState()` loaded
+~47.8k nodes / ~65.2k edges from sidecars.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -867,3 +904,10 @@ preservation.
   receives real progress events, the merge loop yields between batches, Home23
   memory sidecars are rehydrated before merge, and string-ID edges survive
   re-merges.
+- **2026-05-01** — Patch 16 added after Home23's main dashboard Query tab
+  still showed `Brain loaded: 0 nodes, 0 edges` for PGS. Root cause was the
+  older query sidecar patch reading the entire gzipped JSONL sidecar into one
+  V8 string, failing on live brain size, swallowing the error, and continuing
+  with empty inline state. Query/PGS sidecar hydration now streams records; PGS
+  also clamps stale session counts and avoids zero-partition routes on real
+  graphs.
