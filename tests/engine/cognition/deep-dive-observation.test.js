@@ -38,3 +38,38 @@ test('DeepDive prompt includes bus observation payload when candidate has no gra
   assert.match(input, /Resting heart rate is 3 bpm above the 14-day average/);
   assert.doesNotMatch(input, /no node content retrievable/);
 });
+
+test('DeepDive prompt bounds Good Life observations to engine operations', () => {
+  const deepDive = new DeepDive({
+    unifiedClient: { generate: async () => ({ content: '' }) },
+    memory: { nodes: new Map(), edges: new Map(), clusters: new Map() },
+    logger: { warn() {} },
+  });
+
+  const candidate = {
+    signal: 'good-life',
+    score: 1,
+    rationale: 'bus observation domain.good-life',
+    nodeIds: [],
+    observation: {
+      channelId: 'domain.good-life',
+      sourceRef: 'good-life:repair:2026-05-01T18:00:00.000Z',
+      traceId: 'trace:goodlife',
+      flag: 'COLLECTED',
+      confidence: 0.88,
+      payload: {
+        summary: 'repair - critical viability drift',
+        policy: { mode: 'repair', reason: 'critical viability drift' },
+        lanes: { viability: { status: 'critical', reasons: ['5 unresolved live problem(s)'] } },
+      },
+    },
+  };
+
+  const { instructions, input } = deepDive._buildPrompt(candidate, { nodes: [], edges: [], seedCount: 0 }, {}, null);
+
+  assert.match(instructions, /Home23 engine Good Life telemetry/);
+  assert.match(instructions, /not as a diagnosis of jtr's life/);
+  assert.match(instructions, /Do not infer jtr's feelings/);
+  assert.match(input, /bounded Home23 engine telemetry/);
+  assert.doesNotMatch(input, /Focus on what it means for jtr's world/);
+});

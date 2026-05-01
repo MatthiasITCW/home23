@@ -41,8 +41,12 @@ function summarizeLiveProblems(orchestrator, runtimeRoot) {
   const list = orchestrator?.liveProblems?.store?.all?.()
     || readJson(path.join(runtimeRoot || '', 'live-problems.json'))?.problems
     || [];
-  const out = { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0 };
+  const out = { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0, goodLifeDiagnostics: 0 };
   for (const p of Array.isArray(list) ? list : []) {
+    if (isGoodLifeDiagnosticProblem(p)) {
+      out.goodLifeDiagnostics++;
+      continue;
+    }
     out.total++;
     if (p.state === 'open') out.open++;
     else if (p.state === 'chronic') out.chronic++;
@@ -50,6 +54,12 @@ function summarizeLiveProblems(orchestrator, runtimeRoot) {
     else if (p.state === 'unverifiable') out.unverifiable++;
   }
   return out;
+}
+
+function isGoodLifeDiagnosticProblem(problem) {
+  const claim = String(problem?.claim || '');
+  const id = String(problem?.id || '');
+  return id.startsWith('agenda_') && /Agenda action: Diagnose Good Life /i.test(claim);
 }
 
 function summarizeGoals(goals) {

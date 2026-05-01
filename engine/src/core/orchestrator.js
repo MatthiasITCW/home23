@@ -7142,6 +7142,10 @@ class Orchestrator {
     }
 
     const actor = opts.actor || 'agenda';
+    if (item.sourceSignal === 'good-life' || opts.origin === 'good-life') {
+      return this.recordGoodLifeAgendaAction(item, { ...opts, actor });
+    }
+
     const action = this.inferAgendaAction(item);
     if (!action) {
       return this.enqueueAgendaDiagnostic(item, opts);
@@ -7184,6 +7188,43 @@ class Orchestrator {
     });
 
     return summary;
+  }
+
+  recordGoodLifeAgendaAction(item, opts = {}) {
+    const now = new Date().toISOString();
+    const receipt = {
+      at: now,
+      agendaId: item.id,
+      actor: opts.actor || 'good-life-regulator',
+      origin: opts.origin || 'good-life',
+      action: 'good_life_governance',
+      status: 'recorded',
+      policy: item.temporalContext?.policy || opts.goodLife?.intent || null,
+      lanes: item.temporalContext?.lanes || [],
+      usefulnessContract: item.temporalContext?.usefulnessContract || null,
+      content: String(item.content || '').slice(0, 1000),
+      verifier: 'next domain.good-life evaluation',
+    };
+    try {
+      const file = require('path').join(this.logsDir, 'good-life-actions.jsonl');
+      require('fs').appendFileSync(file, JSON.stringify(receipt) + '\n', 'utf8');
+    } catch (err) {
+      this.logger.warn?.('[good-life] action receipt write failed', { error: err?.message || String(err) });
+    }
+
+    this.logger.info?.('[good-life] agenda action recorded', {
+      agendaId: item.id,
+      policy: receipt.policy,
+      lanes: receipt.lanes,
+    });
+
+    return {
+      directAction: true,
+      action: 'good_life_governance',
+      target: item.id,
+      status: 'recorded',
+      detail: 'Good Life governance receipt recorded; next evaluation verifies lane movement',
+    };
   }
 
   async stop() {

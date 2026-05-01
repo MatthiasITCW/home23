@@ -59,3 +59,22 @@ test('DiscoveryEngine allows repeated machine observation bucket after dedupe wi
   assert.equal(d.injectObservation({ ...base, sourceRef: 'mem:t3', producedAt: '2026-05-01T13:01:00.000Z', payload: { total: 16, free: 1.2, freePct: 6.9 } }), true);
   assert.equal(d.pop(1)[0].key, 'observation:machine.memory:memory:low');
 });
+
+test('DiscoveryEngine does not enqueue Good Life telemetry as deep-thought material', () => {
+  const d = engine();
+
+  assert.equal(d.injectObservation({
+    channelId: 'domain.good-life',
+    flag: 'COLLECTED',
+    confidence: 0.88,
+    sourceRef: 'good-life:repair:2026-05-01T18:00:00.000Z',
+    producedAt: '2026-05-01T18:00:00.000Z',
+    payload: {
+      policy: { mode: 'repair', reason: 'critical viability drift' },
+      lanes: { viability: { status: 'critical', reasons: ['5 unresolved live problem(s)'] } },
+    },
+  }), false);
+
+  assert.equal(d.peek(1).length, 0);
+  assert.equal(d.getStats().candidatesByeSignal['good-life-regulated'], 1);
+});

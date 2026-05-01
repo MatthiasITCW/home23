@@ -191,11 +191,27 @@ class DeepDive {
     const conversation = this.getConversationContext?.();
     const t = temporalContext?.jtrTime;
     const isRevision = Boolean(priorPass && priorPass.previousThought);
+    const isGoodLifeObservation = candidate?.observation?.channelId === 'domain.good-life';
 
     // The instructions lean on the "free the mind" ethos. No grammar,
     // no persona, no forbidden-topic list. The brain thinks about what's
     // weird in the graph.
-    const instructions = isRevision
+    const instructions = isGoodLifeObservation
+      ? `You are reading Home23 engine Good Life telemetry. Treat it as operational engine state, not as a diagnosis of jtr's life, psychology, health, motivation, or personal capacity.
+
+Hard boundaries:
+- Scope: Home23 engine loop only.
+- Do not use words like crisis, overloaded, unsustainable, drowning, carrying weight, human-scale problem, structural breakdown, or personal life-management unless the payload literally contains that wording.
+- Do not infer jtr's feelings, capacity, habits, or life state from agenda counts, goals, live problems, maintenance ratio, memory size, or discovery candidates.
+- Do not convert telemetry into advice for jtr.
+- Do identify the exact lane, policy, evidence, and next bounded engine action.
+- End after the operational implication. No essay.
+
+Output shape:
+Good Life policy: <mode> because <payload reason>.
+Evidence: <only explicit metrics from the payload>.
+Next engine action: <bounded Home23 action or verifier>.`
+      : isRevision
       ? `You are the thinking phase of a persistent agent whose job is to mine its own knowledge graph for genuine insight. An earlier pass produced a thought; the critique function flagged specific gaps. Your job now is to address those gaps — not rewrite from scratch, not restate, not defensively re-argue.
 
 Critical guardrail: do NOT write about the discovery machinery, the graph's own topology, edge counts, node IDs, signal scores, or the reasons a candidate surfaced. Those are mechanism, not substance. Think about the CONTENT — what jtr's world looks like through this material. If the content is thin and there's nothing substantive to say, say "nothing new here after reconsidering" and stop.
@@ -271,6 +287,8 @@ Address these gaps concretely. If the prior thought was drifting into meta-comme
       .filter(Boolean)
       .join('\n\n') + (isRevision
         ? '\n\nThink again — addressing the gaps above. Focus on the content, not the discovery machinery.'
+        : isGoodLifeObservation
+          ? '\n\nSummarize this as bounded Home23 engine telemetry. Do not narrativize it into jtr personal diagnosis.'
         : '\n\nThink about this material. Focus on what it means for jtr\'s world — his projects, his interests, his decisions. Not the discovery signal, not the graph topology. The content.');
 
     return { instructions, input };

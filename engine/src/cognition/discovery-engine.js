@@ -58,7 +58,6 @@ const DEFAULT_CONFIG = {
   scoring: {
     signalMultipliers: {
       'observation-delta': 1.5,
-      'good-life':         1.8,
       'novelty':           1.2,
       'salience':          1.0,
       'anomaly':           1.0,
@@ -120,7 +119,7 @@ class DiscoveryEngine {
       lastProbeDurationMs: null,
       candidatesByeSignal: {
         anomaly: 0, novelty: 0, orphan: 0, drift: 0, stagnation: 0, salience: 0,
-        'observation-delta': 0, 'observation-suppressed': 0,
+        'observation-delta': 0, 'observation-suppressed': 0, 'good-life-regulated': 0,
       },
       queueDepth: 0,
       totalCandidatesProduced: 0,
@@ -577,6 +576,17 @@ class DiscoveryEngine {
    */
   injectObservation(obs) {
     if (!obs || !obs.channelId) return false;
+
+    if (obs.channelId === 'domain.good-life') {
+      // Good Life is an action/governance signal, not a free-association
+      // thinking-machine topic. It is handled by GoodLifeRegulator, Agenda,
+      // MotorCortex, ledger, trends, and the dashboard. Enqueuing it here
+      // turns engine telemetry into narrative diagnosis.
+      this.stats.candidatesByeSignal['good-life-regulated'] =
+        (this.stats.candidatesByeSignal['good-life-regulated'] || 0) + 1;
+      return false;
+    }
+
     if (obs.flag !== 'COLLECTED' && obs.flag !== 'UNCERTIFIED') {
       // ZERO_CONTEXT / UNKNOWN — audit counter only, no candidate.
       this.stats.candidatesByeSignal['observation-silence'] =
