@@ -266,14 +266,30 @@ class NetworkMemory {
    * Add new concept node
    */
   async addNode(concept, tag = 'general', embedding = null) {
+    const inputNode = concept && typeof concept === 'object' && !Array.isArray(concept)
+      ? concept
+      : null;
+    const conceptText = inputNode
+      ? String(inputNode.concept || inputNode.content || inputNode.summary || inputNode.title || '')
+      : String(concept || '');
+    const nodeTag = inputNode
+      ? (inputNode.tag || inputNode.type || (Array.isArray(inputNode.tags) ? inputNode.tags[0] : null) || tag || 'general')
+      : (tag || 'general');
+    const nodeEmbedding = inputNode?.embedding || embedding;
+
+    if (!conceptText.trim()) {
+      this.logger?.warn?.('Skipping node with empty concept', { tag: nodeTag });
+      return null;
+    }
+
     // All nodes use same dimensions for network consistency
-    const embed = embedding || await this.embed(concept);
+    const embed = nodeEmbedding || await this.embed(conceptText);
 
     // Skip adding nodes with null embeddings
     if (!embed) {
       this.logger?.warn?.('Skipping node with null embedding', {
-        concept: concept.substring(0, 100),
-        tag
+        concept: conceptText.substring(0, 100),
+        tag: nodeTag
       });
       return null;
     }
@@ -285,7 +301,7 @@ class NetworkMemory {
     if (this.config.coordinator?.useMemorySummaries && 
         this.config.coordinator?.extractiveSummarization) {
       try {
-        const extracted = this.extractiveSummarizer.summarize(concept);
+        const extracted = this.extractiveSummarizer.summarize(conceptText);
         if (extracted.quality >= 0.6) {
           summary = extracted.summary;
           keyPhrase = extracted.keyPhrase;
@@ -299,7 +315,9 @@ class NetworkMemory {
 
     // CRITICAL FIX: Generate ID in same format as existing nodes (string vs numeric)
     let nodeId;
-    if (this.nodeIdFormat === 'string' && this.nodeIdPrefix) {
+    if (inputNode?.id !== undefined && inputNode?.id !== null && !this.nodes.has(inputNode.id)) {
+      nodeId = inputNode.id;
+    } else if (this.nodeIdFormat === 'string' && this.nodeIdPrefix) {
       nodeId = `${this.nodeIdPrefix}_${this.nextNodeId++}`;
     } else {
       nodeId = this.nextNodeId++;
@@ -307,17 +325,25 @@ class NetworkMemory {
     
     const node = {
       id: nodeId,
-      concept,
+      concept: conceptText,
       summary,      // Compressed version for prompts
       keyPhrase,    // Ultra-compressed for quick reference
-      tag,
+      tag: nodeTag,
       embedding: embed,
-      activation: 0,
-      cluster: null,
-      weight: 1.0,
-      created: new Date(),
-      accessed: new Date(),
-      accessCount: 0
+      activation: inputNode?.activation ?? 0,
+      cluster: inputNode?.cluster ?? null,
+      weight: inputNode?.weight ?? 1.0,
+      created: inputNode?.created ? new Date(inputNode.created) : new Date(),
+      accessed: inputNode?.accessed ? new Date(inputNode.accessed) : new Date(),
+      accessCount: inputNode?.accessCount ?? 0,
+      type: inputNode?.type || null,
+      tags: Array.isArray(inputNode?.tags) ? inputNode.tags : [],
+      metadata: inputNode?.metadata && typeof inputNode.metadata === 'object' ? { ...inputNode.metadata } : {},
+      asserted_at: inputNode?.asserted_at || inputNode?.metadata?.asserted_at || null,
+      asserted_cycle: inputNode?.asserted_cycle ?? inputNode?.metadata?.asserted_cycle ?? null,
+      superseded_by: inputNode?.superseded_by || inputNode?.metadata?.superseded_by || null,
+      confidence_decay: inputNode?.confidence_decay ?? inputNode?.metadata?.confidence_decay ?? null,
+      status: inputNode?.status || inputNode?.metadata?.status || null
     };
 
     this.nodes.set(node.id, node);
@@ -330,7 +356,7 @@ class NetworkMemory {
     
     this.logger?.debug('Node added to network', { 
       id: node.id, 
-      concept: concept.substring(0, 50),
+      concept: conceptText.substring(0, 50),
       cluster: node.cluster 
     });
     
@@ -666,14 +692,29 @@ class NetworkMemory {
     // Spread activation from best match
     const activated = await this.spreadActivation(bestMatch);
     
-    // Return top K activated nodes
-    const results = Array.from(activated.entries())
+    const queryWords = this.extractQueryWords(queryText);
+    const snapshotCandidates = this.findRelevantStateSnapshots(queryEmbedding, queryWords, bestSimilarity);
+    const scored = Array.from(activated.entries())
       .map(([id, activation]) => ({
         ...this.nodes.get(id),
         similarity: id === bestMatch ? bestSimilarity : activation,
-        activation
-      }))
-      .sort((a, b) => b.activation - a.activation)
+        activation,
+        retrievalScore: this.scoreTemporalRetrieval(this.nodes.get(id), activation, {
+          isBestMatch: id === bestMatch,
+          baseSimilarity: id === bestMatch ? bestSimilarity : activation,
+        })
+      }));
+
+    for (const candidate of snapshotCandidates) {
+      if (!scored.some(n => n.id === candidate.id)) {
+        scored.push(candidate);
+      }
+    }
+
+    // Return top K nodes by relevance plus temporal validity. State snapshots
+    // are allowed to beat older cue-matched nodes so the brain orients to now.
+    const results = scored
+      .sort((a, b) => (b.retrievalScore ?? b.activation) - (a.retrievalScore ?? a.activation))
       .slice(0, topK);
     
     // Mark as accessed and boost weight
@@ -684,6 +725,77 @@ class NetworkMemory {
     });
     
     return results;
+  }
+
+  extractQueryWords(queryText) {
+    return String(queryText || '')
+      .toLowerCase()
+      .split(/[^a-z0-9_:-]+/)
+      .filter(word => word.length >= 3);
+  }
+
+  isStateSnapshotNode(node) {
+    if (!node) return false;
+    const tags = Array.isArray(node.tags) ? node.tags : [];
+    return node.tag === 'state_snapshot' ||
+      node.type === 'state_snapshot' ||
+      tags.includes('state_snapshot') ||
+      node.metadata?.kind === 'state_snapshot';
+  }
+
+  nodeTimeMs(node) {
+    const value = node?.asserted_at || node?.metadata?.asserted_at || node?.created;
+    const ms = value instanceof Date ? value.getTime() : Date.parse(value);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  temporalFreshness(node, now = Date.now()) {
+    const ms = this.nodeTimeMs(node);
+    if (!ms) return 0.55;
+    const ageDays = Math.max(0, (now - ms) / 86400000);
+    const halfLifeDays = Number(this.config?.retrieval?.temporalHalfLifeDays) || 14;
+    return Math.max(0.2, Math.exp(-ageDays / halfLifeDays));
+  }
+
+  statusMultiplier(node) {
+    if (node?.superseded_by || node?.metadata?.superseded_by) return 0.25;
+    const status = String(node?.status || node?.metadata?.status || '').toLowerCase();
+    if (['resolved', 'completed', 'archived', 'superseded', 'stale'].includes(status)) return 0.35;
+    return 1;
+  }
+
+  scoreTemporalRetrieval(node, baseScore, opts = {}) {
+    const freshness = this.temporalFreshness(node);
+    const status = this.statusMultiplier(node);
+    const snapshotBoost = this.isStateSnapshotNode(node) ? 0.75 : 0;
+    const bestMatchBoost = opts.isBestMatch ? 0.05 : 0;
+    const decay = typeof node?.confidence_decay === 'number'
+      ? Math.max(0.1, Math.min(1, node.confidence_decay))
+      : 1;
+    return (baseScore * (0.65 + 0.35 * freshness) * status * decay) + snapshotBoost + bestMatchBoost;
+  }
+
+  findRelevantStateSnapshots(queryEmbedding, queryWords, bestSimilarity) {
+    const candidates = [];
+    for (const node of this.nodes.values()) {
+      if (!this.isStateSnapshotNode(node) || !node.embedding) continue;
+      const conceptLower = String(node.concept || '').toLowerCase();
+      const overlap = queryWords.reduce((sum, word) => sum + (conceptLower.includes(word) ? 1 : 0), 0);
+      const similarity = this.cosineSimilarity(queryEmbedding, node.embedding);
+      const relevant = overlap > 0 || similarity >= Math.max(0.2, bestSimilarity * 0.65);
+      if (!relevant) continue;
+      candidates.push({
+        ...node,
+        similarity,
+        activation: similarity,
+        retrievalScore: this.scoreTemporalRetrieval(node, similarity, { baseSimilarity: similarity }) + Math.min(0.25, overlap * 0.05),
+      });
+    }
+    return candidates.sort((a, b) => {
+      const scoreDelta = (b.retrievalScore || 0) - (a.retrievalScore || 0);
+      if (Math.abs(scoreDelta) > 0.001) return scoreDelta;
+      return this.nodeTimeMs(b) - this.nodeTimeMs(a);
+    }).slice(0, 3);
   }
 
   /**
@@ -1078,6 +1190,14 @@ class NetworkMemory {
         accessCount: n.accessCount,
         created: n.created,
         accessed: n.accessed,
+        type: n.type,
+        tags: n.tags,
+        metadata: n.metadata,
+        asserted_at: n.asserted_at,
+        asserted_cycle: n.asserted_cycle,
+        superseded_by: n.superseded_by,
+        confidence_decay: n.confidence_decay,
+        status: n.status,
         consolidatedAt: n.consolidatedAt  // Track consolidation status for fork/merge optimization
       })),
       edges: Array.from(this.edges.entries()).map(([key, edge]) => {
@@ -1150,4 +1270,3 @@ class NetworkMemory {
 }
 
 module.exports = { NetworkMemory };
-

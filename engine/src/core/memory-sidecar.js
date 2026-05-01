@@ -64,13 +64,14 @@ async function writeJsonlGz(outPath, records) {
     count++;
   }
 
-  // Flush and wait for sink to finish.
+  // Flush and wait for sink to finish. Register sink listeners before
+  // calling gz.end(); otherwise a fast close can happen before the end
+  // callback attaches its listener and leave saveState hung with a .tmp file.
   await new Promise((resolve, reject) => {
-    gz.end(() => {
-      sink.once('close', resolve);
-      sink.once('error', reject);
-    });
+    sink.once('close', resolve);
+    sink.once('error', reject);
     gz.once('error', reject);
+    gz.end();
   });
 
   const bytes = fs.statSync(tmpPath).size;

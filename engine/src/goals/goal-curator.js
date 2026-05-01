@@ -222,6 +222,8 @@ class GoalCurator {
     this.completedNarratives.set(event.goalId, narrative);
     this.goalNarratives.delete(event.goalId);
     this.stats.narrativesCompleted++;
+
+    await this.recordGoalResolutionMemory(event, narrative, 'completed');
     
     this.logger?.info('🎓 Goal narrative completed', {
       goalId: event.goalId,
@@ -254,6 +256,57 @@ class GoalCurator {
     // Move to completed narratives (archived is a type of completion)
     this.completedNarratives.set(event.goalId, narrative);
     this.goalNarratives.delete(event.goalId);
+
+    await this.recordGoalResolutionMemory(event, narrative, 'archived');
+  }
+
+  async recordGoalResolutionMemory(event, narrative, resolutionType) {
+    if (!this.memory || typeof this.memory.addNode !== 'function') return;
+    const goal = event.goal || {};
+    const resolvedAt = new Date().toISOString();
+    const cycle = event.cycle ?? null;
+    const notes = resolutionType === 'archived'
+      ? (goal.archiveReason || narrative?.archived?.reason || 'archived')
+      : (goal.completionNotes || narrative?.summary || 'completed');
+    const concept = [
+      `[GOAL_RESOLUTION] ${resolutionType.toUpperCase()} goal ${event.goalId}.`,
+      `Description: ${goal.description || narrative?.birth?.initialDescription || 'unknown goal'}`,
+      `Resolution: ${notes || resolutionType}`,
+      cycle !== null ? `Resolved at cycle: ${cycle}` : null,
+      `Resolved at: ${resolvedAt}`,
+    ].filter(Boolean).join('\n');
+
+    try {
+      const node = await this.memory.addNode({
+        concept,
+        tag: 'goal_resolution',
+        type: 'goal_resolution',
+        tags: ['goal_resolution', resolutionType, `goal:${event.goalId}`],
+        asserted_at: resolvedAt,
+        asserted_cycle: cycle,
+        confidence_decay: 1,
+        status: resolutionType,
+        metadata: {
+          kind: 'goal_resolution',
+          goalId: event.goalId,
+          resolutionType,
+          resolved_at: resolvedAt,
+          resolved_cycle: cycle,
+          supersedes_goal_id: event.goalId,
+          pursuitCount: goal.pursuitCount || 0,
+          finalProgress: goal.progress || 0,
+        },
+      });
+      if (node && goal) {
+        goal.resolutionNodeId = node.id;
+      }
+    } catch (err) {
+      this.logger?.warn?.('Goal resolution memory write failed', {
+        goalId: event.goalId,
+        resolutionType,
+        error: err.message,
+      });
+    }
   }
 
   /**

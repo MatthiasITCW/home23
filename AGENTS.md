@@ -30,12 +30,23 @@ curl -s http://localhost:43210/api/status | python3 -c "import sys,json; d=json.
 Good Life autonomy is the current first-class direction for the Home23 engine loop. Treat it as live engine governance, not research theater and not COSMO23 work.
 
 Immediate operational truth as of 2026-05-01:
+- The staleness architecture problem is now an active engine concern: memory retrieval must distinguish "what was believed then" from "what is true now." State snapshots and goal resolution receipts are first-class memory objects.
 - Health bridge wrapper writes can be fresh while HealthKit metric dates are stale. Do not trust `~/.health_log.jsonl` mtime alone.
 - The Pi health endpoint `http://jtrpi.local:8765/api/health/dashboard` was unreachable from the Mac at 2026-05-01 15:06 EDT (`No route to host`), and the newest HRV metric date in the Mac log was `2026-04-21`.
 - The next real repair is upstream health/Pi reachability or HealthKit export freshness, not another correlation UI.
 - Remaining Good Life operational issue: diagnose the host CPU/contention signal that may explain catalog-refresh / heartbeat / Pi-health regressions.
 
 ### Recent completions (most recent first)
+
+#### Done: Temporal State Snapshots + Retrieval Recency (2026-05-01)
+
+Home23 had a staleness architecture failure: cue-matched memory could surface old conclusions as if they were current because retrieval ranked relevance without durable temporal status. Fixed the engine so current-state anchors and resolution receipts participate directly in memory.
+
+- `engine/src/core/orchestrator.js` — writes `RECENT.md` into memory as a `state_snapshot` node with `asserted_at`, `asserted_cycle`, source path, and content hash when the surface changes.
+- `engine/src/memory/network-memory.js` — nodes now preserve temporal metadata; semantic retrieval applies recency/status weighting and boosts relevant `state_snapshot` nodes above older cue matches.
+- `engine/src/agents/mcp-bridge.js` — MCP `query_memory` hydrates sidecar memory before searching and returns temporal fields; keyword retrieval also boosts matching state snapshots.
+- `engine/src/goals/goal-curator.js` — goal completion/archive events write `goal_resolution` memory receipts linked to the resolved goal, so completed work can suppress rediscovery loops.
+- `tests/engine/memory/network-memory-temporal.test.js` — proves a current state snapshot beats an older Health bridge node and verifies temporal metadata survives `exportGraph`.
 
 #### Done: Health Bridge Semantic Freshness + Tick Scheduler Repair (2026-05-01)
 

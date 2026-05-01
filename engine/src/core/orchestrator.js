@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
 const { StateCompression } = require('./state-compression');
 const { validateAndClean } = require('./validation');
 const { GoalCurator } = require('../goals/goal-curator');
@@ -138,6 +139,8 @@ class Orchestrator {
     this.lastCycleTime = new Date();
     this.lastSummarization = 0;
     this.lastConsolidation = new Date();
+    this.lastStateSnapshotHash = null;
+    this.stateSnapshotHashLoaded = false;
 
     // Temporal substrate (Phase 1 of thinking-machine-cycle rebuild)
     this.processStartedAt = Date.now();
@@ -452,10 +455,24 @@ class Orchestrator {
     
     // Wire up curator callback for goal events
     this.goals.setCuratorCallback(async (event) => {
+      event.cycle = event.cycle ?? this.cycleCount;
       if (this.goalCurator) {
         await this.goalCurator.handleEvent(event);
       }
     });
+
+    // Prime the current-state anchor at startup, before any long cognitive
+    // cycle can time out. This makes "what is true now" available even when
+    // the first post-restart cycle takes several minutes to complete.
+    try {
+      const beforeSnapshotNodes = this.memory?.nodes?.size || 0;
+      await this.maybeWriteCurrentStateSnapshot();
+      if ((this.memory?.nodes?.size || 0) > beforeSnapshotNodes) {
+        await this.saveState();
+      }
+    } catch (err) {
+      this.logger?.warn?.('[state-snapshot] startup prime failed', { error: err.message });
+    }
     
     // Initialize introspection module (self-awareness layer)
     this.introspection = new IntrospectionModule(
@@ -6144,6 +6161,8 @@ class Orchestrator {
   }
 
   async saveState() {
+    await this.maybeWriteCurrentStateSnapshot();
+
     // Save evaluation metrics
     if (this.evaluation) {
       await this.evaluation.save();
@@ -6419,6 +6438,72 @@ class Orchestrator {
         cycle: this.cycleCount,
       };
       return this.lastSaveResult;
+    }
+  }
+
+  async maybeWriteCurrentStateSnapshot() {
+    if (!this.memory || typeof this.memory.addNode !== 'function') return;
+    const workspacePath = process.env.COSMO_WORKSPACE_PATH || null;
+    if (!workspacePath) return;
+
+    const recentPath = path.join(workspacePath, 'RECENT.md');
+    let content = '';
+    try {
+      content = await fs.readFile(recentPath, 'utf8');
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        this.logger?.debug?.('[state-snapshot] RECENT.md read failed', { error: err.message });
+      }
+      return;
+    }
+
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    const hash = crypto.createHash('sha256').update(trimmed).digest('hex');
+    if (hash === this.lastStateSnapshotHash) return;
+
+    if (!this.stateSnapshotHashLoaded) {
+      this.stateSnapshotHashLoaded = true;
+      for (const node of this.memory.nodes?.values?.() || []) {
+        if (node?.tag === 'state_snapshot' && node?.metadata?.source === 'RECENT.md' && node.metadata.hash === hash) {
+          this.lastStateSnapshotHash = hash;
+          return;
+        }
+      }
+    }
+
+    const assertedAt = new Date().toISOString();
+    const body = trimmed.length > 8000 ? `${trimmed.slice(0, 8000)}\n...[truncated]` : trimmed;
+    const node = await this.memory.addNode({
+      concept: [
+        `[STATE_SNAPSHOT] RECENT.md as of cycle ${this.cycleCount}.`,
+        body,
+      ].join('\n\n'),
+      tag: 'state_snapshot',
+      type: 'state_snapshot',
+      tags: ['state_snapshot', 'current_state', 'RECENT.md'],
+      asserted_at: assertedAt,
+      asserted_cycle: this.cycleCount,
+      confidence_decay: 1,
+      status: 'current',
+      metadata: {
+        kind: 'state_snapshot',
+        source: 'RECENT.md',
+        path: recentPath,
+        hash,
+        asserted_at: assertedAt,
+        asserted_cycle: this.cycleCount,
+      },
+    });
+
+    if (node) {
+      this.lastStateSnapshotHash = hash;
+      this.logger?.info?.('[state-snapshot] wrote RECENT.md memory anchor', {
+        nodeId: node.id,
+        cycle: this.cycleCount,
+        hash: hash.slice(0, 12),
+      });
     }
   }
 

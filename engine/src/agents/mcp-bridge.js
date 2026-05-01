@@ -8,6 +8,34 @@ const gunzip = promisify(zlib.gunzip);
 const lock = promisify(lockfile.lock);
 const unlock = promisify(lockfile.unlock);
 
+function nodeTimeMs(node) {
+  const value = node?.asserted_at || node?.metadata?.asserted_at || node?.created;
+  const ms = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function isStateSnapshot(node) {
+  const tags = Array.isArray(node?.tags) ? node.tags : [];
+  return node?.tag === 'state_snapshot' ||
+    node?.type === 'state_snapshot' ||
+    tags.includes('state_snapshot') ||
+    node?.metadata?.kind === 'state_snapshot';
+}
+
+function temporalFreshness(node, now = Date.now()) {
+  const ms = nodeTimeMs(node);
+  if (!ms) return 0.55;
+  const ageDays = Math.max(0, (now - ms) / 86400000);
+  return Math.max(0.2, Math.exp(-ageDays / 14));
+}
+
+function statusMultiplier(node) {
+  if (node?.superseded_by || node?.metadata?.superseded_by) return 0.25;
+  const status = String(node?.status || node?.metadata?.status || '').toLowerCase();
+  if (['resolved', 'completed', 'archived', 'superseded', 'stale'].includes(status)) return 0.35;
+  return 1;
+}
+
 /**
  * MCP Bridge for Agents
  * 
@@ -52,7 +80,27 @@ class MCPBridge {
     try {
       const compressed = await fs.readFile(this.stateFile);
       const decompressed = await gunzip(compressed);
-      return JSON.parse(decompressed.toString());
+      const state = JSON.parse(decompressed.toString());
+
+      if (state?.memory && (!Array.isArray(state.memory.nodes) || state.memory.nodes.length === 0)) {
+        try {
+          const { sidecarsExist, readMemorySidecars } = require('../core/memory-sidecar');
+          if (sidecarsExist(this.logsDir)) {
+            const nodes = [];
+            const edges = [];
+            await readMemorySidecars(this.logsDir, {
+              onNode: n => { nodes.push(n); },
+              onEdge: e => { edges.push(e); },
+            });
+            state.memory.nodes = nodes;
+            state.memory.edges = edges;
+          }
+        } catch (sidecarError) {
+          this.logger?.warn?.('Failed to hydrate memory sidecars for MCP state', { error: sidecarError.message });
+        }
+      }
+
+      return state;
     } catch (error) {
       this.logger?.warn?.('Failed to read system state', { error: error.message });
       return null;
@@ -129,22 +177,32 @@ class MCPBridge {
         }
       });
       
-      score *= (node.activation || 0.5) * (node.weight || 0.5);
+      const relevance = score;
+      const base = score * (node.activation || 0.5) * (node.weight || 0.5);
+      const freshness = temporalFreshness(node);
+      const snapshotBoost = isStateSnapshot(node) && relevance > 0 ? 5 : 0;
+      score = (base * (0.65 + 0.35 * freshness) * statusMultiplier(node)) + snapshotBoost;
       
-      return { ...node, score };
+      return { ...node, score, temporalFreshness: freshness };
     });
     
     const results = scored
       .filter(n => n.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(({ score, concept, tag, activation, weight, accessCount, cluster }) => ({
+      .map(({ score, concept, tag, activation, weight, accessCount, cluster, asserted_at, asserted_cycle, superseded_by, confidence_decay, status, temporalFreshness }) => ({
         concept: concept.substring(0, 200),
         tag,
         activation: activation?.toFixed(3),
         weight: weight?.toFixed(3),
         accessCount,
         cluster,
+        assertedAt: asserted_at || null,
+        assertedCycle: asserted_cycle ?? null,
+        supersededBy: superseded_by || null,
+        confidenceDecay: confidence_decay ?? null,
+        status: status || null,
+        temporalFreshness: temporalFreshness?.toFixed?.(3),
         relevanceScore: score.toFixed(3)
       }));
     
