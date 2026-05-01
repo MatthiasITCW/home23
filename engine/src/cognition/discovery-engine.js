@@ -50,6 +50,41 @@ const DEFAULT_CONFIG = {
   // Aging / weighting
   importanceEdgeWeight: 0.6,       // how much edge count contributes to importance
   importanceAccessWeight: 0.4,     // how much access count contributes
+  // Per-signal score multipliers applied at queue-rank time. Reality-grounded
+  // fresh signals (observation-delta, novelty) get lift so they can compete
+  // with orphan candidates that pin at importance 1.0 (max staleness × max
+  // centrality). Without this, dense early-ingest identity material wins the
+  // score race indefinitely and the cycle stays stuck on stale topics.
+  scoring: {
+    signalMultipliers: {
+      'observation-delta': 1.5,
+      'novelty':           1.2,
+      'salience':          1.0,
+      'anomaly':           1.0,
+      'stagnation':        0.85,
+      'orphan':            0.7,
+    },
+  },
+  observationDedupe: {
+    enabled: true,
+    windowMs: 2 * 60 * 60 * 1000,
+    channels: ['machine.cpu', 'machine.memory'],
+  },
+  // Phase 5: per-node decay applied on top of signal multipliers. Computed
+  // on read from node timestamps — no schema change, no destructive
+  // mutation. Permanence layered: high-access nodes, tagged-permanent
+  // nodes, and any node accessed in the recent-access window all stay at
+  // factor 1.0. Orphan signal is skipped (its probe already encodes age
+  // via stalenessScore, double-dampening would erase the signal).
+  decay: {
+    enabled: true,
+    halfLifeDays: 90,
+    recentAccessResetDays: 14,
+    highAccessThreshold: 20,
+    permanentTagPatterns: ['identity', 'soul', 'doctrine', 'mission', 'permanent', 'invariant'],
+    skipSignals: ['orphan'],
+    floor: 0.05,
+  },
 };
 
 class DiscoveryEngine {
@@ -73,6 +108,7 @@ class DiscoveryEngine {
 
     // Ranked queue — map keyed by candidate.key for dedup, sorted on pop
     this.queue = new Map();
+    this.observationBuckets = new Map();
 
     // Probe state
     this.probeTimer = null;
@@ -83,6 +119,7 @@ class DiscoveryEngine {
       lastProbeDurationMs: null,
       candidatesByeSignal: {
         anomaly: 0, novelty: 0, orphan: 0, drift: 0, stagnation: 0, salience: 0,
+        'observation-delta': 0, 'observation-suppressed': 0,
       },
       queueDepth: 0,
       totalCandidatesProduced: 0,
@@ -423,7 +460,8 @@ class DiscoveryEngine {
 
   _makeCandidate({ key, signal, clusterId, nodeIds, importance, rationale }) {
     const tc = this.getTemporalContext?.();
-    const score = this._score(importance, signal, tc);
+    const decay = this._decayFactor(signal, nodeIds);
+    const score = this._score(importance, signal, tc) * decay;
     return {
       key,
       signal,
@@ -442,18 +480,71 @@ class DiscoveryEngine {
   }
 
   /**
-   * Score = importance × signal-specific recency factor × global salience
-   * Temporal awareness informs recency differently per signal:
-   *   orphan — ages HOT (aging problems escalate)
-   *   stagnation — ages COLD (stagnant topics deprioritize with time)
-   *   novelty — freshness matters most when new (already applied in probe)
-   *   others — flat
+   * Phase 5 decay factor. Pure function of node timestamps + tags + access
+   * count — never mutates node state. Returns a multiplier in [floor, 1].
+   *
+   * Permanence (always returns 1):
+   *   - signal in skipSignals (orphan already encodes age)
+   *   - decay disabled in config
+   *   - node not found, or has no timestamps
+   *   - accessCount >= highAccessThreshold (frequently-used = important)
+   *   - tag matches a permanentTagPattern
+   *   - accessed within recentAccessResetDays
+   *
+   * Otherwise: exponential half-life from last-access (or created) timestamp.
    */
-  _score(importance, signal) {
-    // importance already bakes in signal-specific weighting in each probe
-    // Keep scoring transparent: score = importance × 1 for now.
-    // Ranking tuning happens via importance values in each probe, not here.
-    return importance;
+  _decayFactor(signal, nodeIds) {
+    const cfg = this.config.decay;
+    if (!cfg?.enabled) return 1;
+    if ((cfg.skipSignals || []).includes(signal)) return 1;
+    if (!Array.isArray(nodeIds) || nodeIds.length === 0) return 1;
+
+    const node = this.memory?.nodes?.get?.(nodeIds[0]);
+    if (!node) return 1;
+
+    if (cfg.highAccessThreshold && (node.accessCount || 0) >= cfg.highAccessThreshold) return 1;
+
+    if (Array.isArray(cfg.permanentTagPatterns) && node.tag) {
+      const tagLower = String(node.tag).toLowerCase();
+      for (const pat of cfg.permanentTagPatterns) {
+        if (pat && tagLower.includes(String(pat).toLowerCase())) return 1;
+      }
+    }
+
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const accessedMs = node.accessed ? new Date(node.accessed).getTime() : 0;
+    const createdMs = node.created ? new Date(node.created).getTime() : 0;
+
+    if (!Number.isFinite(accessedMs) || accessedMs <= 0) {
+      if (!Number.isFinite(createdMs) || createdMs <= 0) return 1;  // no timestamps — leave alone
+    }
+
+    const recentMs = (cfg.recentAccessResetDays || 0) * dayMs;
+    if (accessedMs > 0 && (now - accessedMs) < recentMs) return 1;
+
+    const referenceMs = accessedMs > 0 ? accessedMs : createdMs;
+    const ageDays = (now - referenceMs) / dayMs;
+    if (ageDays <= 0) return 1;
+
+    const halfLife = cfg.halfLifeDays || 90;
+    const factor = Math.pow(0.5, ageDays / halfLife);
+    return Math.max(cfg.floor || 0.05, factor);
+  }
+
+  /**
+   * Score = importance × per-signal multiplier.
+   *
+   * Each probe bakes signal-specific weighting (freshness for novelty,
+   * staleness×centrality for orphan, etc.) into importance. The multiplier
+   * here rebalances ACROSS signals so reality-grounded fresh candidates
+   * (observation-delta, novelty) can outrank orphan candidates that pin at
+   * importance 1.0. Tunable via config.scoring.signalMultipliers.
+   */
+  _score(importance, signal, _tc) {
+    const mults = this.config.scoring?.signalMultipliers || {};
+    const factor = mults[signal] != null ? mults[signal] : 1;
+    return importance * factor;
   }
 
   _enqueue(candidate) {
@@ -491,14 +582,27 @@ class DiscoveryEngine {
         (this.stats.candidatesByeSignal['observation-silence'] || 0) + 1;
       return false;
     }
+
+    const novelty = this._observationNovelty(obs);
+    if (!novelty.accept) {
+      this.stats.candidatesByeSignal['observation-suppressed'] =
+        (this.stats.candidatesByeSignal['observation-suppressed'] || 0) + 1;
+      this.logger.debug?.('[discovery] suppressed repeated observation delta', {
+        channelId: obs.channelId,
+        bucket: novelty.bucket,
+        reason: novelty.reason,
+      });
+      return false;
+    }
+
     const importance = Math.max(0.1, Math.min(1, obs.confidence || 0.5));
     const candidate = this._makeCandidate({
-      key: `observation:${obs.channelId}:${obs.sourceRef}`,
+      key: novelty.key || `observation:${obs.channelId}:${obs.sourceRef}`,
       signal: 'observation-delta',
       clusterId: null,
       nodeIds: [],
-      importance,
-      rationale: `bus observation ${obs.channelId} (${obs.flag}, confidence ${importance.toFixed(2)})`,
+      importance: Math.min(1, importance * (novelty.importanceMultiplier || 1)),
+      rationale: novelty.rationale || `bus observation ${obs.channelId} (${obs.flag}, confidence ${importance.toFixed(2)})`,
     });
     // Attach the raw observation so DeepDive can access the payload.
     candidate.observation = obs;
@@ -507,6 +611,47 @@ class DiscoveryEngine {
       (this.stats.candidatesByeSignal['observation-delta'] || 0) + 1;
     this.stats.totalCandidatesProduced += 1;
     return true;
+  }
+
+  _observationNovelty(obs) {
+    const cfg = this.config.observationDedupe || {};
+    if (!cfg.enabled) {
+      return { accept: true, key: `observation:${obs.channelId}:${obs.sourceRef}` };
+    }
+
+    const channels = new Set(cfg.channels || []);
+    if (!channels.has(obs.channelId)) {
+      return { accept: true, key: `observation:${obs.channelId}:${obs.sourceRef}` };
+    }
+
+    const bucket = semanticObservationBucket(obs);
+    if (!bucket) {
+      return { accept: true, key: `observation:${obs.channelId}:${obs.sourceRef}` };
+    }
+
+    const windowMs = Math.max(0, Number(cfg.windowMs) || 0);
+    const nowMs = Date.parse(obs.producedAt || obs.receivedAt || '') || Date.now();
+    const stateKey = obs.channelId;
+    const prev = this.observationBuckets.get(stateKey);
+    const sameBucket = prev?.bucket === bucket;
+    const ageMs = prev ? nowMs - prev.atMs : Infinity;
+
+    if (sameBucket && ageMs >= 0 && ageMs < windowMs) {
+      return {
+        accept: false,
+        bucket,
+        reason: `same semantic bucket within ${humanAge(windowMs)}`,
+      };
+    }
+
+    this.observationBuckets.set(stateKey, { bucket, atMs: nowMs });
+    return {
+      accept: true,
+      bucket,
+      key: `observation:${obs.channelId}:${bucket}`,
+      rationale: `bus observation ${obs.channelId} entered ${bucket} (${obs.flag})`,
+      importanceMultiplier: prev && prev.bucket !== bucket ? 1.1 : 1,
+    };
   }
 
   _trimQueue() {
@@ -544,6 +689,33 @@ function humanAge(ms) {
   if (ms < 60 * 60 * 1000) return `${Math.round(ms / (60 * 1000))}m`;
   if (ms < 24 * 60 * 60 * 1000) return `${Math.round(ms / (60 * 60 * 1000))}h`;
   return `${Math.round(ms / (24 * 60 * 60 * 1000))}d`;
+}
+
+function semanticObservationBucket(obs) {
+  const payload = obs?.payload || {};
+  if (obs.channelId === 'machine.cpu') {
+    const loadAvg = Array.isArray(payload.loadAvg) ? payload.loadAvg : [];
+    const load1 = Number(loadAvg[0]);
+    const cpuCount = Math.max(1, Number(payload.cpuCount) || 1);
+    if (!Number.isFinite(load1)) return null;
+    const ratio = load1 / cpuCount;
+    if (ratio >= 1.05) return 'cpu:overcommitted';
+    if (ratio >= 0.8) return 'cpu:saturated';
+    if (ratio >= 0.5) return 'cpu:elevated';
+    return 'cpu:normal';
+  }
+
+  if (obs.channelId === 'machine.memory') {
+    const freePct = Number(payload.freePct);
+    if (!Number.isFinite(freePct)) return null;
+    if (freePct <= 2) return 'memory:critical';
+    if (freePct <= 5) return 'memory:severe';
+    if (freePct <= 10) return 'memory:low';
+    if (freePct <= 15) return 'memory:tight';
+    return 'memory:normal';
+  }
+
+  return null;
 }
 
 function deepMerge(target, source) {
