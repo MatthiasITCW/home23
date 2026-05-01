@@ -9220,6 +9220,16 @@ You are empowered to explore and understand. The user trusts you to discover the
   }
 
   async getFastMemoryNodeCount() {
+    const snapshotPath = path.join(this.logsDir, 'brain-snapshot.json');
+    try {
+      const snapshot = JSON.parse(await fs.readFile(snapshotPath, 'utf8'));
+      if (Number.isFinite(snapshot?.nodeCount)) {
+        return snapshot.nodeCount;
+      }
+    } catch {
+      // Fall through to older advisory sources.
+    }
+
     const cachePath = path.join(this.logsDir, 'dashboard-cache.json');
     try {
       const cache = JSON.parse(await fs.readFile(cachePath, 'utf8'));
