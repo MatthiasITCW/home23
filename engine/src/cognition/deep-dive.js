@@ -192,6 +192,10 @@ class DeepDive {
     const t = temporalContext?.jtrTime;
     const isRevision = Boolean(priorPass && priorPass.previousThought);
     const isGoodLifeObservation = candidate?.observation?.channelId === 'domain.good-life';
+    const isMachineObservation = typeof candidate?.observation?.channelId === 'string'
+      && candidate.observation.channelId.startsWith('machine.');
+    const isBusObservation = Boolean(candidate?.observation?.channelId);
+    const isOperationalObservation = isGoodLifeObservation || isMachineObservation;
 
     // The instructions lean on the "free the mind" ethos. No grammar,
     // no persona, no forbidden-topic list. The brain thinks about what's
@@ -211,6 +215,22 @@ Output shape:
 Good Life policy: <mode> because <payload reason>.
 Evidence: <only explicit metrics from the payload>.
 Next engine action: <bounded Home23 action or verifier>.`
+      : isMachineObservation
+      ? `You are reading Home23 machine telemetry. Treat it as operational host evidence, not as a diagnosis of jtr's life, psychology, health, attention, work rhythm, or personal capacity.
+
+Hard boundaries:
+- Scope: Home23 host/process/runtime operations only.
+- Do not infer what jtr is doing, feeling, noticing, capable of, or likely to experience.
+- Do not speculate about hobbies, life patterns, personal workload, motivation, attention, flow state, or hardware purchasing.
+- Do not use words like crisis, overloaded, unsustainable, drowning, or personal system unless the payload literally contains that wording.
+- Use only explicit metrics from the payload and the channel/source metadata.
+- Identify the operational risk, the missing evidence, and the next bounded verifier or action.
+- End after the operational implication. No essay.
+
+Output shape:
+Machine telemetry: <channel> <flag/bucket>.
+Evidence: <only explicit metrics from the payload>.
+Next engine action: <bounded Home23 verifier/action or NO_ACTION if already covered>.`
       : isRevision
       ? `You are the thinking phase of a persistent agent whose job is to mine its own knowledge graph for genuine insight. An earlier pass produced a thought; the critique function flagged specific gaps. Your job now is to address those gaps — not rewrite from scratch, not restate, not defensively re-argue.
 
@@ -256,12 +276,12 @@ ${observation
 ${peerNodes.slice(0, 25).map(n => `- [${n.id}${n.cluster != null ? ` · c${n.cluster}` : ''}] ${(n.concept || '').slice(0, 220)}`).join('\n')}`
       : '';
 
-    const temporalBlock = t ? `## When it is
+    const temporalBlock = t && !isOperationalObservation ? `## When it is
 - Jtr's time: ${t.phase} ${t.dayType} (${t.dayName}), rhythm: ${(t.activeRhythms || []).join(', ') || 'none'}${t.workweekPhase ? ` · ${t.workweekPhase}` : ''}
 - Absolute: ${temporalContext.now}
 - Loop awake: ${humanDuration(temporalContext.loopDuration?.continuousRunMs)} · last conversation: ${humanDuration(temporalContext.loopDuration?.lastConversationMs)} ago` : '';
 
-    const conversationBlock = conversation
+    const conversationBlock = conversation && !isOperationalObservation
       ? `## Recent conversation with jtr\n${conversation}`
       : '';
 
@@ -287,9 +307,11 @@ Address these gaps concretely. If the prior thought was drifting into meta-comme
       .filter(Boolean)
       .join('\n\n') + (isRevision
         ? '\n\nThink again — addressing the gaps above. Focus on the content, not the discovery machinery.'
-        : isGoodLifeObservation
-          ? '\n\nSummarize this as bounded Home23 engine telemetry. Do not narrativize it into jtr personal diagnosis.'
-        : '\n\nThink about this material. Focus on what it means for jtr\'s world — his projects, his interests, his decisions. Not the discovery signal, not the graph topology. The content.');
+        : isOperationalObservation
+          ? `\n\nSummarize this as bounded Home23 ${isGoodLifeObservation ? 'engine' : 'operational'} telemetry. Do not narrativize it into jtr personal diagnosis or personal speculation.`
+        : isBusObservation
+          ? '\n\nSummarize only what the verified observation explicitly supports. Do not invent personal context, motives, effects, or advice.'
+          : '\n\nThink about this material. Focus on what it means for jtr\'s world — his projects, his interests, his decisions. Not the discovery signal, not the graph topology. The content.');
 
     return { instructions, input };
   }

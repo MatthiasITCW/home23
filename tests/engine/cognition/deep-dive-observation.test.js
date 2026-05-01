@@ -73,3 +73,50 @@ test('DeepDive prompt bounds Good Life observations to engine operations', () =>
   assert.match(input, /bounded Home23 engine telemetry/);
   assert.doesNotMatch(input, /Focus on what it means for jtr's world/);
 });
+
+test('DeepDive prompt bounds machine observations to host operations', () => {
+  const deepDive = new DeepDive({
+    unifiedClient: { generate: async () => ({ content: '' }) },
+    memory: { nodes: new Map(), edges: new Map(), clusters: new Map() },
+    logger: { warn() {} },
+    getConversationContext: () => 'jtr said he is deep in a creative session',
+  });
+
+  const candidate = {
+    signal: 'observation-delta',
+    score: 1,
+    rationale: 'bus observation machine.memory entered memory:severe',
+    nodeIds: [],
+    observation: {
+      channelId: 'machine.memory',
+      sourceRef: 'memory:2026-05-01T18:35:00.000Z',
+      traceId: 'trace:memory',
+      flag: 'COLLECTED',
+      confidence: 0.9,
+      payload: {
+        freePct: 3.1,
+        freeBytes: 500_000_000,
+        totalBytes: 16_000_000_000,
+      },
+    },
+  };
+
+  const { instructions, input } = deepDive._buildPrompt(
+    candidate,
+    { nodes: [], edges: [], seedCount: 0 },
+    {
+      now: '2026-05-01T18:35:00.000Z',
+      jtrTime: { phase: 'afternoon', dayType: 'weekday', dayName: 'Friday', activeRhythms: ['deep-work'] },
+      loopDuration: { continuousRunMs: 15 * 60 * 1000, lastConversationMs: 60 * 60 * 1000 },
+    },
+    null
+  );
+
+  assert.match(instructions, /Home23 machine telemetry/);
+  assert.match(instructions, /not as a diagnosis of jtr's life/);
+  assert.match(instructions, /Do not infer what jtr is doing/);
+  assert.match(input, /bounded Home23 operational telemetry/);
+  assert.doesNotMatch(input, /Jtr's time/);
+  assert.doesNotMatch(input, /Recent conversation with jtr/);
+  assert.doesNotMatch(input, /Focus on what it means for jtr's world/);
+});
