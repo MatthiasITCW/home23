@@ -25,6 +25,7 @@ const CHANNEL_CAPS = Object.freeze({
   work_event:         0.90,
   neighbor_gossip:    0.70,
   zero_context_audit: 0.20,
+  good_life:          0.88,
 });
 
 function applyChannelCap(method, confidence) {

@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://home23.local/contracts/query.schema.json",
+  "title": "Home23 Query Contracts",
+  "$defs": {
+    "providerCatalog": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["models"],
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerModel" }
+        },
+        "defaults": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "queryModel": { "type": ["string", "null"] },
+            "pgsSweepModel": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "providerModel": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] }
+      }
+    },
+    "brainRegistry": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["brains"],
+      "properties": {
+        "brains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": ["string", "null"] },
+              "routeKey": { "type": ["string", "null"] },
+              "name": { "type": ["string", "null"] },
+              "displayName": { "type": ["string", "null"] },
+              "path": { "type": ["string", "null"] },
+              "sourceLabel": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "queryRequest": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["query", "model", "mode", "enablePGS"],
+      "properties": {
+        "query": { "type": "string" },
+        "model": { "type": "string" },
+        "mode": { "type": "string" },
+        "includeEvidenceMetrics": { "type": "boolean" },
+        "enableSynthesis": { "type": "boolean" },
+        "includeCoordinatorInsights": { "type": "boolean" },
+        "includeOutputs": { "type": "boolean" },
+        "includeThoughts": { "type": "boolean" },
+        "allowActions": { "type": "boolean" },
+        "enablePGS": { "type": "boolean" },
+        "pgsMode": { "type": "string" },
+        "pgsSessionId": { "type": "string" },
+        "pgsFullSweep": { "type": "boolean" },
+        "pgsConfig": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "sweepFraction": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "pgsSweepModel": { "type": ["string", "null"] },
+        "exportFormat": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "priorContext": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "query": { "type": "string" },
+            "answer": { "type": "string" }
+          }
+        }
+      }
+    },
+    "queryResult": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["answer"],
+      "properties": {
+        "query": { "type": ["string", "null"] },
+        "answer": { "type": "string" },
+        "metadata": { "type": ["object", "null"], "additionalProperties": true },
+        "actionSuggestion": { "type": ["object", "null"], "additionalProperties": true },
+        "actionExecuted": { "type": ["boolean", "null"] },
+        "actionError": { "type": ["string", "null"] },
+        "actionResult": { "type": ["object", "null"], "additionalProperties": true },
+        "exportedTo": { "type": ["string", "null"] }
+      }
+    },
+    "streamEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": ["string", "null"] },
+        "error": { "type": ["string", "null"] },
+        "message": { "type": ["string", "null"] },
+        "chunk": { "type": ["string", "null"] },
+        "text": { "type": ["string", "null"] },
+        "tool": { "type": ["string", "null"] },
+        "phase": { "type": ["string", "null"] },
+        "result": { "$ref": "#/$defs/queryResult" }
+      }
+    }
+  }
+}

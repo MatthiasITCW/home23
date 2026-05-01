@@ -35,7 +35,7 @@ corrupts runtime state with encrypted strings that later get shipped as literal
 bearer tokens. First observed as `401 unauthorized: encrypted:...` errors during
 smoke testing (2026-04-10).
 
-There are currently **12 patches** in this file. Patches 1–3 are the config/key
+There are currently **14 patches** in this file. Patches 1–3 are the config/key
 plumbing fixes from the initial integration. Patch 4 is a small admin HTTP
 surface that lets Home23 use cosmo23 as an OAuth broker (Step 18).
 
@@ -153,7 +153,8 @@ Runs at first `pm2 start` via `cli/lib/pm2-commands.js`. Writes
 
 - Plaintext API keys from `config/secrets.yaml` (dir is gitignored so this is safe)
 - All five relevant providers: openai, xai, ollama-cloud, anthropic (OAuth-only flag), ollama (local)
-- `features.brains = { enabled: true, directories: [] }` — never inherit stale dirs
+- `features.brains.directories` seeded from Home23 agents, configured external roots,
+  and known local legacy roots such as `/Users/jtr/_JTR23_/cosmo-home_2.3/runs`
 - A persistent `security.encryption_key` (generated once, preserved on re-seed)
 
 ### `ecosystem.config.cjs` (PM2 launcher)
@@ -471,7 +472,8 @@ while current Home23 COSMO runs use the MiniMax + Ollama Cloud stack.
 **Fix:** when `/api/setup/status` reports `managed_by_home23`, the UI now:
 
 - labels the shell as `Home23 COSMO`
-- defaults the Brains library to `Local`
+- labels the bundled local run library as `Cosmo Home23`
+- defaults the Brains library to `Cosmo Home23`
 - orders Local / Jerry / Forrest before external archives
 - selects the newest local COSMO run by default when no run is active
 - keeps the provider panel read-only and points settings changes to Home23
@@ -493,7 +495,7 @@ node/edge counts.
 flow; only the static masthead copy is more neutral.
 
 **Verification:** browser audit on `http://localhost:43210` after restarting
-`home23-cosmo23`: Brains defaulted to `Local (5)`, selected `trail-running`
+`home23-cosmo23`: Brains defaulted to `Cosmo Home23 (5)`, selected `trail-running`
 with `229 nodes / 718 edges`, Query selected `trail-running`, and Launch
 selected `MiniMax-M2.7`, `Nemotron 3 Nano 30B`, `Kimi K2.6`.
 
@@ -625,6 +627,181 @@ available because the right-side replacement only runs when setup status reports
 
 ---
 
+## Patch 13 — `cosmo23/engine/src/core/anthropic-client.js` · provider-aware model passthrough
+
+**File:** `cosmo23/engine/src/core/anthropic-client.js` (`_getModelFromOptions`)
+
+**Problem:** `AnthropicClient` is reused as the adapter for MiniMax in
+`UnifiedClient` (line 76) because MiniMax exposes an Anthropic-compatible
+API at `https://api.minimax.io/anthropic`. But `_getModelFromOptions` was
+written assuming the caller is always Anthropic, so any model name that is
+not `claude-*` and not in `modelMapping` (which only has `gpt-5.x` keys)
+silently falls through to a hardcoded `'claude-sonnet-4-5'`.
+
+When a Home23 agent picked MiniMax as Primary (e.g. `MiniMax-M2.7` in
+`runs/trail-running/config.yaml`), `generateMiniMax` would pass
+`{ model: 'MiniMax-M2.7' }` into the adapter, the model got rewritten to
+`'claude-sonnet-4-5'`, and the request hit MiniMax's endpoint with the
+wrong body — visible in logs as:
+
+```
+[AnthropicClient] Starting generation {"model":"claude-sonnet-4-5", ...}
+```
+
+…even though no Anthropic provider was selected.
+
+**Fix:** read `this.providerId` (already set in the constructor —
+`'anthropic'` for real Anthropic, `'minimax'` for the MiniMax adapter,
+or any future Anthropic-compatible provider). When the providerId is
+anything other than `'anthropic'`, return the requested model unchanged.
+The Claude-only fallback path is preserved for the Anthropic case.
+
+```js
+// HOME23 PATCH — non-Anthropic providers (e.g. MiniMax via the
+// Anthropic-compatible endpoint) reuse this client class but must NOT
+// be silently rewritten to a Claude model. Pass the requested model
+// through unchanged for any providerId other than 'anthropic'.
+if (this.providerId && this.providerId !== 'anthropic') {
+  return requestedModel;
+}
+```
+
+**Effect under Home23:** MiniMax runs send the actual selected model
+(e.g. `MiniMax-M2.7`) to MiniMax's endpoint instead of `claude-sonnet-4-5`.
+Logs reflect the truth — no spurious Anthropic line items when no
+Anthropic provider is configured.
+
+**Effect under standalone COSMO:** unchanged — standalone always
+constructs the client with `providerId: 'anthropic'` (default), so the
+new branch is never taken and the original model-mapping behavior is
+preserved.
+
+**Note on `lib/anthropic-client.js`:** the QueryEngine adapter at
+`cosmo23/lib/anthropic-client.js` has the same fallback, but it is only
+ever instantiated as real Anthropic (`new AnthropicClient({}, console)`
+in `query-engine.js:117`) and does not track `providerId`. The fallback
+there is correct for that use site and is intentionally left untouched.
+
+---
+
+## Patch 14 — `cosmo23/engine/src/agents/execution-base-agent.js` · execution-agent completion marker
+
+**File:** `cosmo23/engine/src/agents/execution-base-agent.js` (finalization block,
+end of `runAgenticLoop`)
+
+**Problem:** the four CLI-first execution agents (`DataPipelineAgent`,
+`DataAcquisitionAgent`, `InfrastructureAgent`, `AutomationAgent`) never
+write a `.complete` JSON marker into their output directory. The dashboard's
+`/api/deliverables` endpoint at `engine/src/dashboard/server.js:2025-2035`
+decides `isComplete` purely from the presence of that marker, so the
+Intelligence → Deliverables tab shows ⚠ Incomplete for every execution
+agent run.
+
+There IS a marker-writing path in `agent-executor.js:ensureManifestAndCompletion`,
+but it's only called from `registerTaskArtifactsFromAgentRun()` which
+early-returns when `this.clusterStateStore` is null (`agent-executor.js:1326`).
+Cluster mode is OFF by default (`cluster.enabled: false` in standalone and
+in Home23-managed runs), so single-instance runs — the normal case — never
+get the marker. Other agent classes (CodeCreation, CodeExecution, Document,
+Research, IDE) sidestep this by calling `writeCompletionMarker` directly in
+their own code; only the execution-agent layer relies on the cluster path.
+
+First observed on Home23's `trail-running` (single-instance, cluster disabled)
+where a fully-finished `DataPipelineAgent` produced 8 real artifacts including
+a populated SQLite database and a working Python module, with `manifest.json`
+carrying a valid `completedAt` timestamp — yet the dashboard still showed
+⚠ Datapipeline · unknown · 8 files. The agent's own `validation-report.json`
+also flagged a separate row-count gap, but even when validation passes the
+dashboard would have shown ⚠ for the same reason.
+
+**Fix:** in the finalization block of `ExecutionBaseAgent.runAgenticLoop`,
+after `writeAuditTrail()` and `reportProgress(100, ...)`, call the inherited
+`writeCompletionMarker(this._outputDir, {...})`. Wrapped in try/catch so a
+write failure can never mask a successful run.
+
+```js
+// HOME23 PATCH — Write `.complete` marker so dashboard /api/deliverables
+// reports isComplete:true. Without this, single-instance runs (cluster
+// disabled, the default) never get a marker — agent-executor's
+// ensureManifestAndCompletion only fires when clusterStateStore is set.
+if (this._outputDir) {
+  try {
+    await this.writeCompletionMarker(this._outputDir, {
+      fileCount: this.totalFilesCreated || 0,
+      totalSize: this.totalBytesWritten || 0,
+      commandsRun: this.totalCommandsRun || 0,
+      iterations: iteration
+    });
+  } catch (markerErr) {
+    this.logger?.warn?.('Failed to write completion marker (non-fatal)', {
+      error: markerErr.message
+    });
+  }
+}
+```
+
+**Effect under Home23:** all four execution agents now write `.complete`
+on successful finalization. The Intelligence → Deliverables tab shows ✓
+DONE for completed runs and the ⚠ icon now actually means *the agent
+didn't reach finalization* (timeout, exception, killed mid-loop) instead
+of "single-instance mode, ignore."
+
+**Effect under standalone COSMO:** same — the bug exists in standalone
+too whenever cluster mode is off (the default). Standalone benefits from
+the same fix.
+
+**Note on the "unknown" label:** the same dashboard row also displays
+`manifest.language || 'unknown'`. Execution-agent manifests don't carry
+a `language` field (they're not code agents), so "unknown" still appears
+beside the file count. That's a UI cosmetic in `intelligence.html:2839`,
+not addressed by this patch.
+
+---
+
+## Patch 15 — Hub merge progress + Home23 memory sidecars
+
+**Files touched:**
+- `cosmo23/server/lib/hub-routes.js`
+- `cosmo23/engine/src/merge/merge-engine.js`
+
+**Problem:** Hub merges were executed inside the COSMO23 API process, but the
+merge engine only wrote terminal progress to stdout. The Hub UI opened an SSE
+request, received "Initializing merge", then sat with no useful updates while
+the server spent minutes in the CPU-heavy memory merge loop. During that window
+even `/api/health` timed out, so the COSMO23 session looked dead. A live
+Jerry/brain merge on 2026-05-01 took 6m02s and made the app appear broken even
+though the merge eventually completed.
+
+The same path also had two Home23 correctness gaps:
+
+- Hub state loading did not rehydrate `memory-nodes.jsonl.gz` /
+  `memory-edges.jsonl.gz`, so Home23 agent brains with split persistence could
+  merge as empty or partial graphs.
+- Parts of `merge-engine.js` coerced edge endpoints from `edge.key` through
+  `Number()`, but merged brains use string node IDs such as `abc123_1`. Those
+  edges could be dropped during later merges.
+
+**Fix:** add a progress callback to `ProgressReporter`, wire Hub's SSE sender
+into `MergeEngine({ onProgress })`, and yield with `setImmediate()` after each
+progress batch so Express can flush SSE updates and answer health checks. Hub
+state loading now rehydrates Home23 sidecar memory files before merging, and
+edge endpoint parsing preserves string IDs.
+
+**Effect under Home23:** long Hub merges now visibly progress instead of
+appearing to kill COSMO23, health checks can respond during the merge, Jerry /
+Forrest sidecar brains load their real memory graph, and re-merging merged
+brains preserves string-ID edges.
+
+**Effect under standalone COSMO:** progress callbacks are opt-in; standalone
+callers that do not pass `onProgress` keep the original behavior. Non-sidecar
+states load unchanged.
+
+**Verification:** `node --check` passed for both touched files. A dry-run merge
+smoke test verified progress events, correct stats, and string-ID edge
+preservation.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -639,6 +816,10 @@ available because the right-side replacement only runs when setup status reports
   to parity with evobrew (all agent + external roots). Without the filter,
   each agent root surfaced sibling dirs (workspace, conversations, logs) as
   empty brains.
+- **2026-05-01** — `cli/lib/cosmo23-config.js` and
+  `cli/lib/evobrew-config.js` now include the sibling legacy
+  `/Users/jtr/_JTR23_/cosmo-home_2.3/runs` root when present, so live
+  `cosmo23-jtr` brains appear alongside older `cosmo-home` roots.
 - **2026-04-19** — Patch 7 added to relocate research runs into the launching
   agent's workspace so the feeder ingests output naturally. Adds optional
   `runRoot` payload field + non-fatal symlink at legacy path + `run.json`
@@ -662,3 +843,27 @@ available because the right-side replacement only runs when setup status reports
 - **2026-04-27** — Patch 12 added to redesign the Home23-managed COSMO23 UI
   around the Home23 shell, launch-first workflow, research-at-a-glance panel,
   and visible recent local runs.
+- **2026-04-27** — Patch 13 added after a `trail-running` MiniMax run logged
+  `[AnthropicClient] Starting generation {"model":"claude-sonnet-4-5", ...}`
+  despite no Anthropic provider being selected. Root cause was a
+  hardcoded `'claude-sonnet-4-5'` fallback in `_getModelFromOptions` that
+  fired whenever the AnthropicClient adapter was reused for a non-Anthropic
+  provider (MiniMax). Fix is provider-aware: pass the model through
+  unchanged when `providerId !== 'anthropic'`.
+- **2026-04-27** — Patch 14 added after the same `trail-running` run showed
+  ⚠ Incomplete on the dashboard's Deliverables tab for a DataPipelineAgent
+  that had clearly finished — 8 artifacts on disk, populated SQLite,
+  manifest with `completedAt`. Root cause: the `.complete` marker that
+  the dashboard checks is only written via a code path gated on
+  `clusterStateStore` being set, which it isn't in single-instance mode
+  (the default). The four execution agents (DataPipeline, DataAcquisition,
+  Infrastructure, Automation) had no fallback — unlike CodeCreation /
+  CodeExecution / Document / Research / IDE which write the marker
+  themselves. Fix: write the marker from `ExecutionBaseAgent`'s
+  finalization block so all four agents inherit the behavior.
+- **2026-05-01** — Patch 15 added after Hub merge made COSMO23 appear dead:
+  SSE only emitted the initial phase, the CPU-heavy merge loop monopolized the
+  API server for 6m02s, and `/api/health` timed out during the merge. Hub now
+  receives real progress events, the merge loop yields between batches, Home23
+  memory sidecars are rehydrated before merge, and string-ID edges survive
+  re-merges.

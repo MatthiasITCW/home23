@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://home23.local/contracts/client-capabilities.schema.json",
+  "title": "Home23 Client Capabilities",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["contractVersion", "features", "endpoints"],
+  "properties": {
+    "contractVersion": { "type": "string" },
+    "minIOSBuild": { "type": ["integer", "null"] },
+    "features": {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

@@ -52,15 +52,52 @@ async function loadFullState(runPath) {
       if (candidate.endsWith('.gz')) {
         const compressed = await fs.readFile(candidate);
         const decompressed = await gunzip(compressed);
-        return JSON.parse(decompressed.toString());
+        return rehydrateStateFromSidecars(JSON.parse(decompressed.toString()), runPath);
       } else {
-        return JSON.parse(await fs.readFile(candidate, 'utf8'));
+        return rehydrateStateFromSidecars(JSON.parse(await fs.readFile(candidate, 'utf8')), runPath);
       }
     } catch {
       continue;
     }
   }
   return null;
+}
+
+async function readJsonlGz(filePath) {
+  const decompressed = await gunzip(await fs.readFile(filePath));
+  return decompressed.toString('utf8').split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+async function rehydrateStateFromSidecars(state, runPath) {
+  // HOME23 PATCH — Home23 brains can store the full memory graph in sidecar
+  // JSONL files while state.json.gz carries an empty memory stub.
+  const memEmpty = !state?.memory?.nodes?.length;
+  if (!memEmpty) return state;
+
+  const nodesPath = path.join(runPath, 'memory-nodes.jsonl.gz');
+  const edgesPath = path.join(runPath, 'memory-edges.jsonl.gz');
+  if (!fsSync.existsSync(nodesPath)) return state;
+
+  try {
+    state.memory = state.memory || {};
+    state.memory.nodes = await readJsonlGz(nodesPath);
+    if (fsSync.existsSync(edgesPath)) {
+      state.memory.edges = await readJsonlGz(edgesPath);
+    }
+  } catch (error) {
+    console.warn('[hub] sidecar rehydration failed:', error.message);
+  }
+
+  return state;
 }
 
 async function loadMetadata(runPath) {
@@ -127,6 +164,12 @@ function createHubRouter(options) {
 
       const engine = new MergeEngine({ dryRun: true, threshold });
       const result = await engine.merge(states);
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          error: (result.errors || ['Merge preview failed']).join('; ')
+        });
+      }
 
       res.json({
         success: true,
@@ -217,10 +260,15 @@ function createHubRouter(options) {
         dryRun: false,
         threshold,
         conflictPolicy,
-        runsPath: localRunsPath
+        runsPath: localRunsPath,
+        onProgress: progressReporter
       });
 
       const result = await engine.merge(states, uniqueName);
+      if (!result.success) {
+        send('error', { error: (result.errors || ['Merge failed']).join('; ') });
+        return res.end();
+      }
       // Engine's saveMergedRun() already saved state.json.gz correctly — don't overwrite
 
       // Write merge metadata

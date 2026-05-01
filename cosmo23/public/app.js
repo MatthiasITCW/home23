@@ -56,7 +56,8 @@ const FORM_DEFAULTS = {
   enableExperimental: false
 };
 
-const HOME23_PRIMARY_SOURCE_LABELS = new Set(['Local', 'Jerry', 'Forrest']);
+const HOME23_LOCAL_SOURCE_LABEL = 'Cosmo Home23';
+const HOME23_PRIMARY_SOURCE_LABELS = new Set([HOME23_LOCAL_SOURCE_LABEL, 'Local', 'Jerry', 'Forrest']);
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -75,7 +76,7 @@ function populateBrainSelect(select, brains, selectedId) {
   // Group by sourceLabel
   const groups = {};
   brains.forEach(b => {
-    const label = b.sourceLabel || (b.sourceType === 'local' ? 'Local' : 'Reference');
+    const label = b.sourceLabel || (b.sourceType === 'local' ? HOME23_LOCAL_SOURCE_LABEL : 'Reference');
     if (!groups[label]) groups[label] = [];
     groups[label].push(b);
   });
@@ -490,10 +491,10 @@ class CosmoStandaloneApp {
     const mastheadEyebrow = document.querySelector('.masthead .eyebrow');
     const mastheadText = document.querySelector('.masthead .masthead-text');
     if (mastheadEyebrow) mastheadEyebrow.textContent = 'Home23 COSMO';
-    if (mastheadText) mastheadText.textContent = 'Launch Home23-managed research runs, inspect local run brains, and query completed knowledge from this workspace.';
+    if (mastheadText) mastheadText.textContent = 'Launch Home23-managed research runs, inspect Cosmo Home23 run brains, and query completed knowledge from this workspace.';
 
     if (!this.brainFilterTouched && this.brainFilter === 'all') {
-      this.brainFilter = 'loc:Local';
+      this.brainFilter = `loc:${HOME23_LOCAL_SOURCE_LABEL}`;
     }
 
     // Build provider status dots for the summary bar
@@ -538,7 +539,7 @@ class CosmoStandaloneApp {
             </div>
             <div class="glance-item">
               <span class="glance-icon cool">▧</span>
-              <div><strong>Local knowledge</strong><span>Runs, brains, and results stay in this workspace.</span></div>
+              <div><strong>Cosmo Home23 knowledge</strong><span>Runs, brains, and results stay in this workspace.</span></div>
             </div>
             <div class="glance-item">
               <span class="glance-icon warm">✎</span>
@@ -1099,7 +1100,7 @@ class CosmoStandaloneApp {
 
     const locations = {};
     this.brains.forEach(b => {
-      const label = b.sourceLabel || (b.sourceType === 'local' ? 'Local' : 'Reference');
+      const label = b.sourceLabel || (b.sourceType === 'local' ? HOME23_LOCAL_SOURCE_LABEL : 'Reference');
       locations[label] = (locations[label] || 0) + 1;
     });
 
@@ -1181,7 +1182,7 @@ class CosmoStandaloneApp {
       const topicText = brain.topic || brain.domain || '';
       const nodeLabel = Number.isFinite(brain.nodes) ? `${brain.nodes} nodes` : 'Open for stats';
       const cycleLabel = Number.isFinite(brain.cycles) ? `${brain.cycles} cy` : 'Saved run';
-      const sourceLabel = brain.sourceType === 'local' ? 'Local' : brain.sourceLabel;
+      const sourceLabel = brain.sourceType === 'local' ? (brain.sourceLabel || HOME23_LOCAL_SOURCE_LABEL) : brain.sourceLabel;
       card.innerHTML = `
         <div class="brain-card-head">
           <h3 class="brain-card-title">${escapeHtml(brain.displayName)}${topicText ? `<span class="brain-card-topic"> — ${escapeHtml(topicText)}</span>` : ''}</h3>
@@ -1281,7 +1282,7 @@ class CosmoStandaloneApp {
     const brain = detail.brain;
     document.getElementById('selected-brain-name').textContent = brain.displayName;
     document.getElementById('selected-brain-meta').textContent = `${brain.topic || brain.domain || 'Untitled topic'} · ${this.formatDate(brain.modifiedDate)} · ${brain.mode || 'guided'}`;
-    document.getElementById('selected-brain-badge').textContent = brain.sourceType === 'local' ? 'Local' : `Reference · ${brain.sourceLabel}`;
+    document.getElementById('selected-brain-badge').textContent = brain.sourceType === 'local' ? (brain.sourceLabel || HOME23_LOCAL_SOURCE_LABEL) : `Reference · ${brain.sourceLabel}`;
 
     const stats = document.getElementById('selected-brain-stats');
     stats.innerHTML = [
@@ -1340,7 +1341,7 @@ class CosmoStandaloneApp {
           </div>
           <div class="overview-card">
             <span class="overview-card-label">Source</span>
-            <div class="overview-card-value">${escapeHtml(brain.sourceType === 'local' ? 'Local run' : `Reference brain from ${brain.sourceLabel}`)}</div>
+            <div class="overview-card-value">${escapeHtml(brain.sourceType === 'local' ? `${brain.sourceLabel || HOME23_LOCAL_SOURCE_LABEL} run` : `Reference brain from ${brain.sourceLabel}`)}</div>
           </div>
           <div class="overview-card">
             <span class="overview-card-label">Topic</span>
@@ -1454,7 +1455,7 @@ class CosmoStandaloneApp {
       } catch { /* use cached values */ }
     }
 
-    const source = brain.sourceType === 'local' ? 'Local' : `Reference · ${brain.sourceLabel}`;
+    const source = brain.sourceType === 'local' ? (brain.sourceLabel || HOME23_LOCAL_SOURCE_LABEL) : `Reference · ${brain.sourceLabel}`;
     const liveTag = isActiveRun ? ' · Running' : '';
     const nodeLabel = Number.isFinite(nodes) ? `${nodes} nodes` : 'stats on open';
     const edgeLabel = Number.isFinite(edges) ? `${edges} edges` : 'edges on open';

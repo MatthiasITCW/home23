@@ -15,7 +15,7 @@ function getRegistry() {
   return _sensorRegistry || null;
 }
 
-function publishTileSensor(tile, mode, data, valueSummary) {
+function publishTileSensor(tile, mode, data, valueSummary, meta = {}) {
   const reg = getRegistry();
   if (!reg) return;
   try {
@@ -27,6 +27,22 @@ function publishTileSensor(tile, mode, data, valueSummary) {
       value: valueSummary,
       data,
       ok: true,
+      ...meta,
+    });
+  } catch { /* non-fatal */ }
+}
+
+function publishTileLatency(tile, mode, latencyMs) {
+  const reg = getRegistry();
+  if (!reg) return;
+  try {
+    const id = `tile.${tile.id}`;
+    const existing = reg.get(id);
+    if (!existing) return;
+    reg.publish({
+      id,
+      ts: existing.ts,
+      latencyMs,
     });
   } catch { /* non-fatal */ }
 }
@@ -590,6 +606,10 @@ function buildConnectionHeaders(connection) {
   return headers;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchEcowittData(connection) {
   const url = new URL('https://api.ecowitt.net/api/v3/device/real_time');
   url.searchParams.append('application_key', connection.secrets.applicationKey);
@@ -597,14 +617,23 @@ async function fetchEcowittData(connection) {
   url.searchParams.append('mac', connection.secrets.mac);
   url.searchParams.append('call_back', 'all');
 
-  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) {
-    throw new Error(`Weather API error: ${response.status} ${response.statusText}`);
-  }
+  let payload;
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) {
+        throw new Error(`Weather API error: ${response.status} ${response.statusText}`);
+      }
 
-  const payload = await response.json();
-  if (payload.code !== 0) {
-    throw new Error(`Weather API returned error code: ${payload.code}`);
+      payload = await response.json();
+      if (payload.code === 0) break;
+      throw new Error(`Weather API returned error code: ${payload.code}${payload.msg ? ` (${payload.msg})` : ''}`);
+    } catch (err) {
+      lastError = err;
+      if (attempt === 3) throw lastError;
+      await sleep(750 * attempt);
+    }
   }
 
   const data = payload.data || {};
@@ -966,12 +995,16 @@ class Home23TileService {
   }
 
   async getTileData(tileId) {
+    const requestStartedAt = Date.now();
     const tile = this.resolveTile(tileId);
     if (!tile) throw new Error(`Unknown tile: ${tileId}`);
     if (tile.kind !== 'custom') throw new Error(`Tile "${tileId}" is rendered client-side as a core tile`);
 
     const cached = this.getCachedTileData(tileId, tile.refreshMs);
-    if (cached) return cached;
+    if (cached) {
+      publishTileLatency(tile, tile.mode || 'generic', Date.now() - requestStartedAt);
+      return cached;
+    }
 
     const connection = this.resolveConnection(tile.connectionId);
     if (!connection) {
@@ -1085,6 +1118,7 @@ class Home23TileService {
     }
 
     this.setCachedTileData(tileId, tile.refreshMs, payload);
+    publishTileLatency(tile, tile.mode || 'generic', Date.now() - requestStartedAt);
     return {
       ...deepClone(payload),
       cache: { hit: false, expiresInMs: tile.refreshMs, refreshMs: tile.refreshMs },

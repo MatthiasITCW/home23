@@ -1,0 +1,8 @@
+{
+  "hasAgents": true,
+  "agentCount": 1,
+  "initialized": true,
+  "currentAgent": "Jerry",
+  "primaryAgent": "Jerry",
+  "scopeRegistryVersion": 1
+}

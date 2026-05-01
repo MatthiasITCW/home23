@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "tileId": "sauna-control",
+  "fetchedAt": "2026-04-28T12:00:00Z",
+  "content": {
+    "status": "idle",
+    "value": "142°F",
+    "subtitle": "Ready",
+    "metrics": [
+      {
+        "label": "door",
+        "value": "closed"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "start",
+      "label": "Start",
+      "method": "POST",
+      "fields": [
+        {
+          "id": "targetTempF",
+          "label": "Target",
+          "type": "number",
+          "defaultValue": 190,
+          "required": true
+        }
+      ]
+    }
+  ]
+}

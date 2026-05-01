@@ -145,6 +145,7 @@ test('GET /api/brains includes symlinked local run aliases', async () => {
     const brainsPayload = await (await fetch(`${baseUrl}/api/brains`)).json();
     assert.equal(brainsPayload.count, 1);
     assert.equal(brainsPayload.brains[0].name, 'maf-low-heart-rate');
+    assert.equal(brainsPayload.brains[0].sourceLabel, 'Cosmo Home23');
     assert.equal(brainsPayload.brains[0].path, path.join(localRunsPath, 'maf-low-heart-rate'));
 
     const detailResponse = await fetch(`${baseUrl}/api/brains/maf-low-heart-rate`);

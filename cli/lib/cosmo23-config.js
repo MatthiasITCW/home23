@@ -23,11 +23,18 @@ function loadJson(filePath) {
   catch { return {}; }
 }
 
+function getKnownLegacyBrainRoots(home23Root) {
+  return [
+    resolve(home23Root, '..', '..', 'cosmo-home_2.3', 'runs'),
+  ].filter(dir => existsSync(dir));
+}
+
 // Compute the brain-root set cosmo23's picker should see. Mirrors the logic in
 // cli/lib/evobrew-config.js so both pickers enumerate the same brains: every
 // home23 agent instance + any external roots the user has configured (evobrew
-// config, standalone cosmo2.3 config, env vars). cosmo23 scans each root one
-// level deep for state.json.gz, which matches `instances/<name>/brain/*`.
+// config, standalone cosmo2.3 config, env vars) plus known local legacy COSMO
+// roots. cosmo23 scans each root one level deep for state.json.gz, which matches
+// `instances/<name>/brain/*`.
 function computeBrainRoots(home23Root) {
   home23Root = resolve(home23Root);
   const instancesDir = join(home23Root, 'instances');
@@ -66,7 +73,7 @@ function computeBrainRoots(home23Root) {
     }
   }
 
-  const all = [...managed, ...external];
+  const all = [...managed, ...external, ...getKnownLegacyBrainRoots(home23Root)];
   const seen = new Set();
   const unique = [];
   for (const dir of all) {

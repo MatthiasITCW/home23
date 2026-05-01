@@ -14,6 +14,7 @@ const EMPTY_STATE_SUMMARY = Object.freeze({
   edges: null,
   hasStateSummary: false
 });
+const LOCAL_SOURCE_LABEL = 'Cosmo Home23';
 
 function sanitizeRunName(input) {
   const normalized = String(input || '')
@@ -214,7 +215,7 @@ async function inspectBrain(runPath, options = {}) {
   ]);
   const name = path.basename(runPath);
   const sourceType = options.sourceType || 'local';
-  const sourceLabel = options.sourceLabel || (sourceType === 'local' ? 'Local' : 'Reference');
+  const sourceLabel = options.sourceLabel || (sourceType === 'local' ? LOCAL_SOURCE_LABEL : 'Reference');
 
   return {
     id: buildBrainId(runPath),
@@ -326,7 +327,7 @@ async function listBrains(options) {
     }
   };
 
-  await scanDir(localRunsPath, 'local', 'Local');
+  await scanDir(localRunsPath, 'local', LOCAL_SOURCE_LABEL);
   for (const referenceRunsPath of referenceRunsPaths) {
     await scanDir(referenceRunsPath, 'reference', deriveSourceLabel(referenceRunsPath));
   }
@@ -409,7 +410,7 @@ async function importReferenceBrain(brain, localRunsPath) {
     'utf8'
   );
 
-  return inspectBrain(importedPath, { sourceType: 'local', sourceLabel: 'Local' });
+  return inspectBrain(importedPath, { sourceType: 'local', sourceLabel: LOCAL_SOURCE_LABEL });
 }
 
 module.exports = {

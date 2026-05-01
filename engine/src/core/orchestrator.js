@@ -24,6 +24,8 @@ const { MemoryGovernor } = require('../system/memory-governor');
 
 // Curator cycle (Step 20: Situational Awareness Engine)
 const { filterEligibleNodes, checkSurfaceFreshness, SURFACE_BUDGETS } = require('./curator-cycle');
+// Compaction + RECENT.md digest — closes the loop on Step 20's append-only curator
+const { compactSurface, generateRecentDigest, buildSurfaceFingerprints, objFingerprint } = require('./curator-llm-tools');
 const { buildTemporalContext } = require('./temporal-context');
 const { DiscoveryEngine } = require('../cognition/discovery-engine');
 const { ThinkingMachine } = require('../cognition/thinking-machine');
@@ -2612,6 +2614,22 @@ class Orchestrator {
           const brainDir = workspacePath ? path.join(workspacePath, '..', 'brain') : null;
 
           if (workspacePath && brainDir) {
+            // RECENT.md regeneration is independent of working memory —
+            // gated internally by mtime cadence (default 6h) so it only
+            // calls the LLM when the digest is actually stale.
+            try {
+              await generateRecentDigest({
+                workspacePath,
+                brainDir,
+                journal: this.journal || [],
+                agentName: process.env.HOME23_AGENT || process.env.INSTANCE_ID || 'agent',
+                config: this.config,
+                logger: this.logger,
+              });
+            } catch (digestErr) {
+              this.logger?.warn?.('📋 RECENT.md digest threw', { error: digestErr.message || String(digestErr) });
+            }
+
             const objectsPath = path.join(brainDir, 'memory-objects.json');
 
             if (fsSync.existsSync(objectsPath)) {
@@ -2660,17 +2678,49 @@ class Orchestrator {
 
                   let content = fsSync.readFileSync(surfacePath, 'utf-8');
                   const budget = SURFACE_BUDGETS[objs] || 3000;
+
+                  // If the surface is over budget the append branch below will
+                  // silently no-op and this cycle's working objects will never
+                  // land. Compact first (FIFO drop entries >21d, then LLM
+                  // rewrite if still over) so there's room.
+                  if (content.length > budget) {
+                    try {
+                      await compactSurface({
+                        surfacePath,
+                        budget,
+                        config: this.config,
+                        logger: this.logger,
+                      });
+                      content = fsSync.readFileSync(surfacePath, 'utf-8');
+                    } catch (compactErr) {
+                      this.logger?.warn?.(`📋 Surface compact failed for ${objs}`, {
+                        error: compactErr.message || String(compactErr),
+                      });
+                    }
+                  }
+
                   let added = 0;
-                  const seenTitles = new Set(); // track titles added in THIS cycle too
+                  // DEDUP fingerprints: (title, after-state) tuples parsed from
+                  // existing surface entries. Objects with a state_delta dedup
+                  // by exact (title, after) match — same title with a different
+                  // after-state is a state CHANGE and must land. Objects with
+                  // no state_delta fall back to the legacy substring-on-content
+                  // check so we don't duplicate facts already in the header.
+                  const { fingerprints } = buildSurfaceFingerprints(content);
+                  const seenFingerprints = new Set();
+                  const contentLowerFull = content.toLowerCase();
 
                   for (const obj of domainObjs) {
-                    const titleLower = obj.title.toLowerCase();
-                    // DEDUP: skip if this title is already on the surface OR already added this cycle
-                    if (content.toLowerCase().includes(titleLower) || seenTitles.has(titleLower)) {
+                    const fp = objFingerprint(obj);
+                    const hasStateDelta = !!obj.state_delta?.after?.state;
+                    const isDuplicate = hasStateDelta
+                      ? (fingerprints.has(fp) || seenFingerprints.has(fp))
+                      : (contentLowerFull.includes((obj.title || '').toLowerCase()) || seenFingerprints.has(fp));
+                    if (isDuplicate) {
                       processedIds.push(obj.memory_id);
                       continue;
                     }
-                    seenTitles.add(titleLower);
+                    seenFingerprints.add(fp);
 
                     const entry = `\n\n### ${obj.title}\n${obj.statement}${obj.state_delta ? `\n_Changed: ${obj.state_delta.before?.state || '?'} → ${obj.state_delta.after?.state || '?'} (${obj.state_delta.why || '?'})_` : ''}\n_Added: ${new Date().toISOString().split('T')[0]}_`;
 

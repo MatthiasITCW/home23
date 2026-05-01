@@ -58,6 +58,7 @@ const DEFAULT_CONFIG = {
   scoring: {
     signalMultipliers: {
       'observation-delta': 1.5,
+      'good-life':         1.8,
       'novelty':           1.2,
       'salience':          1.0,
       'anomaly':           1.0,
@@ -596,9 +597,10 @@ class DiscoveryEngine {
     }
 
     const importance = Math.max(0.1, Math.min(1, obs.confidence || 0.5));
+    const signal = obs.channelId === 'domain.good-life' ? 'good-life' : 'observation-delta';
     const candidate = this._makeCandidate({
       key: novelty.key || `observation:${obs.channelId}:${obs.sourceRef}`,
-      signal: 'observation-delta',
+      signal,
       clusterId: null,
       nodeIds: [],
       importance: Math.min(1, importance * (novelty.importanceMultiplier || 1)),
@@ -607,8 +609,8 @@ class DiscoveryEngine {
     // Attach the raw observation so DeepDive can access the payload.
     candidate.observation = obs;
     this._enqueue(candidate);
-    this.stats.candidatesByeSignal['observation-delta'] =
-      (this.stats.candidatesByeSignal['observation-delta'] || 0) + 1;
+    this.stats.candidatesByeSignal[signal] =
+      (this.stats.candidatesByeSignal[signal] || 0) + 1;
     this.stats.totalCandidatesProduced += 1;
     return true;
   }
@@ -713,6 +715,16 @@ function semanticObservationBucket(obs) {
     if (freePct <= 10) return 'memory:low';
     if (freePct <= 15) return 'memory:tight';
     return 'memory:normal';
+  }
+
+  if (obs.channelId === 'domain.good-life') {
+    const mode = payload?.policy?.mode || 'observe';
+    const lanes = payload?.lanes || {};
+    const critical = Object.entries(lanes).find(([, v]) => v?.status === 'critical');
+    const strained = Object.entries(lanes).find(([, v]) => v?.status === 'strained');
+    if (critical) return `good-life:${mode}:critical:${critical[0]}`;
+    if (strained) return `good-life:${mode}:strained:${strained[0]}`;
+    return `good-life:${mode}:steady`;
   }
 
   return null;

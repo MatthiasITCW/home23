@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { GoodLifeObjective } = require('../../../engine/src/good-life/objective.js');
+
+test('GoodLifeObjective treats critical evidence as repair policy', () => {
+  const objective = new GoodLifeObjective();
+  const evaluation = objective.evaluate({
+    now: '2026-05-01T14:00:00.000Z',
+    liveProblems: { open: 1, chronic: 0 },
+    crystallization: { lastReceiptAt: '2026-05-01T13:59:00.000Z' },
+    memory: { nodes: 10, edges: 20 },
+  });
+
+  assert.equal(evaluation.schema, 'home23.good-life.v1');
+  assert.equal(evaluation.lanes.viability.status, 'critical');
+  assert.equal(evaluation.policy.mode, 'repair');
+  assert.equal(evaluation.policy.actionCard.intent, 'repair');
+  assert.equal(evaluation.policy.actionCard.reversible, true);
+});
+
+test('GoodLifeObjective selects learning progress when no drift is critical', () => {
+  const objective = new GoodLifeObjective();
+  const evaluation = objective.evaluate({
+    now: '2026-05-01T14:00:00.000Z',
+    liveProblems: { open: 0, chronic: 0 },
+    crystallization: { lastReceiptAt: '2026-05-01T13:59:00.000Z' },
+    memory: { nodes: 100, edges: 180 },
+    discovery: { queueDepth: 4 },
+  });
+
+  assert.equal(evaluation.lanes.viability.status, 'healthy');
+  assert.equal(evaluation.lanes.development.status, 'healthy');
+  assert.equal(evaluation.policy.mode, 'learn');
+  assert.match(evaluation.summary, /learn/);
+});
+
+test('GoodLifeObjective accepts numeric useful-output timestamps', () => {
+  const objective = new GoodLifeObjective();
+  const evaluation = objective.evaluate({
+    now: '2026-05-01T14:00:00.000Z',
+    liveProblems: { open: 0, chronic: 0 },
+    crystallization: { lastReceiptAt: '2026-05-01T13:59:00.000Z' },
+    memory: { nodes: 100, edges: 180 },
+    publish: { lastUsefulOutputAt: Date.parse('2026-04-30T13:00:00.000Z') },
+  });
+
+  assert.equal(evaluation.lanes.usefulness.status, 'strained');
+  assert.equal(evaluation.policy.mode, 'help');
+});

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://home23.local/contracts/chat.schema.json",
+  "title": "Home23 Chat Bridge Contracts",
+  "$defs": {
+    "startTurnResponse": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["turn_id"],
+      "properties": {
+        "turn_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "turnEnvelope": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "turn_id", "chat_id", "status", "role", "started_at"],
+      "properties": {
+        "type": { "type": "string" },
+        "turn_id": { "type": "string" },
+        "chat_id": { "type": "string" },
+        "status": { "type": "string" },
+        "role": { "type": "string" },
+        "started_at": { "type": "string" },
+        "ended_at": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "stop_reason": { "type": ["string", "null"] },
+        "error": { "type": ["string", "null"] },
+        "last_seq": { "type": ["integer", "null"] }
+      }
+    },
+    "turnEvent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "turn_id", "seq", "ts", "kind", "data"],
+      "properties": {
+        "type": { "type": "string" },
+        "turn_id": { "type": "string" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "ts": { "type": "string" },
+        "kind": { "type": "string" },
+        "data": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["type"],
+          "properties": {
+            "type": { "type": "string" },
+            "chunk": { "type": ["string", "null"] },
+            "content": { "type": ["string", "null"] },
+            "tool": { "type": ["string", "null"] },
+            "args": {},
+            "result": { "type": ["string", "null"] },
+            "success": { "type": ["boolean", "null"] },
+            "mediaType": { "type": ["string", "null"] },
+            "path": { "type": ["string", "null"] },
+            "caption": { "type": ["string", "null"] },
+            "task": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "pendingTurnsResponse": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["pending"],
+      "properties": {
+        "pending": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/turnEnvelope" }
+        }
+      }
+    },
+    "conversation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "agent", "updatedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "agent": { "type": "string" },
+        "title": { "type": ["string", "null"] },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "modelsResponse": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["models"],
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["alias", "provider", "model"],
+            "properties": {
+              "alias": { "type": "string" },
+              "provider": { "type": "string" },
+              "model": { "type": "string" }
+            }
+          }
+        },
+        "defaultModel": { "type": ["string", "null"] },
+        "defaultProvider": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

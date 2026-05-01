@@ -36,25 +36,25 @@ dashboard:
         size: third
       - tileId: outside-weather
         enabled: true
-        size: half
+        size: third
       - tileId: sauna-control
         enabled: true
-        size: half
+        size: third
       - tileId: pool-screenlogic
         enabled: true
-        size: half
-      - tileId: system-summary
-        enabled: true
-        size: full
+        size: third
       - tileId: brain-log
         enabled: true
-        size: half
+        size: third
+      - tileId: system-summary
+        enabled: true
+        size: third
       - tileId: dream-log
         enabled: true
         size: half
       - tileId: feeder
         enabled: true
-        size: full
+        size: half
     customTiles:
       - id: outside-weather
         kind: custom
@@ -110,7 +110,7 @@ dashboard:
                 path: chlorinator.stateText
           actions:
             - id: lights-on
-              label: On
+              label: 'On'
               method: POST
               path: /circuits/501
               confirmationText: Turn pool lights on?
@@ -118,7 +118,7 @@ dashboard:
               bodyTemplate:
                 state: 1
             - id: lights-off
-              label: Off
+              label: 'Off'
               method: POST
               path: /circuits/501
               confirmationText: Turn pool lights off?
@@ -275,6 +275,9 @@ osEngine:
           enabled: true
         weather:
           enabled: false
+        goodLife:
+          enabled: true
+          poll: 5m
     build:
       enabled: true
     work:
@@ -296,6 +299,7 @@ osEngine:
       work_event: 0.9
       neighbor_gossip: 0.7
       zero_context_audit: 0.2
+      good_life: 0.88
   decay:
     worker:
       cadence: 30m

@@ -761,6 +761,25 @@ class ExecutionBaseAgent extends BaseAgent {
     await this.writeAuditTrail();
     await this.reportProgress(100, 'Execution complete');
 
+    // HOME23 PATCH — Write `.complete` marker so dashboard /api/deliverables
+    // reports isComplete:true. Without this, single-instance runs (cluster
+    // disabled, the default) never get a marker — agent-executor's
+    // ensureManifestAndCompletion only fires when clusterStateStore is set.
+    if (this._outputDir) {
+      try {
+        await this.writeCompletionMarker(this._outputDir, {
+          fileCount: this.totalFilesCreated || 0,
+          totalSize: this.totalBytesWritten || 0,
+          commandsRun: this.totalCommandsRun || 0,
+          iterations: iteration
+        });
+      } catch (markerErr) {
+        this.logger?.warn?.('Failed to write completion marker (non-fatal)', {
+          error: markerErr.message
+        });
+      }
+    }
+
     return {
       success: true,
       iterations: iteration,

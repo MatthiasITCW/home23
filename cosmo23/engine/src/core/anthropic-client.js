@@ -829,6 +829,13 @@ class AnthropicClient {
    */
   _getModelFromOptions(options) {
     const requestedModel = options.model || 'gpt-5.2';
+    // HOME23 PATCH — non-Anthropic providers (e.g. MiniMax via the
+    // Anthropic-compatible endpoint) reuse this client class but must NOT
+    // be silently rewritten to a Claude model. Pass the requested model
+    // through unchanged for any providerId other than 'anthropic'.
+    if (this.providerId && this.providerId !== 'anthropic') {
+      return requestedModel;
+    }
     // If already a Claude model, use it directly
     if (requestedModel.startsWith('claude-')) {
       return requestedModel;

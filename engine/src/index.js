@@ -910,6 +910,8 @@ async function main() {
       const { HealthChannel }   = await import('./channels/domain/health-channel.js');
       const { SaunaChannel }    = await import('./channels/domain/sauna-channel.js');
       const { WeatherChannel }  = await import('./channels/domain/weather-channel.js');
+      const { GoodLifeChannel } = await import('./channels/domain/good-life-channel.js');
+      const { buildGoodLifeSnapshot } = require('./good-life/snapshot.js');
       if (readers.pressure?.path) {
         channelBus.register(new PressureChannel({ path: expandHome(readers.pressure.path) }));
         registered.push('domain.pressure');
@@ -926,6 +928,24 @@ async function main() {
         // Weather fetcher is agent-specific; default to no-op until plumbed.
         channelBus.register(new WeatherChannel({ intervalMs: 5 * 60 * 1000 }));
         registered.push('domain.weather');
+      }
+      if (readers.goodLife?.enabled) {
+        const goodLifeWorkspacePath = process.env.COSMO_WORKSPACE_PATH
+          ? path.resolve(process.env.COSMO_WORKSPACE_PATH)
+          : path.join(path.dirname(runtimeRoot), 'workspace');
+        channelBus.register(new GoodLifeChannel({
+          intervalMs: parseDurMs(readers.goodLife.poll, 5 * 60 * 1000),
+          brainDir: runtimeRoot,
+          logger,
+          getSnapshot: () => buildGoodLifeSnapshot({
+            runtimeRoot,
+            workspacePath: goodLifeWorkspacePath,
+            orchestrator,
+            memory,
+            goals,
+          }),
+        }));
+        registered.push('domain.good-life');
       }
     }
 

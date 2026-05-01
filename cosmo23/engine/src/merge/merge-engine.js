@@ -579,13 +579,29 @@ function formatNumber(num) {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+function parseEdgeEndpoints(edge) {
+  // HOME23 PATCH — merged brains use string node IDs, so preserve endpoint
+  // identity instead of coercing key-based edges through Number().
+  if (edge.key && typeof edge.key === 'string') {
+    const [from, to] = edge.key.split('->');
+    return [from, to];
+  }
+  if (edge.source !== undefined && edge.target !== undefined) {
+    return [edge.source, edge.target];
+  }
+  return [undefined, undefined];
+}
+
 // ============================================================================
 // Progress Reporter
 // ============================================================================
 
 class ProgressReporter {
-  constructor(logger) {
+  constructor(logger, onProgress = null) {
     this.logger = logger;
+    // HOME23 PATCH — Hub merges run inside the COSMO23 API process; expose
+    // progress events so the UI does not look dead during long merges.
+    this.onProgress = typeof onProgress === 'function' ? onProgress : null;
     this.phases = [
       'Discovering runs',
       'Loading states',
@@ -602,11 +618,24 @@ class ProgressReporter {
     this.startTime = Date.now();
   }
 
+  emit(event) {
+    if (!this.onProgress) return;
+    try {
+      this.onProgress(event);
+    } catch (error) {
+      this.logger.warn(`Progress callback failed: ${error.message}`);
+    }
+  }
+
   startPhase(phaseIndex, message = null) {
     this.currentPhase = phaseIndex;
     this.phaseProgress = 0;
     const phaseName = this.phases[phaseIndex] || 'Processing';
     this.logger.info(`\n[${ phaseIndex + 1}/${this.phases.length}] ${message || phaseName}...`);
+    this.emit({
+      phase: message || phaseName,
+      progress: phaseIndex / this.phases.length
+    });
   }
 
   updateProgress(current, total, details = '') {
@@ -617,6 +646,10 @@ class ProgressReporter {
     if (current === total) {
       process.stdout.write('\n');
     }
+    this.emit({
+      progress: (this.currentPhase + this.phaseProgress) / this.phases.length,
+      message: details
+    });
   }
 
   renderProgressBar(current, total, width = 40) {
@@ -628,6 +661,11 @@ class ProgressReporter {
   complete() {
     const elapsed = this.logger.elapsed();
     this.logger.info(`\n✓ Merge completed successfully in ${elapsed}`);
+    this.emit({
+      phase: 'Merge completed',
+      progress: 1,
+      message: `Completed in ${elapsed}`
+    });
   }
 }
 
@@ -834,10 +872,11 @@ class ValidationEngine {
     const nodeIds = new Set();
     const duplicateIds = [];
     for (const node of mergedState.memory?.nodes || []) {
-      if (nodeIds.has(node.id)) {
+      const nodeId = String(node.id);
+      if (nodeIds.has(nodeId)) {
         duplicateIds.push(node.id);
       }
-      nodeIds.add(node.id);
+      nodeIds.add(nodeId);
     }
     if (duplicateIds.length > 0) {
       errors.push(`Duplicate node IDs found: ${duplicateIds.slice(0, 5).join(', ')}`);
@@ -846,18 +885,13 @@ class ValidationEngine {
     // Check edges reference valid nodes
     const invalidEdges = [];
     for (const edge of mergedState.memory?.edges || []) {
-      let from, to;
-      if (edge.key) {
-        [from, to] = edge.key.split('->').map(Number);
-      } else if (edge.source !== undefined && edge.target !== undefined) {
-        from = edge.source;
-        to = edge.target;
-      } else {
+      const [from, to] = parseEdgeEndpoints(edge);
+      if (from === undefined || to === undefined) {
         invalidEdges.push('unknown_format');
         continue;
       }
 
-      if (!nodeIds.has(from) || !nodeIds.has(to)) {
+      if (!nodeIds.has(String(from)) || !nodeIds.has(String(to))) {
         invalidEdges.push(`${from}->${to}`);
       }
     }
@@ -1183,6 +1217,9 @@ class MemoryMerger {
       if (i % 10 === 0 || i === allNodes.length - 1) {
         progressReporter.updateProgress(i + 1, allNodes.length,
           `(${formatNumber(duplicates.length)} duplicates found)`);
+        // HOME23 PATCH — yield between batches so the web server can flush
+        // SSE progress and answer health checks during large hub merges.
+        await new Promise(resolve => setImmediate(resolve));
       }
     }
 
@@ -1238,20 +1275,12 @@ class MemoryMerger {
 
       // Count degree
       for (const edge of edges) {
-        let from, to;
-        if (edge.key) {
-          [from, to] = edge.key.split('->').map(Number);
-        } else if (edge.source !== undefined && edge.target !== undefined) {
-          from = edge.source;
-          to = edge.target;
-        } else {
-          continue;
-        }
+        const [from, to] = parseEdgeEndpoints(edge);
 
         if (from == null || to == null) continue;
 
-        const fromKey = `${runName}:${from}`;
-        const toKey = `${runName}:${to}`;
+        const fromKey = `${runName}:${String(from)}`;
+        const toKey = `${runName}:${String(to)}`;
 
         if (degreeMap.has(fromKey)) {
           degreeMap.set(fromKey, degreeMap.get(fromKey) + 1);
@@ -1431,16 +1460,8 @@ class MemoryMerger {
       for (const edge of edges) {
         totalEdges++;
 
-        // Parse edge - handle both formats
-        let fromOld, toOld;
-        if (edge.key) {
-          // Format: {key: "1->2", ...}
-          [fromOld, toOld] = edge.key.split('->').map(Number);
-        } else if (edge.source !== undefined && edge.target !== undefined) {
-          // Format: {source: 1, target: 2, ...}
-          fromOld = edge.source;
-          toOld = edge.target;
-        } else {
+        const [fromOld, toOld] = parseEdgeEndpoints(edge);
+        if (fromOld === undefined || toOld === undefined) {
           // Unknown format, skip
           skippedEdges++;
           continue;
@@ -1453,8 +1474,8 @@ class MemoryMerger {
         }
 
         // Map to new IDs using compound key to handle ID collisions
-        const fromKey = `${runName}:${fromOld}`;
-        const toKey = `${runName}:${toOld}`;
+        const fromKey = `${runName}:${String(fromOld)}`;
+        const toKey = `${runName}:${String(toOld)}`;
         const fromNew = idMapping.get(fromKey);
         const toNew = idMapping.get(toKey);
 
@@ -1697,7 +1718,7 @@ class MergeEngine {
     this.memoryMerger = new MemoryMerger(this.logger, options, this.domainRegistry);
     this.goalMerger = new GoalMerger(this.logger);
     this.journalMerger = new JournalMerger(this.logger, options);
-    this.progressReporter = new ProgressReporter(this.logger);
+    this.progressReporter = new ProgressReporter(this.logger, options.onProgress);
   }
 
   async execute(runNames, outputName) {
@@ -1846,13 +1867,15 @@ class MergeEngine {
         report,
         outputName,
         mergedState,
-        totalNodes: memoryResult.nodes?.size || Object.keys(memoryResult.nodes || {}).length || 0,
-        mergedNodes: memoryResult.mergedCount || 0,
-        duplicatesRemoved: memoryResult.duplicatesRemoved || 0,
-        deduplicationRate: memoryResult.deduplicationRate || 0,
-        totalEdges: memoryResult.edgeCount || 0,
-        mergedEdges: memoryResult.mergedEdgeCount || 0,
-        conflicts: memoryResult.conflictsPrevented || 0
+        totalNodes: loadedStates.reduce((sum, s) => sum + (s.state?.memory?.nodes?.length || 0), 0),
+        mergedNodes: memoryResult.nodes?.length || 0,
+        duplicatesRemoved: memoryResult.duplicates || 0,
+        deduplicationRate: memoryResult.nodes?.length
+          ? (memoryResult.duplicates || 0) / ((memoryResult.nodes.length || 0) + (memoryResult.duplicates || 0))
+          : 0,
+        totalEdges: loadedStates.reduce((sum, s) => sum + (s.state?.memory?.edges?.length || 0), 0),
+        mergedEdges: memoryResult.edges?.length || 0,
+        conflicts: memoryResult.confidenceReport?.conflictsPrevented || 0
       };
 
     } catch (error) {

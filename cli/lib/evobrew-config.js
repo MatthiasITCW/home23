@@ -27,6 +27,12 @@ function loadJson(filePath) {
   }
 }
 
+function getKnownLegacyBrainRoots(home23Root) {
+  return [
+    resolve(home23Root, '..', '..', 'cosmo-home_2.3', 'runs'),
+  ].filter(dir => existsSync(dir));
+}
+
 function loadExternalBrainDirectories(home23Root) {
   const configPaths = [
     join(homedir(), '.evobrew', 'config.json'),
@@ -55,7 +61,7 @@ function loadExternalBrainDirectories(home23Root) {
     .filter(Boolean)
     .map(dir => resolve(dir));
 
-  const allDirs = [...configuredDirs, ...envDirs];
+  const allDirs = [...configuredDirs, ...envDirs, ...getKnownLegacyBrainRoots(home23Root)];
   const uniqueDirs = [];
   const seen = new Set();
 

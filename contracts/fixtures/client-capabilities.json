@@ -1,0 +1,19 @@
+{
+  "contractVersion": "2026.04.28",
+  "minIOSBuild": 1,
+  "features": {
+    "multiAgent": true,
+    "selectedAgentChat": true,
+    "queryStreaming": true,
+    "saunaControl": true,
+    "pushRegistration": true,
+    "settingsControlPlane": true
+  },
+  "endpoints": {
+    "agents": "/home23/api/settings/agents",
+    "settingsStatus": "/home23/api/settings/status",
+    "settingsScope": "/home23/api/settings/scope",
+    "query": "/api/query",
+    "media": "/home23/api/media"
+  }
+}
