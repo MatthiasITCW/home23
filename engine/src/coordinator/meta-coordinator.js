@@ -1841,6 +1841,14 @@ ${deliverables.gaps.map(g => `- [${g.severity.toUpperCase()}] ${g.description}
     // Inject brain identity so the meta-coordinator knows what KIND of system it is
     // and what goal types are appropriate. Without this, it defaults to "dev AI" framing.
     const guidedFocus = this.fullConfig?.architecture?.roleSystem?.guidedFocus;
+    const configuredBlockedGoalTypes = Array.isArray(guidedFocus?.blockedGoalTypes)
+      ? guidedFocus.blockedGoalTypes.map(t => String(t).toLowerCase().replace(/-/g, '_'))
+      : ['code_creation', 'code_execution'];
+    const allGoalTypes = ['research', 'analysis', 'synthesis', 'reflection', 'insight_generation', 'topic_exploration', 'planning', 'integration', 'document_analysis', 'document_creation', 'quality_assurance', 'completion'];
+    const allowedGoalTypes = allGoalTypes.filter(type => !configuredBlockedGoalTypes.includes(type));
+    const blockedLine = configuredBlockedGoalTypes.length > 0
+      ? configuredBlockedGoalTypes.join(', ')
+      : '(none)';
     const brainIdentitySection = guidedFocus ? `
 BRAIN IDENTITY & OPERATING CONSTRAINTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1848,15 +1856,15 @@ Domain: ${guidedFocus.domain || 'general'}
 Context: ${guidedFocus.context || '(none)'}
 Execution Mode: ${guidedFocus.executionMode || 'autonomous'}
 
-⚠️ CRITICAL: This is an AMBIENT REFLECTION BRAIN, not a software development system.
-It does NOT write code, create files, or execute programs. It THINKS, REFLECTS, RESEARCHES, and SYNTHESIZES.
+⚠️ CRITICAL: This is an autonomous Home23 operating brain. Do not confuse "safe" with "passive."
+It researches, synthesizes, writes useful reports/documents, validates outputs, and closes loops when those agent types are enabled.
 
-ALLOWED goal types for this brain: research, analysis, synthesis, reflection, insight_generation, topic_exploration
-BLOCKED goal types (never create): code_creation, code_execution, document_creation, quality_assurance, completion
+ALLOWED goal types for this brain: ${allowedGoalTypes.join(', ')}
+BLOCKED goal types (never create): ${blockedLine}
 
-When you see "no deliverables created" — that is EXPECTED and CORRECT for this brain type.
-It is not a gap. It is not a failure. The brain's output is THOUGHTS and INSIGHTS, not files.
-Do NOT generate code_creation or document_creation goals. Generate research and synthesis goals instead.
+When you see "no deliverables created" after a task that calls for a report, document, QA pass, or completion check, treat that as a gap.
+Thoughts alone are not enough when the mission implies an artifact or verifier.
+Do not generate blocked goal types. Use document_creation, quality_assurance, and completion when they are allowed and the work calls for them.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : '';
 
@@ -2620,7 +2628,7 @@ ${report.strategicDecisions.reasoning ? `\`\`\`\n${report.strategicDecisions.rea
     // These types are appropriate for dev-environment COSMO, not family/reflection deployments.
     const blockedAgentTypes = (
       this.fullConfig?.architecture?.roleSystem?.guidedFocus?.blockedGoalTypes ||
-      ['code_creation', 'code_execution', 'document_creation', 'quality_assurance', 'completion']
+      ['code_creation', 'code_execution']
     );
 
     const filteredSpecs = urgentGoalSpecs.filter(spec => {

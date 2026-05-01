@@ -29,9 +29,6 @@ architecture:
       blockedGoalTypes:
         - code_creation
         - code_execution
-        - document_creation
-        - quality_assurance
-        - completion
     initialRoles:
       - id: curiosity
         prompt: >-
@@ -350,7 +347,7 @@ models:
   compiler: minimax-m2.7
   defaultReasoningEffort: low
   defaultMaxTokens: 4000
-  enableWebSearch: false
+  enableWebSearch: true
   enableExtendedReasoning: false
 providers:
   openai:
@@ -487,7 +484,7 @@ coordinator:
   useMemorySummaries: true
   extractiveSummarization: true
   qualityAssurance:
-    enabled: false
+    enabled: true
     mode: balanced
     minConfidence: 0.7
     autoRejectThreshold: 0.3
@@ -501,13 +498,13 @@ coordinator:
     exploration: 20
     document_analysis: 15
     consistency: 10
-    planning: 0
-    integration: 0
+    planning: 10
+    integration: 10
     code_creation: 0
     code_execution: 0
-    document_creation: 0
-    quality_assurance: 0
-    completion: 0
+    document_creation: 15
+    quality_assurance: 5
+    completion: 5
     specialized_binary: 0
   codeExecution:
     enabled: false
