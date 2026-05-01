@@ -43,6 +43,7 @@ const {
 // (INVESTIGATE/NOTIFY/TRIGGER) that get routed to agents, notifications, and
 // standing triggers so thoughts have real consequences.
 const { routeThoughtAction, stripActionTags, scrubToolArtifacts } = require('../cognition/thought-action-parser');
+const { classifyInertThought } = require('../cognition/hallucinated-tool-call-detector');
 const { executeAction } = require('../cognition/action-dispatcher');
 
 // Cycle tools: inline MCP-style tools that cognitive cycles can call mid-thought
@@ -2337,6 +2338,20 @@ class Orchestrator {
         thought.hypothesis = scrubToolArtifacts(thought.hypothesis);
       }
 
+      if (process.env.HOME23_HALLUCINATION_GATE_DISABLE !== '1') {
+        const inertReason = classifyInertThought(thought?.hypothesis);
+        if (inertReason) {
+          this.logger?.info?.('[hallucination-discard] inert thought text — discarded before storage', {
+            cycle: this.cycleCount,
+            role: role.id,
+            reason: inertReason,
+            preview: String(thought?.hypothesis || '').slice(0, 120)
+          });
+          this._hallucinationsDiscardedCount24h = (this._hallucinationsDiscardedCount24h || 0) + 1;
+          return;
+        }
+      }
+
       if (
         cycleTools &&
         this._thoughtLooksOperational(thought?.hypothesis) &&
@@ -2517,11 +2532,12 @@ class Orchestrator {
       // out cycle 2898's triple fake-tool-call as a canonical example.
       if (process.env.HOME23_HALLUCINATION_GATE_DISABLE !== '1') {
         try {
-          const { hasHallucinatedToolCall } = require('../cognition/hallucinated-tool-call-detector');
-          if (hasHallucinatedToolCall(thought.hypothesis)) {
+          const inertReason = classifyInertThought(thought.hypothesis);
+          if (inertReason) {
             this.logger?.info?.('[hallucination-discard] tool-call syntax in thought text — discarded', {
               cycle: this.cycleCount,
               role: role.id,
+              reason: inertReason,
               preview: String(thought.hypothesis || '').slice(0, 120)
             });
             this._hallucinationsDiscardedCount24h = (this._hallucinationsDiscardedCount24h || 0) + 1;
