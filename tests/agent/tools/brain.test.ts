@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { brainQueryTool, brainQueryExportTool } from '../../../src/agent/tools/brain.js';
+import { brainQueryTool, brainQueryExportTool, brainStatusTool } from '../../../src/agent/tools/brain.js';
 import type { ToolContext } from '../../../src/agent/types.js';
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -105,5 +105,56 @@ describe('brain_query_export', () => {
     assert.equal(capturedBody.answer, 'a');
     assert.equal(capturedBody.format, 'markdown');
     assert.deepEqual(capturedBody.metadata, { mode: 'full' });
+  });
+});
+
+describe('brain_status', () => {
+  it('uses /api/memory for graph counts instead of the projection-lite /api/state memory summary', async () => {
+    const calledUrls: string[] = [];
+    (globalThis as any).fetch = async (url: any) => {
+      calledUrls.push(String(url));
+      if (String(url).endsWith('/api/state')) {
+        return {
+          ok: true,
+          json: async () => ({
+            cycleCount: 6296,
+            thoughtCount: 7505,
+            oscillatorMode: 'focus',
+            projection: true,
+            memory: { nodes: 47825, edges: 0, clusters: 0 },
+          }),
+        } as unknown as Response;
+      }
+      if (String(url).endsWith('/api/memory')) {
+        return {
+          ok: true,
+          json: async () => ({
+            nodes: [
+              { id: 'a', cluster: 0 },
+              { id: 'b', cluster: 0 },
+              { id: 'c', cluster: 1 },
+              { id: 'd' },
+            ],
+            edges: [{ source: 'a', target: 'b' }, { source: 'b', target: 'c' }],
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected url ${url}`);
+    };
+
+    const result = await brainStatusTool.execute({}, makeCtx());
+    const status = JSON.parse(result.content);
+
+    assert.deepEqual(calledUrls, [
+      'http://localhost:5002/api/state',
+      'http://localhost:5002/api/memory',
+    ]);
+    assert.equal(status.memory.nodes, 4);
+    assert.equal(status.memory.edges, 2);
+    assert.equal(status.memory.clusters, 3);
+    assert.equal(status.memory.detectedClusters, 2);
+    assert.equal(status.memory.unclusteredNodes, 1);
+    assert.equal(status.memory.source, '/api/memory');
+    assert.deepEqual(status.stateProjectionMemory, { nodes: 47825, edges: 0, clusters: 0 });
   });
 });

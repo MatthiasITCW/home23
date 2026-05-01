@@ -5,6 +5,46 @@
 
 import type { ToolDefinition, ToolContext, ToolResult } from '../types.js';
 
+type MemoryGraphResponse = {
+  nodes?: Array<{ cluster?: number | string | null }>;
+  edges?: Array<unknown>;
+  _liveJournalCount?: number;
+};
+
+function summarizeMemoryGraphCounts(data: MemoryGraphResponse): {
+  totalNodes: number;
+  totalEdges: number;
+  clusterBuckets: number;
+  detectedClusters: number;
+  unclusteredNodes: number;
+  liveJournalCount?: number;
+} {
+  const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+  const edges = Array.isArray(data.edges) ? data.edges : [];
+  const clusterIds = new Set<string>();
+  let unclusteredNodes = 0;
+
+  for (const node of nodes) {
+    const cluster = node.cluster;
+    if (typeof cluster === 'number' && Number.isFinite(cluster)) {
+      clusterIds.add(String(cluster));
+    } else if (typeof cluster === 'string' && cluster.trim().length > 0) {
+      clusterIds.add(cluster.trim());
+    } else {
+      unclusteredNodes += 1;
+    }
+  }
+
+  return {
+    totalNodes: nodes.length,
+    totalEdges: edges.length,
+    clusterBuckets: clusterIds.size + (unclusteredNodes > 0 ? 1 : 0),
+    detectedClusters: clusterIds.size,
+    unclusteredNodes,
+    liveJournalCount: data._liveJournalCount,
+  };
+}
+
 export const brainSearchTool: ToolDefinition = {
   name: 'brain_search',
   description: 'Semantic search across brain memory nodes using embedding cosine similarity. Returns the most relevant nodes ranked by similarity score.',
@@ -359,7 +399,7 @@ export const brainSynthesizeTool: ToolDefinition = {
 
 export const brainStatusTool: ToolDefinition = {
   name: 'brain_status',
-  description: 'Get the current status of the COSMO brain — node count, cycle number, health.',
+  description: 'Get the current status of the COSMO brain — cycle, mode, node count, graph edge count, and health.',
   input_schema: {
     type: 'object',
     properties: {},
@@ -367,13 +407,72 @@ export const brainStatusTool: ToolDefinition = {
 
   async execute(_input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     try {
-      const url = `http://localhost:${ctx.enginePort}/api/state`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      const stateUrl = `http://localhost:${ctx.enginePort}/api/state`;
+      const stateRes = await fetch(stateUrl, { signal: AbortSignal.timeout(60_000) });
 
-      if (!res.ok) return { content: `Brain status check failed: HTTP ${res.status}`, is_error: true };
+      if (!stateRes.ok) return { content: `Brain status check failed: HTTP ${stateRes.status}`, is_error: true };
 
-      const data = await res.json() as Record<string, unknown>;
-      return { content: JSON.stringify(data, null, 2).slice(0, 4000) };
+      const state = await stateRes.json() as Record<string, unknown>;
+      let graphSummary: ReturnType<typeof summarizeMemoryGraphCounts> | null = null;
+      let graphError: string | null = null;
+
+      try {
+        const graphUrl = `http://localhost:${ctx.enginePort}/api/memory`;
+        const graphRes = await fetch(graphUrl, { signal: AbortSignal.timeout(120_000) });
+        if (!graphRes.ok) {
+          graphError = `HTTP ${graphRes.status}`;
+        } else {
+          graphSummary = summarizeMemoryGraphCounts(await graphRes.json() as MemoryGraphResponse);
+        }
+      } catch (err) {
+        graphError = err instanceof Error ? err.message : String(err);
+      }
+
+      const projectedMemory = state.memory && typeof state.memory === 'object'
+        ? state.memory as Record<string, unknown>
+        : {};
+      const projectionNodes = typeof projectedMemory.nodes === 'number' ? projectedMemory.nodes : 0;
+      const projectionEdges = typeof projectedMemory.edges === 'number' ? projectedMemory.edges : 0;
+      const projectionClusters = typeof projectedMemory.clusters === 'number' ? projectedMemory.clusters : 0;
+
+      const status = {
+        ok: true,
+        cycleCount: state.cycleCount ?? null,
+        thoughtCount: state.thoughtCount ?? null,
+        oscillatorMode: state.oscillatorMode ?? null,
+        cognitiveState: state.cognitiveState ?? null,
+        temporal: state.temporal ?? null,
+        lastThoughtAt: state.lastThoughtAt ?? null,
+        lastUpdated: state.lastUpdated ?? null,
+        projection: state.projection === true,
+        memory: graphSummary
+          ? {
+            nodes: graphSummary.totalNodes,
+            edges: graphSummary.totalEdges,
+            clusters: graphSummary.clusterBuckets,
+            detectedClusters: graphSummary.detectedClusters,
+            unclusteredNodes: graphSummary.unclusteredNodes,
+            source: '/api/memory',
+          }
+          : {
+            nodes: projectionNodes,
+            edges: projectionEdges,
+            clusters: projectionClusters,
+            source: '/api/state projection',
+          },
+        graphEndpoint: graphSummary
+          ? {
+            ok: true,
+            liveJournalCount: graphSummary.liveJournalCount ?? null,
+          }
+          : {
+            ok: false,
+            error: graphError ?? 'unavailable',
+          },
+        stateProjectionMemory: state.memory ?? null,
+      };
+
+      return { content: JSON.stringify(status, null, 2).slice(0, 4000) };
     } catch {
       return { content: 'Brain status unavailable — engine may not be running.', is_error: true };
     }
