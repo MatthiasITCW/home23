@@ -85,6 +85,11 @@ class LiveProblemStore {
     }
   }
 
+  _touch(p, now = new Date().toISOString()) {
+    if (p) p.updatedAt = now;
+    return now;
+  }
+
   all() {
     return [...this.problems.values()];
   }
@@ -102,11 +107,13 @@ class LiveProblemStore {
     const existing = this.problems.get(problem.id);
     const now = new Date().toISOString();
     if (existing) {
+      this._touch(existing, now);
       // Preserve runtime state fields when caller re-declares spec
       this.problems.set(problem.id, {
         ...existing,
         ...problem,
         firstSeenAt: existing.firstSeenAt || now,
+        updatedAt: now,
       });
     } else {
       this.problems.set(problem.id, {
@@ -117,6 +124,7 @@ class LiveProblemStore {
         stepIndex: 0,
         remediationLog: [],
         escalated: false,
+        updatedAt: now,
         ...problem,
       });
     }
@@ -134,6 +142,7 @@ class LiveProblemStore {
     const p = this.problems.get(id);
     if (!p) return;
     const now = new Date().toISOString();
+    this._touch(p, now);
     p.lastCheckedAt = now;
     p.lastResult = { ...result, at: now };
     if (result.ok) {
@@ -167,6 +176,7 @@ class LiveProblemStore {
     const p = this.problems.get(id);
     if (!p) return;
     const now = new Date().toISOString();
+    this._touch(p, now);
     p.lastRemediationAt = now;
     p.remediationLog = (p.remediationLog || []).concat([{ ...entry, at: now }]);
     // Keep log bounded
@@ -177,6 +187,7 @@ class LiveProblemStore {
   advanceRemediationStep(id) {
     const p = this.problems.get(id);
     if (!p) return;
+    this._touch(p);
     p.stepIndex = (p.stepIndex || 0) + 1;
     // Reset cooldown marker — a fresh step shouldn't inherit the previous
     // step's timestamp. Without this, advancing from step 0 (just tried) to
@@ -188,7 +199,8 @@ class LiveProblemStore {
   recordDispatch(id, { turnId } = {}) {
     const p = this.problems.get(id);
     if (!p) return;
-    p.dispatchedAt = new Date().toISOString();
+    const now = this._touch(p);
+    p.dispatchedAt = now;
     p.dispatchedTurnId = turnId || null;
     this.save();
   }
@@ -196,6 +208,7 @@ class LiveProblemStore {
   clearDispatch(id) {
     const p = this.problems.get(id);
     if (!p) return;
+    this._touch(p);
     delete p.dispatchedAt;
     delete p.dispatchedTurnId;
     this.save();
@@ -204,15 +217,17 @@ class LiveProblemStore {
   markEscalated(id) {
     const p = this.problems.get(id);
     if (!p) return;
+    const now = this._touch(p);
     p.escalated = true;
-    p.escalatedAt = new Date().toISOString();
+    p.escalatedAt = now;
     this.save();
   }
 
   markMentionedInPulse(id) {
     const p = this.problems.get(id);
     if (!p) return;
-    p.lastMentionedInPulseAt = new Date().toISOString();
+    const now = this._touch(p);
+    p.lastMentionedInPulseAt = now;
     this.save();
   }
 

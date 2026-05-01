@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const { LiveProblemStore } = require('../../../engine/src/live-problems/store.js');
 const { seedAll } = require('../../../engine/src/live-problems/seed.js');
 const { isRestartableProcess } = require('../../../engine/src/live-problems/remediators.js');
-const { classifyDispatchRecipe } = require('../../../engine/src/live-problems/loop.js');
+const { classifyDispatchRecipe, shouldAdvanceAfterIneffectiveSuccess } = require('../../../engine/src/live-problems/loop.js');
 const { runVerifier } = require('../../../engine/src/live-problems/verifiers.js');
 
 test('seedAll prunes obsolete generic agent live-problem seeds', () => {
@@ -58,6 +58,62 @@ test('resolved verification clears stale escalation state', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('store stamps updatedAt on verification and remediation transitions', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
+  try {
+    const store = new LiveProblemStore({ brainDir: dir });
+    store.upsert({
+      id: 'example',
+      claim: 'example problem',
+      verifier: { type: 'file_exists', args: { path: '/tmp/nope' } },
+      remediation: [{ type: 'fetch_url', args: { url: 'http://localhost' } }],
+    });
+
+    const first = store.get('example').updatedAt;
+    assert.match(first, /^\d{4}-\d{2}-\d{2}T/);
+
+    store.recordVerification('example', { ok: false, detail: 'still broken' });
+    const afterVerify = store.get('example').updatedAt;
+    assert.notEqual(afterVerify, undefined);
+
+    store.recordRemediation('example', { step: 0, type: 'fetch_url', outcome: 'success', detail: '200' });
+    const afterRemediation = store.get('example').updatedAt;
+    assert.notEqual(afterRemediation, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('successful but ineffective remediation advances after max attempts', () => {
+  const p = {
+    id: 'example',
+    state: 'open',
+    openedAt: '2026-05-01T00:00:00.000Z',
+    lastCheckedAt: '2026-05-01T00:02:00.000Z',
+    stepIndex: 0,
+    remediationLog: [{
+      step: 0,
+      type: 'pm2_restart',
+      outcome: 'success',
+      detail: 'restarted home23-jerry',
+      at: '2026-05-01T00:01:00.000Z',
+    }],
+  };
+
+  assert.equal(
+    shouldAdvanceAfterIneffectiveSuccess(p, { type: 'pm2_restart', args: { name: 'home23-jerry' } }),
+    true,
+  );
+  assert.equal(
+    shouldAdvanceAfterIneffectiveSuccess(p, { type: 'pm2_restart', maxSuccessAttempts: 2 }),
+    false,
+  );
+  assert.equal(
+    shouldAdvanceAfterIneffectiveSuccess(p, { type: 'dispatch_to_agent' }),
+    false,
+  );
 });
 
 test('completed unknown diagnostic advances instead of looping forever', () => {

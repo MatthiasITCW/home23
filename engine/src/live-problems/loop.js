@@ -169,6 +169,23 @@ class LiveProblemsLoop {
       return;
     }
 
+    // A rigid remediation can succeed mechanically while failing to change
+    // reality. Example: a cleanup/restart command exits 0, but the verifier is
+    // still false on the next tick. Advance instead of repeating the same
+    // ineffective success forever.
+    if (shouldAdvanceAfterIneffectiveSuccess(p, step)) {
+      const limit = getSuccessAttemptLimit(step);
+      this.logger.info?.(`[live-problems] ${p.id}: step ${p.stepIndex} made no progress after ${limit} successful attempt(s), advancing`);
+      this.store.recordRemediation(p.id, {
+        step: p.stepIndex,
+        type: step.type,
+        outcome: 'failed',
+        detail: `no verifier progress after ${limit} successful ${step.type} attempt(s)`,
+      });
+      this.store.advanceRemediationStep(p.id);
+      return;
+    }
+
     // ── Serial Tier-3 lock: at most one dispatch_to_agent in flight across
     //    the whole store. If this problem is waiting to dispatch but another
     //    is already in progress, skip this tick. (Keeps it simple; agent can
@@ -266,4 +283,38 @@ function summarizeRemediation(entries) {
   return parts.join(' · ');
 }
 
-module.exports = { LiveProblemsLoop, DEFAULT_INTERVAL_MS, classifyDispatchRecipe };
+function getSuccessAttemptLimit(step) {
+  const raw = step?.maxSuccessAttempts ?? step?.maxAttempts;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  return 1;
+}
+
+function shouldAdvanceAfterIneffectiveSuccess(problem, step) {
+  if (!problem || !step) return false;
+  if (step.type === 'dispatch_to_agent' || step.type === 'notify_jtr') return false;
+  const stepIndex = problem.stepIndex || 0;
+  const openedAt = Date.parse(problem.openedAt || problem.firstSeenAt || 0) || 0;
+  const lastCheckedAt = Date.parse(problem.lastCheckedAt || 0) || 0;
+  if (!lastCheckedAt) return false;
+
+  const successes = (problem.remediationLog || []).filter((entry) => {
+    if (!entry || entry.step !== stepIndex || entry.type !== step.type || entry.outcome !== 'success') {
+      return false;
+    }
+    const at = Date.parse(entry.at || 0) || 0;
+    return at >= openedAt && at <= lastCheckedAt;
+  });
+
+  if (successes.length < getSuccessAttemptLimit(step)) return false;
+
+  const lastSuccessAt = Date.parse(successes[successes.length - 1]?.at || 0) || 0;
+  return lastSuccessAt <= lastCheckedAt;
+}
+
+module.exports = {
+  LiveProblemsLoop,
+  DEFAULT_INTERVAL_MS,
+  classifyDispatchRecipe,
+  shouldAdvanceAfterIneffectiveSuccess,
+};

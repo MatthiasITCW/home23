@@ -215,12 +215,25 @@ Style: substantive, connected, honest. No preamble. No action tags. No "I notice
     const seedIdSet = new Set(candidate.nodeIds || []);
     const seedNodes = neighborhood.nodes.filter(n => seedIdSet.has(n.id));
     const peerNodes = neighborhood.nodes.filter(n => !seedIdSet.has(n.id));
+    const observation = candidate.observation || null;
+
+    const observationBlock = observation
+      ? `## Verified observation to think about
+Channel: ${observation.channelId || 'unknown'}
+Source: ${observation.sourceRef || 'unknown'}
+Trace: ${observation.traceId || 'unknown'}
+Flag: ${observation.flag || 'UNKNOWN'} · confidence: ${typeof observation.confidence === 'number' ? observation.confidence.toFixed(2) : '?'}
+Payload:
+${formatObservationPayload(observation.payload)}`
+      : '';
 
     const seedBlock = seedNodes.length > 0
       ? `## Material to think about
 ${seedNodes.map(n => `**[${n.id}${n.cluster != null ? ` · cluster ${n.cluster}` : ''}${n.tag ? ` · ${n.tag}` : ''}]** ${(n.concept || '').slice(0, 600)}`).join('\n\n')}`
       : `## Material to think about
-(no node content retrievable for ids: ${(candidate.nodeIds || []).slice(0, 10).join(', ') || 'none'})`;
+${observation
+  ? '(no graph node content attached; use the verified observation above as the primary material)'
+  : `(no node content retrievable for ids: ${(candidate.nodeIds || []).slice(0, 10).join(', ') || 'none'})`}`;
 
     const peerBlock = peerNodes.length > 0
       ? `## Related context (${peerNodes.length} nearby nodes)
@@ -254,7 +267,7 @@ ${(priorPass.critique?.gaps || []).map(g => `- ${g}`).join('\n') || '(none)'}
 
 Address these gaps concretely. If the prior thought was drifting into meta-commentary about graph topology rather than engaging with jtr's actual content, re-ground on the material above. If they expose that the thought is actually restatement or shallow, say so.` : '';
 
-    const input = [seedBlock, peerBlock, temporalBlock, conversationBlock, revisionBlock, discoveryFooter]
+    const input = [observationBlock, seedBlock, peerBlock, temporalBlock, conversationBlock, revisionBlock, discoveryFooter]
       .filter(Boolean)
       .join('\n\n') + (isRevision
         ? '\n\nThink again — addressing the gaps above. Focus on the content, not the discovery machinery.'
@@ -281,6 +294,16 @@ function humanDuration(ms) {
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
   if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)}h`;
   return `${Math.round(ms / 86_400_000)}d`;
+}
+
+function formatObservationPayload(payload) {
+  if (payload == null) return '(empty)';
+  if (typeof payload === 'string') return payload.slice(0, 1800);
+  try {
+    return JSON.stringify(payload, null, 2).slice(0, 1800);
+  } catch {
+    return String(payload).slice(0, 1800);
+  }
 }
 
 module.exports = { DeepDive };
