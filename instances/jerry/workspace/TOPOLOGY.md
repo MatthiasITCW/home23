@@ -2,7 +2,7 @@
 
 ## Services & Ports (jerry)
 - 5001: Engine WebSocket (home23-jerry)
-- 5002: Dashboard HTTP (home23-jerry-dash)
+- 5002: Dashboard HTTP/API (home23-jerry-dash), including `/home23`, `/api/live-problems`, `/api/good-life`
 - 5003: MCP Server (home23-jerry embedded)
 - 5004: Evobrew Bridge (home23-jerry-harness)
 - 3415: Evobrew IDE (home23-evobrew shared)
@@ -37,6 +37,8 @@ All relative paths under project root.
 - APNs key: `~/secrets/AuthKey_W2N4N6UGYS.p8`
 
 ## Recent Changes & Non-obvious Facts
+- Good Life governance is live as of 2026-05-01. Runtime files live under `engine/src/good-life/`; durable brain files are `instances/jerry/brain/good-life-state.json`, `good-life-ledger.jsonl`, `good-life-commitments.json`, and `good-life-trends-current.json`.
+- Good Life telemetry is engine governance evidence, not personal diagnosis input. It should route to agenda/MotorCortex/sleep-wake decisions and dashboard evidence.
 - Port 8090 now runs Home23 Dashboard (Node.js/Express, pm2: home23-dashboard). Replaced Python docs HTTP server on 2026-04-14.
 - Brain service at localhost:5002 does **not** expose `/health`. Verify correct health endpoint for monitoring.
 - Agent operates with reduced context awareness if brain is unavailable; core functions (tools, research, shell, web) still work.

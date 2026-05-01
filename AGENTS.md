@@ -27,9 +27,37 @@ curl -s http://localhost:43210/api/status | python3 -c "import sys,json; d=json.
 
 ## Priority Work
 
-No pressing priority. The recent major work is shipped and verified. Ask jtr what's next.
+Good Life autonomy is the current first-class direction for the Home23 engine loop. Treat it as live engine governance, not research theater and not COSMO23 work. The immediate remaining operational issue is the one open live problem: diagnose the host CPU/contention signal that may explain catalog-refresh / heartbeat / Pi-health regressions.
 
 ### Recent completions (most recent first)
+
+#### Done: Good Life Governance Surfaces + Routing Fix (2026-05-01)
+
+Good Life is now operational inside the Home23 engine loop. The PDF proposal at `/Users/jtr/_JTR23_/cosmo-home_2.3/engine/Proposal_ A Self-Reflective “Good Life” Objective for COSMO.pdf` was digested as doctrine, but implementation belongs here in Home23, not COSMO23.
+
+- `engine/src/good-life/objective.js` — lane model: viability, continuity, usefulness, development, coherence, friction, recovery; policy modes repair/recover/help/learn/play/rest/ask/observe; bounded action card.
+- `engine/src/good-life/regulator.js` — routes Good Life repair/recover/help policies into agenda + MotorCortex as first-class autonomy input; enforces usefulness contract and self-maintenance budget.
+- `engine/src/good-life/commitments.js`, `trends.js`, `sleep-policy.js` — durable commitments, per-lane trends with no scalar reward, and sleep/wake regulation.
+- `engine/src/channels/domain/good-life-channel.js` + `config/home.yaml` — Good Life channel emits `domain.good-life`.
+- Dashboard: `GET /api/good-life` plus Good Life tile showing policy, lanes, evidence, last action, and why this mode.
+- Agent doctrine: `instances/jerry/workspace/GOOD_LIFE.md`, `cli/templates/GOOD_LIFE.md`, and `cli/lib/agent-create.js` seed future agents with the principle set.
+- Fix shipped after bad Brain Log behavior: Good Life telemetry no longer flows into generic deep-thought/personal diagnosis. `discovery-engine.js`, `deep-dive.js`, `orchestrator.js`, and `snapshot.js` now keep Good Life governance receipts separate from live-problem diagnostics and forbid personal/life/psychology inference from engine telemetry.
+- Verified: focused Good Life/cognition tests pass, `home23-jerry` and `home23-jerry-dash` restarted only by name, `/api/good-life` live.
+
+Current live Good Life state at 2026-05-01 14:25 EDT:
+- policy: `repair`
+- lanes: viability critical, continuity strained, usefulness watch, development healthy, coherence healthy, friction strained, recovery watch
+- evidence: ~44.3k nodes / 63.2k edges, 1 open live problem, 16 open goals, 111 pending agenda items, maintenance ratio ~40%
+- remaining open live problem: `agenda_ag-mon1jjgl-4467ce` — identify what process/job started roughly 14h before the CPU signal and whether regressions are host contention symptoms.
+
+#### Done: Crash-Recovery Latch + May 1 Diagnostics (2026-05-01)
+
+Good Life initially entered recovery/repair because crash recovery was latched after successful checkpoint recovery and because Good Life itself was creating self-referential diagnostic live problems. The root causes were fixed, recipes recorded, and self-generated Good Life diagnostics resolved.
+
+- CrashRecoveryManager now clears `crashDetected` on `RECOVERY_SUCCESS`.
+- Catalog-refresh regression was diagnosed as likely transient host resource pressure; `monitor.py` now writes local performance context so future spikes have evidence.
+- Memory-friction correlation script and cron were added to turn vague “watch memory pressure” into repeatable evidence.
+- Good Life self-diagnostic loop was stopped; remaining critical viability is now only the real host CPU/contention agenda.
 
 #### Done: Evobrew Brain Picker Expansion (2026-04-14)
 
@@ -97,14 +125,16 @@ jtr is the architect. He doesn't write code — he works through AI agents. He's
 ## System State
 
 - Agent "jerry" running from `/Users/jtr/_JTR23_/release/home23/`
-- 5 PM2 processes: `home23-jerry`, `home23-jerry-dash`, `home23-jerry-harness`, `home23-evobrew`, `home23-cosmo23`
+- Core jerry PM2 processes: `home23-jerry`, `home23-jerry-dash`, `home23-jerry-harness`, `home23-evobrew`, `home23-cosmo23`
+- Additional Home23-family processes currently include `home23-dashboard`, `home23-forrest`, `home23-forrest-dash`, `home23-forrest-harness`, `home23-screenlogic`, and `home23-chrome-cdp`
 - Standalone feeder (`home23-jerry-feeder`) is STOPPED and removed from ecosystem — the engine's built-in DocumentFeeder handles all ingestion from inside `home23-jerry`
 - Dashboard: http://localhost:5002/home23
+- Good Life operator API: http://localhost:5002/api/good-life
 - Settings (incl. Feeder tab): http://localhost:5002/home23/settings
 - Evobrew: http://localhost:3415 (managed by Home23, config.json gitignored + auto-generated)
 - Evobrew brain picker inherits standalone/external roots in addition to Home23 roots; verified live at 10 locations / 328 brains on 2026-04-14
 - COSMO 2.3: http://localhost:43210
-- Engine: cognitive loops with config-driven sleep/wake (~90s naps), pulse bar on dashboard
+- Engine: thinking-machine cognition, Good Life regulator, cognitive loops with config-driven sleep/wake (~90s naps), pulse bar on dashboard
 - Ingestion: engine DocumentFeeder processing thousands of files through LLM compiler (minimax-m2.7 default, configurable in Feeder tab)
 - Jerry has 30 tools including the 11 `research_*` tools for COSMO 2.3
 - Jerry's model: configurable via dashboard dropdown (currently grok-4.20-non-reasoning-latest / xai)

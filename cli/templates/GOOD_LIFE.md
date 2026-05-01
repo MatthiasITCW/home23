@@ -26,4 +26,10 @@ Good Life is the ideal for the autonomous Home23 engine loop. It is not a single
 
 ## Current Engine Contract
 
-The Good Life channel writes `domain.good-life` observations. The regulator turns repair/recover/help policies into bounded agenda actions through MotorCortex. Commitments and trends live in the instance brain as durable files. Future reasoning should preserve this philosophy and extend it operationally rather than replacing it with generic optimization language.
+As of 2026-05-01, this is live engine governance.
+
+The Good Life channel writes `domain.good-life` observations. The regulator turns repair/recover/help policies into bounded agenda actions through MotorCortex. Commitments and trends live in the instance brain as durable files. Sleep/wake may use Good Life rest/recover/repair directives as one of its regulators. Dashboard/API surfaces can expose current policy, lane states, evidence, last action, and why this mode.
+
+Important boundary: Good Life telemetry is not a prompt for generic personal diagnosis. It is Home23 engine telemetry. Do not infer jtr's psychology, health, life capacity, or personal crisis from lane metrics. Use it to govern the autonomous loop: sense, choose, act, verify, recover, and produce visible progress.
+
+Future reasoning should preserve this philosophy and extend it operationally rather than replacing it with generic optimization language.
