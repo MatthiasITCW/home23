@@ -26,6 +26,7 @@ class ResearchAgent extends BaseAgent {
     this.searchQueries = [];
     this.sourcesFound = [];
     this.exportedFiles = [];  // Track files created during corpus export
+    this.usedUncertifiedFallback = false;
   }
 
   /**
@@ -280,9 +281,20 @@ class ResearchAgent extends BaseAgent {
       }
     }
 
+    this.sourcesFound = [...new Set(this.sourcesFound.filter(Boolean))];
+
     if (searchResults.length === 0) {
-      // Fallback: Generate research using LLM's training knowledge
-      this.logger.warn('All web searches failed - falling back to LLM knowledge', {
+      if (isVerificationMission && !this.allowsUncertifiedResearchFallback()) {
+        return this.haltForMissingSources('all_searches_failed', {
+          queriesExecuted: queries.length,
+          searchResults: 0,
+        });
+      }
+
+      // Exploratory research may still produce useful drafts from model priors,
+      // but it must be labeled as uncertified and stored separately.
+      this.usedUncertifiedFallback = true;
+      this.logger.warn('All web searches failed - proceeding as uncertified model-prior research', {
         agentId: this.agentId,
         mission: this.mission.description
       });
@@ -298,14 +310,30 @@ class ResearchAgent extends BaseAgent {
       }
     }
 
+    this.sourcesFound = [...new Set(this.sourcesFound.filter(Boolean))];
+    if (this.sourcesFound.length === 0 && isVerificationMission && !this.allowsUncertifiedResearchFallback()) {
+      return this.haltForMissingSources('zero_sources', {
+        queriesExecuted: queries.length,
+        searchResults: searchResults.length,
+      });
+    }
+    if (this.sourcesFound.length === 0) {
+      this.usedUncertifiedFallback = true;
+      this.logger.warn('⚠️ Research proceeding with zero source URLs as uncertified exploratory output', {
+        agentId: this.agentId,
+        mission: this.mission.description,
+      });
+    }
+
     // Step 3: Synthesize findings
     await this.reportProgress(70, 'Synthesizing findings');
     const synthesis = await this.synthesizeFindings(searchResults);
 
     // Step 4: Add findings to memory (PRIMARY - for merge)
     await this.reportProgress(85, 'Adding findings to memory');
+    const findingTag = this.sourcesFound.length > 0 ? 'research' : 'research_uncertified';
     for (const finding of synthesis.findings) {
-      await this.addFinding(finding, 'research');
+      await this.addFinding(finding, findingTag);
     }
 
     // Step 5: Identify follow-up directions
@@ -357,9 +385,11 @@ class ResearchAgent extends BaseAgent {
         findings: this.results.filter(r => r.type === 'finding'), // DoD contract: array of findings
         sourcesFound: this.sourcesFound.length,
         urlsValid: this.sourcesFound.length, // DoD contract: number of valid URLs
+        groundingStrength: this.sourcesFound.length > 0 ? 'source-backed' : 'uncertified',
+        zeroSourceAllowed: this.sourcesFound.length === 0 && this.allowsUncertifiedResearchFallback(),
         artifactsCreated: this.exportedFiles.length,  // NEW: Track research corpus files for Executive
         filesCreated: this.exportedFiles.length,      // NEW: Files created during export
-        status: 'complete'
+        status: this.sourcesFound.length > 0 ? 'complete' : 'uncertified_draft'
       }
     };
   }
@@ -407,6 +437,66 @@ Respond with JSON array of query strings:
       this.logger.error('Query generation failed', { error: error.message }, 3);
       return [this.mission.description]; // Fallback
     }
+  }
+
+  allowsUncertifiedResearchFallback() {
+    return Boolean(
+      this.mission?.allowUncertifiedResearch === true ||
+      this.mission?.allow_uncertified_research === true ||
+      this.mission?.allowZeroSources === true ||
+      this.mission?.allow_zero_sources === true ||
+      this.mission?.metadata?.allowUncertifiedResearch === true ||
+      this.mission?.metadata?.allow_uncertified_research === true ||
+      this.mission?.metadata?.allowZeroSources === true ||
+      this.mission?.metadata?.allow_zero_sources === true ||
+      this.mission?.metadata?.zeroSourceAllowed === true ||
+      this.mission?.metadata?.zero_source_allowed === true
+    );
+  }
+
+  haltForMissingSources(reason, observed = {}) {
+    const message = reason === 'all_searches_failed'
+      ? 'Research halted: all searches failed and uncited model-prior fallback is disabled.'
+      : 'Research halted: searches produced zero source URLs. Refusing to synthesize or store uncited research.';
+    this.logger.warn(`❌ ${message}`, {
+      agentId: this.agentId,
+      reason,
+      observed,
+    });
+    const diagnostic = {
+      type: 'diagnostic',
+      status: 'needs_evidence',
+      reason,
+      message,
+      observed,
+      evidence: {
+        inputCount: this.sourcesFound.length,
+        evidenceRefs: [],
+        zeroSourceAllowed: false,
+        groundingStrength: 'none',
+      },
+      timestamp: new Date(),
+    };
+    this.results.push(diagnostic);
+    return {
+      success: false,
+      status: 'needs_evidence',
+      reason,
+      queriesExecuted: observed.queriesExecuted || 0,
+      findingsAdded: 0,
+      sourcesFound: 0,
+      sources: [],
+      followUpDirections: 0,
+      metadata: {
+        findings: [],
+        sourcesFound: 0,
+        urlsValid: 0,
+        artifactsCreated: 0,
+        filesCreated: 0,
+        status: 'needs_evidence',
+        evidence: diagnostic.evidence,
+      },
+    };
   }
 
   /**
@@ -1490,4 +1580,3 @@ Respond with JSON array of follow-up directions:
 }
 
 module.exports = { ResearchAgent };
-

@@ -21,6 +21,7 @@ class SynthesisAgent extends BaseAgent {
     super(mission, config, logger);
     this.sourceNodes = [];
     this.sections = [];
+    this.zeroEvidenceSynthesis = false;
   }
 
   /**
@@ -100,7 +101,62 @@ class SynthesisAgent extends BaseAgent {
       this.logger.info('📭 No existing knowledge in memory (fresh start)', {
         agentId: this.agentId
       });
-      // Continue anyway - can synthesize from mission description and MCP files
+      this.zeroEvidenceSynthesis = true;
+      if (this.requiresGroundedSynthesis() && !this.allowsZeroEvidenceSynthesis()) {
+        const message = 'Synthesis halted: zero evidence nodes available. Refusing to generate a report from mission text alone.';
+        this.logger.warn(`❌ ${message}`, {
+          agentId: this.agentId,
+          mission: this.mission.description,
+        });
+        this.results.push({
+          type: 'diagnostic',
+          status: 'needs_input',
+          reason: 'zero_evidence',
+          message,
+          evidence: {
+            inputCount: 0,
+            evidenceRefs: [],
+            zeroContextAllowed: false,
+          },
+          timestamp: new Date(),
+        });
+        await this.reportProgress(100, 'Synthesis halted: needs evidence');
+        return {
+          success: false,
+          status: 'needs_input',
+          reason: 'zero_evidence',
+          sourcesConsulted: 0,
+          sectionsGenerated: 0,
+          metadata: {
+            reportGenerated: false,
+            sectionsGenerated: 0,
+            sourcesConsulted: 0,
+            status: 'needs_input',
+            evidence: {
+              inputCount: 0,
+              evidenceRefs: [],
+              zeroContextAllowed: false,
+              groundingStrength: 'none',
+            },
+          },
+        };
+      }
+      this.logger.warn('⚠️ Zero-evidence synthesis proceeding as an uncertified draft', {
+        agentId: this.agentId,
+      });
+      this.results.push({
+        type: 'grounding_notice',
+        status: 'uncertified_draft',
+        reason: 'zero_evidence',
+        message: 'No memory nodes were available. Output may still be useful as a draft, but it is not evidence-backed.',
+        evidence: {
+          inputCount: 0,
+          evidenceRefs: [],
+          zeroContextAllowed: true,
+          groundingStrength: 'none',
+        },
+        timestamp: new Date(),
+      });
     }
 
     // NEW: Use cluster analysis to understand knowledge domains
@@ -210,7 +266,10 @@ class SynthesisAgent extends BaseAgent {
 
     // Step 7: Add report to memory
     await this.reportProgress(97, 'Adding synthesis to memory');
-    await this.addFinding(report, 'synthesis_report');
+    await this.addFinding(
+      report,
+      knowledgeBase.nodes.length > 0 ? 'synthesis_report' : 'synthesis_report_uncertified'
+    );
 
     // Store final results
     this.results.push({
@@ -245,7 +304,9 @@ class SynthesisAgent extends BaseAgent {
         wordCount: report.split(/\s+/).length,
         sectionsGenerated: generatedSections.length,
         sourcesConsulted: knowledgeBase.nodes.length,
-        status: 'complete'
+        groundingStrength: knowledgeBase.nodes.length > 0 ? 'memory-backed' : 'none',
+        evidenceStatus: knowledgeBase.nodes.length > 0 ? 'grounded' : 'uncertified_draft',
+        status: knowledgeBase.nodes.length > 0 ? 'complete' : 'uncertified_draft'
       }
     };
   }
@@ -353,6 +414,32 @@ Respond in JSON format:
         { title: 'Implications', focus: 'Consequences and applications' }
       ]
     };
+  }
+
+  allowsZeroEvidenceSynthesis() {
+    return Boolean(
+      this.mission?.allowZeroEvidence === true ||
+      this.mission?.allow_zero_evidence === true ||
+      this.mission?.metadata?.allowZeroEvidence === true ||
+      this.mission?.metadata?.allow_zero_evidence === true ||
+      this.mission?.metadata?.zeroContextAllowed === true ||
+      this.mission?.metadata?.zero_context_allowed === true
+    );
+  }
+
+  requiresGroundedSynthesis() {
+    if (
+      this.mission?.requireEvidence === true ||
+      this.mission?.require_evidence === true ||
+      this.mission?.metadata?.requireEvidence === true ||
+      this.mission?.metadata?.require_evidence === true ||
+      this.mission?.metadata?.mustBeGrounded === true ||
+      this.mission?.metadata?.must_be_grounded === true
+    ) {
+      return true;
+    }
+    const text = `${this.mission?.description || ''} ${(this.mission?.successCriteria || []).join(' ')}`.toLowerCase();
+    return /\b(verify|fact[- ]?check|prove|audit|evidence-backed|grounded|cite sources|with citations)\b/.test(text);
   }
 
   /**
@@ -528,6 +615,9 @@ Respond with JSON array:
     report += `**Generated:** ${metadata.createdAt.toISOString()}\n`;
     report += `**Sources:** ${metadata.sourcesConsulted} memory nodes\n`;
     report += `**Sections:** ${metadata.sectionsGenerated}\n\n`;
+    if (metadata.sourcesConsulted === 0) {
+      report += `**Evidence status:** UNCERTIFIED DRAFT — no memory nodes were available. Treat this as generated drafting, not grounded synthesis.\n\n`;
+    }
     
     report += `---\n\n`;
     
@@ -1009,4 +1099,3 @@ Generate the complete final deliverable now:`;
 }
 
 module.exports = { SynthesisAgent };
-
