@@ -19,6 +19,7 @@
 
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 
 // ─── Configurable defaults (override via options.pgsConfig or env vars) ──────
 const PGS_DEFAULTS = {
@@ -37,6 +38,7 @@ const PGS_DEFAULTS = {
 
 // Partition cache filename
 const PARTITIONS_FILE = 'partitions.json';
+const PARTITIONS_META_FILE = 'partitions.meta.json';
 // Session state storage
 const SESSION_DIR = 'pgs-sessions';
 const DEFAULT_SESSION_ID = 'default';
@@ -122,7 +124,7 @@ class PGSEngine {
     const allRoutedPartitions = this.routeQuery(query, queryEmbedding, partitions, config);
 
     // ─── Session tracking & mode handling ────────────────────────────────
-    const session = await this.loadSession(pgsSessionId);
+    const session = mode === 'full' ? null : await this.loadSession(pgsSessionId);
     // HOME23 PATCH — old zero-node PGS runs can leave session files with
     // impossible searched counts (for example 1155/1). Clamp session state to
     // the current partition set so progress math and continue/targeted modes
@@ -218,20 +220,22 @@ class PGSEngine {
 
     // Persist session: merge newly swept partition IDs
     const newSearchedIds = new Set([...searchedIds, ...partitionsToSweep.map(p => p.id)]);
-    await this.saveSession(pgsSessionId, {
-      query,
-      mode,
-      searchedPartitionIds: [...newSearchedIds],
-      totalPartitions: partitions.length,
-      timestamp: new Date().toISOString()
-    });
+    if (mode !== 'full') {
+      await this.saveSession(pgsSessionId, {
+        query,
+        mode,
+        searchedPartitionIds: [...newSearchedIds],
+        totalPartitions: partitions.length,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Emit updated session counts
     emit({
       type: 'pgs_session_updated',
       sessionId: pgsSessionId,
-      searched: newSearchedIds.size,
-      remaining: partitions.length - newSearchedIds.size,
+      searched: mode === 'full' ? 0 : newSearchedIds.size,
+      remaining: mode === 'full' ? partitions.length : partitions.length - newSearchedIds.size,
       total: partitions.length
     });
 
@@ -293,23 +297,53 @@ class PGSEngine {
    */
   async getOrCreatePartitions(state, nodes, edges, onChunk, config) {
     const partitionsPath = path.join(this.qe.runtimeDir, PARTITIONS_FILE);
+    const metaPath = path.join(this.qe.runtimeDir, PARTITIONS_META_FILE);
     const brainHash = this.computeBrainHash(state, nodes, edges);
+    const nodeCount = nodes.length;
+    const edgeCount = edges.length;
 
     // Try loading cached partitions
     try {
+      const stat = fsSync.existsSync(partitionsPath) ? fsSync.statSync(partitionsPath) : null;
+      let meta = null;
+      if (fsSync.existsSync(metaPath)) {
+        meta = JSON.parse(await fs.readFile(metaPath, 'utf8'));
+      } else if (stat && stat.size > 50 * 1024 * 1024) {
+        // HOME23 PATCH — old caches can be 100MB+ and stale. Without a small
+        // metadata sidecar, parsing the giant JSON just to discover staleness
+        // stalls the dashboard at "Checking partition cache..." for minutes.
+        if (onChunk) onChunk({ type: 'progress', message: 'PGS: Legacy partition cache has no metadata, regenerating...' });
+        throw new Error('legacy-large-cache-without-meta');
+      }
+
+      if (meta && !this.isPartitionCacheCompatible(meta, { brainHash, nodeCount, edgeCount })) {
+        if (onChunk) onChunk({ type: 'progress', message: 'PGS: Partition cache stale, regenerating...' });
+        throw new Error('stale-partition-cache');
+      }
+
       const cached = JSON.parse(await fs.readFile(partitionsPath, 'utf8'));
-      if (cached.brainHash === brainHash && cached.partitions?.length > 0) {
+      if (cached.partitions?.length > 0 && this.isPartitionCacheCompatible(cached, { brainHash, nodeCount, edgeCount })) {
         if (onChunk) onChunk({ type: 'progress', message: `PGS: Loaded ${cached.partitions.length} cached partitions` });
         return cached.partitions;
       }
       if (onChunk) onChunk({ type: 'progress', message: 'PGS: Partition cache stale, regenerating...' });
-    } catch {
-      if (onChunk) onChunk({ type: 'progress', message: 'PGS: No partition cache found, generating...' });
+    } catch (err) {
+      if (err.message !== 'stale-partition-cache' && err.message !== 'legacy-large-cache-without-meta') {
+        if (onChunk) onChunk({ type: 'progress', message: 'PGS: No partition cache found, generating...' });
+      }
+    }
+
+    if (onChunk) {
+      await new Promise(resolve => setImmediate(resolve));
     }
 
     // Run Louvain community detection
     if (onChunk) onChunk({ type: 'progress', message: 'PGS: Running community detection (Louvain algorithm)...' });
     const communities = this.runLouvain(nodes, edges, config);
+
+    if (onChunk) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
 
     // Enrich partitions with metadata
     if (onChunk) onChunk({ type: 'progress', message: `PGS: Enriching ${communities.length} partitions with metadata...` });
@@ -317,20 +351,49 @@ class PGSEngine {
 
     // Cache
     const cacheData = {
-      version: 1,
+      version: 2,
       created: new Date().toISOString(),
       brainHash,
+      nodeCount,
+      edgeCount,
       partitions
+    };
+
+    const metaData = {
+      version: cacheData.version,
+      created: cacheData.created,
+      brainHash,
+      nodeCount,
+      edgeCount,
+      partitionCount: partitions.length
     };
 
     try {
       await fs.writeFile(partitionsPath, JSON.stringify(cacheData), 'utf8');
+      await fs.writeFile(metaPath, JSON.stringify(metaData, null, 2), 'utf8');
       if (onChunk) onChunk({ type: 'progress', message: `PGS: Cached ${partitions.length} partitions to disk` });
     } catch (err) {
       console.error('[PGS] Failed to cache partitions:', err.message);
     }
 
     return partitions;
+  }
+
+  isPartitionCacheCompatible(cacheInfo, current) {
+    if (!cacheInfo) return false;
+    if (cacheInfo.brainHash === current.brainHash) return true;
+
+    const cachedNodes = Number(cacheInfo.nodeCount || 0);
+    const cachedEdges = Number(cacheInfo.edgeCount || 0);
+    if (!cachedNodes || !cachedEdges) return false;
+
+    const nodeDrift = Math.abs(current.nodeCount - cachedNodes) / Math.max(current.nodeCount, cachedNodes, 1);
+    const edgeDrift = Math.abs(current.edgeCount - cachedEdges) / Math.max(current.edgeCount, cachedEdges, 1);
+
+    // Partition topology does not need to be regenerated for every handful of
+    // newly ingested nodes. Reuse near-current caches to keep dashboard PGS
+    // interactive instead of reparsing/regenerating on every engine cycle.
+    return nodeDrift <= 0.02 && edgeDrift <= 0.02;
   }
 
   /**
@@ -501,7 +564,52 @@ class PGSEngine {
       });
     }
 
-    return result;
+    return this.coalesceSmallPartitions(result, nodes, {
+      minSize: config.targetPartitionMin || 200,
+      maxSize: config.targetPartitionMax || 1800
+    });
+  }
+
+  coalesceSmallPartitions(partitions, nodes, options = {}) {
+    const minSize = options.minSize || 200;
+    const maxSize = options.maxSize || 1800;
+    const nodeMap = new Map(nodes.map(node => [String(node.id), node]));
+    const large = [];
+    const smallByTag = new Map();
+
+    for (const partition of partitions) {
+      const size = partition.nodeIds?.length || 0;
+      if (size >= minSize) {
+        large.push(partition);
+        continue;
+      }
+
+      const tag = this.getPartitionGroupKey(partition, nodeMap);
+      if (!smallByTag.has(tag)) smallByTag.set(tag, []);
+      smallByTag.get(tag).push(...(partition.nodeIds || []));
+    }
+
+    const combined = [...large.map(p => ({ nodeIds: [...p.nodeIds] }))];
+    for (const [, nodeIds] of smallByTag) {
+      for (let i = 0; i < nodeIds.length; i += maxSize) {
+        combined.push({ nodeIds: nodeIds.slice(i, i + maxSize) });
+      }
+    }
+
+    return combined
+      .filter(p => p.nodeIds.length > 0)
+      .map((p, id) => ({ id, nodeIds: p.nodeIds }));
+  }
+
+  getPartitionGroupKey(partition, nodeMap) {
+    const counts = new Map();
+    for (const nodeId of partition.nodeIds || []) {
+      const node = nodeMap.get(String(nodeId));
+      const rawTag = Array.isArray(node?.tag) ? node.tag[0] : node?.tag;
+      const tag = rawTag ? String(rawTag).toLowerCase() : 'untagged';
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'untagged';
   }
 
   /**
@@ -834,6 +942,17 @@ class PGSEngine {
 
     // Select: all above threshold, respecting min/max bounds
     let selected = ranked.filter(p => p.similarity >= partitionRelevanceThreshold);
+
+    if (selected.length < maxSweepPartitions) {
+      const selectedIds = new Set(selected.map(p => p.id));
+      for (const partition of ranked) {
+        if (selected.length >= maxSweepPartitions) break;
+        if (!selectedIds.has(partition.id)) {
+          selected.push(partition);
+          selectedIds.add(partition.id);
+        }
+      }
+    }
 
     // Only enforce minimum if configured (default 0 = no forced minimum)
     if (minSweepPartitions > 0 && selected.length < minSweepPartitions) {

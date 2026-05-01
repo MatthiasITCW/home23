@@ -807,6 +807,7 @@ preservation.
 **Files touched:**
 - `cosmo23/lib/memory-sidecar.js`
 - `cosmo23/lib/query-engine.js`
+- `cosmo23/lib/pgs-engine.js`
 
 **Problem:** Patch 8 taught the COSMO23 query engine that Home23 brains may
 store memory in `memory-nodes.jsonl.gz` / `memory-edges.jsonl.gz`, but it
@@ -824,18 +825,27 @@ The query engine now calls `hydrateStateMemory()` and fails loudly if
 PGS session accounting also clamps stale `pgs-sessions/*.json` searched IDs to
 the current partition set, and routing falls back to the top partition when a
 real graph has no partition above the relevance threshold.
+Follow-up fix in the same patch: PGS no longer parses a huge legacy
+`partitions.json` before checking staleness. It writes a tiny
+`partitions.meta.json` gate, reuses near-current partition caches within 2%
+node/edge drift, and coalesces thousands of singleton Louvain communities into
+bounded partitions by tag.
 
 **Effect under Home23:** Home23's main dashboard Query tab, which routes to
 COSMO23 `/api/brain/:id/query/stream`, sees the real live graph for Query and
 PGS instead of a one-partition empty graph. Old zero-node `default` sessions no
-longer display impossible negative remaining counts.
+longer display impossible negative remaining counts, cache checks return in
+milliseconds instead of parsing 100MB+ JSON, and "50% coverage" no longer
+collapses to one single-node partition.
 
 **Effect under standalone COSMO:** legacy inline `state.json.gz` brains still
 load unchanged; sidecar brains load without constructing one giant string.
 
-**Verification:** focused sidecar tests pass for both COSMO23 and Evobrew, and
-a standalone `QueryEngine('instances/jerry/brain').loadBrainState()` loaded
-~47.8k nodes / ~65.2k edges from sidecars.
+**Verification:** focused sidecar tests pass for both COSMO23 and Evobrew, PGS
+coalescing/routing regression tests pass, and a standalone
+`QueryEngine('instances/jerry/brain').loadBrainState()` loaded ~47.8k nodes /
+~65.2k edges from sidecars. Direct PGS partitioning on Jerry's brain produced
+76 partitions in ~5.8s; cached reload returned in ~16ms.
 
 ---
 
@@ -909,5 +919,6 @@ a standalone `QueryEngine('instances/jerry/brain').loadBrainState()` loaded
   older query sidecar patch reading the entire gzipped JSONL sidecar into one
   V8 string, failing on live brain size, swallowing the error, and continuing
   with empty inline state. Query/PGS sidecar hydration now streams records; PGS
-  also clamps stale session counts and avoids zero-partition routes on real
-  graphs.
+  also clamps stale session counts, avoids zero-partition routes on real
+  graphs, skips giant stale cache parsing, and coalesces singleton-heavy
+  partition output into usable bounded partitions.
