@@ -344,6 +344,33 @@ function workersApiUrl(path = '') {
   return `${url.pathname}${url.search}`;
 }
 
+const SETTINGS_WORKER_PROFILES = {
+  systems: {
+    title: 'Home23 Systems',
+    headline: 'Diagnose Home23 when something feels slow, stale, broken, or unclear.',
+    unlocks: [
+      'Process and PM2 checks without global destructive operations.',
+      'Endpoint and freshness checks with proof receipts.',
+      'Findings Jerry and Forrest can reuse instead of rediscovering.'
+    ],
+    examples: [
+      'Why is Home23 slow right now?',
+      'Inspect the current live problem.',
+      'Verify the dashboard and engine endpoints.',
+      'Check whether a fix actually passed.'
+    ]
+  }
+};
+
+function settingsWorkerProfile(workerOrTemplate) {
+  return SETTINGS_WORKER_PROFILES[workerOrTemplate?.name] || {
+    title: workerOrTemplate?.displayName || workerOrTemplate?.name || 'Worker',
+    headline: workerOrTemplate?.purpose || 'Reusable specialist for bounded Home23 work.',
+    unlocks: ['Own workspace', 'Proof receipt', 'House-agent memory handoff'],
+    examples: ['Run a focused check and return evidence.']
+  };
+}
+
 async function workersApi(path = '', options = {}) {
   const res = await fetch(workersApiUrl(path), {
     ...options,
@@ -395,11 +422,41 @@ async function loadWorkersSettings() {
 }
 
 function renderWorkersSettings() {
+  renderSettingsWorkerCapabilityGuide();
   renderWorkerCreateOptions();
   renderSettingsWorkerRoster();
   renderSettingsWorkerTemplates();
   renderSettingsWorkerRunSelect();
   renderSettingsWorkerRuns();
+}
+
+function renderSettingsWorkerCapabilityGuide() {
+  const container = document.getElementById('settings-worker-capability-guide');
+  if (!container) return;
+  const source = workersSettingsData.workers.length ? workersSettingsData.workers : workersSettingsData.templates;
+  if (!source.length) {
+    container.innerHTML = '<div class="h23s-worker-empty">No worker packs are available yet.</div>';
+    return;
+  }
+  container.innerHTML = source.map((item) => {
+    const profile = settingsWorkerProfile(item);
+    return `
+      <div class="h23s-worker-guide-card">
+        <div class="h23s-worker-guide-kicker">${escapeHtml(profile.title)}</div>
+        <h4>${escapeHtml(profile.headline)}</h4>
+        <div class="h23s-worker-guide-columns">
+          <div>
+            <strong>What you get</strong>
+            <ul>${profile.unlocks.map(text => `<li>${escapeHtml(text)}</li>`).join('')}</ul>
+          </div>
+          <div>
+            <strong>Good asks</strong>
+            <ul>${profile.examples.map(text => `<li>${escapeHtml(text)}</li>`).join('')}</ul>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderWorkerCreateOptions() {
@@ -423,7 +480,7 @@ function renderSettingsWorkerRoster() {
   const container = document.getElementById('settings-workers-roster');
   if (!container) return;
   if (!workersSettingsData.workers.length) {
-    container.innerHTML = '<div class="h23s-worker-empty">No workers created yet.</div>';
+    container.innerHTML = '<div class="h23s-worker-empty">No specialists installed yet.</div>';
     return;
   }
   container.innerHTML = workersSettingsData.workers.map(worker => `
@@ -431,6 +488,7 @@ function renderSettingsWorkerRoster() {
       <div>
         <strong>${escapeHtml(worker.displayName || worker.name)}</strong>
         <span>${escapeHtml(worker.name)} · ${escapeHtml(worker.ownerAgent || 'house')} · ${escapeHtml(worker.class || 'worker')}</span>
+        <p>${escapeHtml(settingsWorkerProfile(worker).headline)}</p>
         <p>${escapeHtml(worker.purpose || '')}</p>
       </div>
       <span class="h23s-badge mode">${escapeHtml(worker.class || 'worker')}</span>
@@ -450,6 +508,7 @@ function renderSettingsWorkerTemplates() {
       <div>
         <strong>${escapeHtml(template.displayName || template.name)}</strong>
         <span>${escapeHtml(template.name)} · default owner ${escapeHtml(template.ownerAgent || 'house')}</span>
+        <p>${escapeHtml(settingsWorkerProfile(template).headline)}</p>
         <p>${escapeHtml(template.purpose || '')}</p>
       </div>
       <span class="h23s-badge custom">${escapeHtml(template.class || 'worker')}</span>
@@ -517,8 +576,8 @@ async function runWorkerFromSettings() {
   const prompt = promptEl?.value?.trim();
   const requestedBy = document.getElementById('settings-worker-requested-by')?.value || 'human';
   const status = document.getElementById('settings-worker-run-status');
-  if (!worker) throw new Error('Select a worker first.');
-  if (!prompt) throw new Error('Enter a task for the worker.');
+  if (!worker) throw new Error('Select a specialist first.');
+  if (!prompt) throw new Error('Describe what you want checked.');
   if (status) status.textContent = 'Running...';
   const data = await workersApi(`/${encodeURIComponent(worker)}/runs`, {
     method: 'POST',
@@ -529,7 +588,7 @@ async function runWorkerFromSettings() {
       ownerAgent: selectedSettingsAgent,
     }),
   });
-  if (status) status.textContent = `Finished: ${data.receipt?.status || data.runId}`;
+  if (status) status.textContent = `Check complete: ${data.receipt?.status || data.runId}`;
   if (promptEl) promptEl.value = '';
   await loadWorkersSettings();
 }

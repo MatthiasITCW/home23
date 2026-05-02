@@ -1562,6 +1562,57 @@ body {
   gap: 18px;
 }
 
+.h23s-worker-guide {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 14px;
+}
+
+.h23s-worker-guide-card {
+  padding: 16px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 10px;
+  background: rgba(45, 212, 191, 0.06);
+}
+
+.h23s-worker-guide-kicker {
+  color: #9ff0c9;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.h23s-worker-guide-card h4 {
+  margin: 6px 0 14px;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.h23s-worker-guide-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.h23s-worker-guide-columns strong {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.h23s-worker-guide-columns ul {
+  margin: 0;
+  padding-left: 17px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .h23s-worker-list,
 .h23s-worker-runs {
   display: flex;
@@ -1658,6 +1709,11 @@ body {
   }
 
   .h23s-workers-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .h23s-worker-guide,
+  .h23s-worker-guide-columns {
     grid-template-columns: 1fr;
   }
 

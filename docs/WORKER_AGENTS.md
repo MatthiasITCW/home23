@@ -1,17 +1,43 @@
 # Home23 Worker Agents
 
-Worker agents are reusable specialist agents with their own workspace, playbook, run history, artifacts, and receipts. They do not run a standalone Home23 engine. A house agent bridge, such as Jerry's harness connector, runs them on demand and records the result back into the Home23 worker registry.
+Worker agents are reusable specialists Home23 can call when a job needs focus but does not need another full engine. They have their own workspace, playbook, run history, artifacts, and proof receipts. Jerry, Forrest, or the human operator can run them on demand.
+
+The point is simple: when something needs checking, a worker can do the pass, leave evidence, and feed useful findings back to the house agents.
+
+## What You Can Use Them For
+
+The first worker is `systems`.
+
+Use `systems` when:
+
+- Home23 feels slow or stale.
+- A dashboard, endpoint, PM2 process, or live problem needs a grounded check.
+- You want evidence before restarting anything.
+- You need Jerry or Forrest to remember what was verified.
+
+It can:
+
+- Inspect scoped PM2 process status.
+- Probe dashboard and engine endpoints.
+- Read relevant service logs.
+- Check freshness, health, receipts, and verifier outcomes.
+
+It will not:
+
+- Run global destructive PM2 commands.
+- Clean up files or git state on its own.
+- Claim a fix without a concrete verifier or equivalent check.
 
 ## User Surfaces
 
-- Dashboard: `http://localhost:5002/home23`, then open `Workers`.
-- Settings: `http://localhost:5002/home23/settings#workers`.
+- Dashboard: `http://localhost:5002/home23`, then open `Workers` / `Worker Desk`.
+- Settings: `http://localhost:5002/home23/settings#workers`, the `Worker Library`.
 - Connector API through dashboard: `/home23/api/workers`.
 - Owner bridge API: `/api/workers` on the selected agent bridge port, normally `5004` for Jerry.
 
 ## Create a Worker
 
-From Settings, open `Workers`, pick a template, choose the owner agent, enter a lowercase kebab-case name, and click `Create Worker`.
+From Settings, open `Workers`, pick a worker pack, choose the owner agent, enter a lowercase kebab-case name, and click `Install Worker`.
 
 CLI equivalent:
 
@@ -35,7 +61,16 @@ Each worker has:
 
 ## Run a Worker
 
-From the dashboard `Workers` tab, select a worker, enter a bounded task, and click `Run`. The completed receipt appears in the same tab.
+From the dashboard `Workers` tab, pick a starter action such as `Check Home23 health`, `Why is it slow?`, `Inspect live problem`, or `Verify a fix`. Add plain-language context if needed, then click `Run Check`.
+
+Good asks:
+
+```text
+Check why Home23 feels slow right now.
+Inspect the current live problem and tell me the next repair step.
+Verify the dashboard and engine endpoints are healthy.
+Check whether the health bridge data is fresh enough to trust.
+```
 
 CLI equivalent:
 

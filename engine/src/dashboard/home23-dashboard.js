@@ -1497,6 +1497,63 @@ function workerApiUrl(path = '') {
   return `${url.pathname}${url.search}`;
 }
 
+const WORKER_CAPABILITY_PROFILES = {
+  systems: {
+    title: 'Home23 Systems',
+    headline: 'Use this when Home23 feels slow, stale, broken, or confusing.',
+    useWhen: [
+      'A dashboard, endpoint, PM2 process, or live problem needs a grounded check.',
+      'You want evidence before restarting anything.',
+      'You need a specialist pass that Jerry and Forrest can remember.'
+    ],
+    can: [
+      'Inspect Home23 PM2 status',
+      'Probe dashboard and engine endpoints',
+      'Read scoped service logs',
+      'Verify health, freshness, and receipts'
+    ],
+    guardrails: [
+      'No global PM2 stop/delete',
+      'No destructive git or file cleanup',
+      'No claimed fix without a verifier'
+    ],
+    starterTasks: [
+      {
+        label: 'Check Home23 health',
+        detail: 'Verify the dashboard, engine state endpoint, and worker connector are responding. Do not change files or restart processes.'
+      },
+      {
+        label: 'Why is it slow?',
+        detail: 'Diagnose whether Home23 is under CPU, memory, process, or endpoint pressure. Use current host evidence and do not make changes.'
+      },
+      {
+        label: 'Inspect live problem',
+        detail: 'Inspect the current Home23 live problem, identify the verifier it depends on, and report the next concrete repair step without changing files.'
+      },
+      {
+        label: 'Verify a fix',
+        detail: 'Re-run the relevant Home23 verifier for the described issue and produce a receipt with pass/fail evidence. Do not change files unless explicitly requested.'
+      }
+    ]
+  }
+};
+
+function getWorkerCapability(worker) {
+  return WORKER_CAPABILITY_PROFILES[worker?.name] || {
+    title: worker?.displayName || worker?.name || 'Worker',
+    headline: worker?.purpose || 'Reusable specialist for bounded Home23 work.',
+    useWhen: ['A house agent needs a focused, reusable pass without spinning up a full engine.'],
+    can: ['Work in its own workspace', 'Produce a receipt', 'Return evidence for house-agent memory'],
+    guardrails: ['Bounded task scope', 'Receipt before claims', 'No hidden full engine'],
+    starterTasks: [
+      {
+        label: 'Run focused check',
+        detail: `Use ${worker?.displayName || worker?.name || 'this worker'} for a bounded check. Return evidence, verifier status, and a one-sentence summary.`
+      }
+    ]
+  };
+}
+
 async function workerApi(path = '', options = {}) {
   const res = await fetch(workerApiUrl(path), {
     ...options,
@@ -1520,6 +1577,16 @@ function setupWorkersSurface() {
       const status = document.getElementById('worker-run-status');
       if (status) status.textContent = err.message;
     });
+  });
+  document.getElementById('worker-run-select')?.addEventListener('change', renderWorkerIntents);
+  document.getElementById('worker-intents')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-worker-starter]');
+    if (!button) return;
+    const promptEl = document.getElementById('worker-run-prompt');
+    if (promptEl) {
+      promptEl.value = button.dataset.workerStarter || '';
+      promptEl.focus();
+    }
   });
   document.getElementById('workers-runs')?.addEventListener('click', (event) => {
     const button = event.target.closest('[data-worker-run-id]');
@@ -1557,10 +1624,48 @@ function renderWorkersError(err) {
 }
 
 function renderWorkersSurface() {
+  renderWorkerCapabilities();
   renderWorkerStats();
   renderWorkerRunSelect();
+  renderWorkerIntents();
   renderWorkerRoster();
   renderWorkerRuns();
+}
+
+function renderWorkerCapabilities() {
+  const container = document.getElementById('workers-capabilities');
+  if (!container) return;
+  if (workersState.workers.length === 0) {
+    container.innerHTML = `
+      <div class="h23-worker-capability-card wide">
+        <div class="h23-worker-capability-kicker">Nothing installed yet</div>
+        <h3>Create the first worker in the Worker Library.</h3>
+        <p>Workers are reusable specialists that keep their own workspace and return receipts to the house agents.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = workersState.workers.map((worker) => {
+    const profile = getWorkerCapability(worker);
+    return `
+      <article class="h23-worker-capability-card">
+        <div class="h23-worker-capability-kicker">${escapeHtml(worker.displayName || worker.name)}</div>
+        <h3>${escapeHtml(profile.headline)}</h3>
+        <div class="h23-worker-capability-columns">
+          <div>
+            <strong>Use when</strong>
+            <ul>${profile.useWhen.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          </div>
+          <div>
+            <strong>Can check</strong>
+            <ul>${profile.can.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          </div>
+        </div>
+        <div class="h23-worker-guardrails">${profile.guardrails.map(item => `<span>${escapeHtml(item)}</span>`).join('')}</div>
+      </article>
+    `;
+  }).join('');
 }
 
 function renderWorkerStats() {
@@ -1569,10 +1674,10 @@ function renderWorkerStats() {
   const passCount = workersState.runs.filter(run => run.verifierStatus === 'pass').length;
   const memoryCount = workersState.receipt?.memoryCandidates?.length || 0;
   stats.innerHTML = [
-    ['Workers', workersState.workers.length],
-    ['Runs', workersState.runs.length],
-    ['Passing', passCount],
-    ['Memory Candidates', memoryCount],
+    ['Installed Specialists', workersState.workers.length],
+    ['Completed Checks', workersState.runs.length],
+    ['Verified Passes', passCount],
+    ['Memory Handoffs', memoryCount],
   ].map(([label, value]) => `<div class="h23-worker-stat"><span>${escapeHtml(value)}</span><label>${escapeHtml(label)}</label></div>`).join('');
 }
 
@@ -1590,11 +1695,34 @@ function renderWorkerRunSelect() {
   }).join('');
 }
 
+function getSelectedWorkerForRun() {
+  const select = document.getElementById('worker-run-select');
+  const name = select?.value || workersState.workers[0]?.name;
+  return workersState.workers.find(worker => worker.name === name) || workersState.workers[0] || null;
+}
+
+function renderWorkerIntents() {
+  const container = document.getElementById('worker-intents');
+  if (!container) return;
+  const worker = getSelectedWorkerForRun();
+  if (!worker) {
+    container.innerHTML = '<div class="h23-workers-empty">Install a worker before running checks.</div>';
+    return;
+  }
+  const profile = getWorkerCapability(worker);
+  container.innerHTML = profile.starterTasks.map(task => `
+    <button class="h23-worker-intent" type="button" data-worker-starter="${escapeAttr(task.detail)}">
+      <strong>${escapeHtml(task.label)}</strong>
+      <span>${escapeHtml(task.detail)}</span>
+    </button>
+  `).join('');
+}
+
 function renderWorkerRoster() {
   const container = document.getElementById('workers-roster');
   if (!container) return;
   if (workersState.workers.length === 0) {
-    container.innerHTML = '<div class="h23-workers-empty">No workers have been created yet. Open Setup to create the first worker from a template.</div>';
+    container.innerHTML = '<div class="h23-workers-empty">No workers have been installed yet. Open the Worker Library to add the first specialist.</div>';
     return;
   }
   container.innerHTML = workersState.workers.map((worker) => `
@@ -1603,6 +1731,7 @@ function renderWorkerRoster() {
         <div class="h23-worker-name">${escapeHtml(worker.displayName || worker.name)}</div>
         <div class="h23-worker-meta">${escapeHtml(worker.name)} · ${escapeHtml(worker.ownerAgent || 'house')} · ${escapeHtml(worker.class || 'worker')}</div>
         <div class="h23-worker-purpose">${escapeHtml(worker.purpose || '')}</div>
+        <div class="h23-worker-human">${escapeHtml(getWorkerCapability(worker).headline)}</div>
       </div>
       <span class="h23-worker-pill">${escapeHtml(worker.class || 'worker')}</span>
     </div>
@@ -1653,8 +1782,8 @@ async function runWorkerFromDashboard() {
   const status = document.getElementById('worker-run-status');
   const worker = select?.value;
   const prompt = promptEl?.value?.trim();
-  if (!worker) throw new Error('Select a worker first.');
-  if (!prompt) throw new Error('Enter a task for the worker.');
+  if (!worker) throw new Error('Select a specialist first.');
+  if (!prompt) throw new Error('Pick a starter action or describe what you want checked.');
 
   if (button) button.disabled = true;
   if (status) status.textContent = 'Running...';
@@ -1668,7 +1797,7 @@ async function runWorkerFromDashboard() {
         ownerAgent: primaryAgent?.name,
       }),
     });
-    if (status) status.textContent = `Finished: ${data.receipt?.status || data.runId}`;
+    if (status) status.textContent = `Check complete: ${data.receipt?.status || data.runId}`;
     if (promptEl) promptEl.value = '';
     workersState.receipt = data.receipt || null;
     await loadWorkersSurface();
@@ -1709,18 +1838,18 @@ function renderWorkerReceipt(receipt) {
         <span class="h23-worker-status ${workerStatusClass(receipt.verifierStatus)}">${escapeHtml(receipt.verifierStatus)}</span>
       </div>
     </div>
-    <p>${escapeHtml(receipt.summary || '')}</p>
+    <p><strong>What happened:</strong> ${escapeHtml(receipt.summary || '')}</p>
     ${receipt.rootCause ? `<div class="h23-worker-root-cause">${escapeHtml(receipt.rootCause)}</div>` : ''}
     <div class="h23-worker-receipt-block">
-      <h4>Evidence</h4>
+      <h4>What was checked</h4>
       <ul>${evidence || '<li>No evidence recorded.</li>'}</ul>
     </div>
     <div class="h23-worker-receipt-block">
-      <h4>Artifacts</h4>
+      <h4>Files produced</h4>
       <ul>${artifacts || '<li>No artifacts recorded.</li>'}</ul>
     </div>
     <div class="h23-worker-receipt-block">
-      <h4>Memory Candidates</h4>
+      <h4>What Jerry can learn</h4>
       <ul>${memory || '<li>No memory candidates proposed.</li>'}</ul>
       <button class="h23-worker-btn secondary" type="button" data-worker-promote-memory="${escapeHtml(receipt.runId)}">Send to Memory Curator</button>
       <span class="h23-workers-status" id="worker-memory-status"></span>
