@@ -28,6 +28,8 @@ Commands:
   init                    First-time setup (deps, build, plumbing)
   start [name]            Start agent(s) via PM2
   stop [name]             Stop agent(s) via PM2
+  worker create <name>    Create a reusable worker without a full engine
+  worker list             List reusable workers
   update                  Update to latest release
   update --check          Check for updates
   agent create <name>     Create a new agent instance
@@ -53,6 +55,9 @@ Commands:
     }
     const { runAgentCreate } = await import('./lib/agent-create.js');
     await runAgentCreate(HOME23_ROOT, name);
+  } else if (command === 'worker') {
+    const { handleWorkerCommand } = await import('./lib/worker-commands.js');
+    await handleWorkerCommand(args.slice(1), HOME23_ROOT);
   } else if (command === 'start') {
     const { runStart } = await import('./lib/pm2-commands.js');
     await runStart(HOME23_ROOT, args[1]);
