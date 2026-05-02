@@ -739,7 +739,47 @@ class DashboardServer {
       runtimeDir: path.join(home23Root, 'instances', agentName, 'brain'),
       workspacePath: path.join(home23Root, 'instances', agentName, 'workspace'),
       realtimePort: Number(config.ports?.engine) || Number(process.env.REALTIME_PORT || '5001'),
+      bridgePort: Number(config.ports?.bridge) || Number(process.env.HOME23_BRIDGE_PORT || process.env.BRIDGE_PORT || '5004'),
     };
+  }
+
+  async proxyWorkerConnector(req, res, method, connectorPath, timeoutMs = 120_000) {
+    const target = this.getHome23AgentContext(req.query?.agent);
+    const baseUrl = `http://127.0.0.1:${target.bridgePort}`;
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(req.query || {})) {
+      if (key === 'agent') continue;
+      if (Array.isArray(value)) {
+        for (const item of value) query.append(key, String(item));
+      } else if (value !== undefined && value !== null) {
+        query.set(key, String(value));
+      }
+    }
+    const url = `${baseUrl}${connectorPath}${query.toString() ? `?${query.toString()}` : ''}`;
+
+    try {
+      const options = {
+        method,
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs),
+      };
+      if (method !== 'GET' && method !== 'HEAD') {
+        options.headers['content-type'] = 'application/json';
+        options.body = JSON.stringify(req.body || {});
+      }
+      const upstream = await fetch(url, options);
+      const text = await upstream.text();
+      res.status(upstream.status);
+      res.set('content-type', upstream.headers.get('content-type') || 'application/json');
+      res.send(text || '{}');
+    } catch (error) {
+      res.status(502).json({
+        ok: false,
+        error: `Worker connector unavailable on ${baseUrl}: ${error.message}`,
+        agent: target.agentName,
+        bridgePort: target.bridgePort,
+      });
+    }
   }
 
   setupRoutes() {
@@ -835,6 +875,19 @@ class DashboardServer {
               { method: 'GET', path: '/api/pulse/latest' },
               { method: 'GET', path: '/api/live-problems' },
               { method: 'GET', path: '/home23/api/settings/update-status' },
+            ],
+          },
+          workers: {
+            kind: 'mixed',
+            chip: 'Workers',
+            summaryTemplate: 'Workers are reusable house capabilities. They run through {{dashboardAgent}}\'s connector, keep their own workspaces, and feed receipts back into house-agent memory.',
+            routes: [
+              { method: 'GET', path: '/home23/api/workers' },
+              { method: 'GET', path: '/home23/api/workers/templates' },
+              { method: 'GET', path: '/home23/api/workers/runs' },
+              { method: 'POST', path: '/home23/api/workers/:name/runs' },
+              { method: 'GET', path: '/home23/api/workers/runs/:runId/receipt' },
+              { method: 'POST', path: '/home23/api/workers/runs/:runId/promote-memory' },
             ],
           },
           query: {
@@ -972,6 +1025,41 @@ class DashboardServer {
       } catch (err) {
         res.status(400).json({ ok: false, error: err.message });
       }
+    });
+
+    // Reusable worker agents — dashboard facade over the owner agent's bridge connector.
+    this.app.get('/home23/api/workers/templates', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'GET', '/api/workers/templates', 10_000);
+    });
+    this.app.get('/home23/api/workers/runs', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'GET', '/api/workers/runs', 10_000);
+    });
+    this.app.get('/home23/api/workers/runs/:runId', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'GET', `/api/workers/runs/${encodeURIComponent(req.params.runId)}`, 10_000);
+    });
+    this.app.get('/home23/api/workers/runs/:runId/receipt', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'GET', `/api/workers/runs/${encodeURIComponent(req.params.runId)}/receipt`, 10_000);
+    });
+    this.app.get('/home23/api/workers/runs/:runId/artifacts', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'GET', `/api/workers/runs/${encodeURIComponent(req.params.runId)}/artifacts`, 10_000);
+    });
+    this.app.post('/home23/api/workers/runs/:runId/cancel', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'POST', `/api/workers/runs/${encodeURIComponent(req.params.runId)}/cancel`, 10_000);
+    });
+    this.app.post('/home23/api/workers/runs/:runId/promote-memory', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'POST', `/api/workers/runs/${encodeURIComponent(req.params.runId)}/promote-memory`, 10_000);
+    });
+    this.app.get('/home23/api/workers', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'GET', '/api/workers', 10_000);
+    });
+    this.app.post('/home23/api/workers', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'POST', '/api/workers', 30_000);
+    });
+    this.app.get('/home23/api/workers/:name', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'GET', `/api/workers/${encodeURIComponent(req.params.name)}`, 10_000);
+    });
+    this.app.post('/home23/api/workers/:name/runs', (req, res) => {
+      this.proxyWorkerConnector(req, res, 'POST', `/api/workers/${encodeURIComponent(req.params.name)}/runs`, 180_000);
     });
 
     // Home23 feeder status — reads from engine's DocumentFeeder manifest

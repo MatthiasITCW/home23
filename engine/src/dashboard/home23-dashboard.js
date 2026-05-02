@@ -28,6 +28,13 @@ let homeTileCustomRefreshers = new Map();
 let homeTileCustomState = new Map();
 let tileActionDialogState = null;
 let homeTileBroadcast = null;
+let workersState = {
+  workers: [],
+  templates: [],
+  runs: [],
+  receipt: null,
+  lastLoadedAt: null,
+};
 
 function currentAgentLabel(fallback = 'This agent') {
   return primaryAgent?.displayName || primaryAgent?.name || fallback;
@@ -43,6 +50,11 @@ const DASHBOARD_SCOPE_FALLBACK = {
     kind: 'dashboard',
     chip: 'This Agent',
     summaryTemplate: "Intelligence is scoped to {{dashboardAgent}}. It reflects this dashboard agent's internal state and live system observations.",
+  },
+  workers: {
+    kind: 'mixed',
+    chip: 'Workers',
+    summaryTemplate: 'Workers are reusable house capabilities. They run through {{dashboardAgent}}\'s connector, keep their own workspaces, and feed receipts back into house-agent memory.',
   },
   query: {
     kind: 'dashboard',
@@ -182,9 +194,11 @@ async function init() {
   setupHomeLayoutHandlers();
   setupTileActionHandlers();
   setupHomeTileBroadcast();
+  setupWorkersSurface();
   await loadHomeLayoutConfig({ force: true });
   connectEnginePulse();
   loadHomeTiles().catch(() => { /* initial home load is best-effort */ });
+  loadWorkersSurface().catch(() => { /* workers connector may be offline during early boot */ });
   startHomeThoughtRotation();
   startAutoRefresh();
   updateCosmoIndicator();
@@ -223,6 +237,12 @@ async function init() {
   updatePulseTile();
   setInterval(updatePulseTile, 20000);
   startPulseRotation();
+
+  // Workers are connector-backed and cheap to refresh. Keep the user-facing
+  // status current without pulling on the full engine loop.
+  setInterval(() => {
+    if (currentTab === 'workers') loadWorkersSurface().catch(() => {});
+  }, 30000);
 }
 
 // ── Pulse tile (Jerry's voice + rotating stats) ──
@@ -1449,6 +1469,10 @@ function setupTabHandlers() {
         if (typeof initQueryTab === 'function') initQueryTab();
       }
 
+      if (currentTab === 'workers') {
+        loadWorkersSurface().catch(() => {});
+      }
+
       // Intelligence tab: load content and start refresh
       if (currentTab === 'intelligence') {
         loadIntelligence();
@@ -1463,6 +1487,251 @@ function setupTabHandlers() {
       }
     });
   });
+}
+
+// ── Workers ──
+
+function workerApiUrl(path = '') {
+  const url = new URL(`/home23/api/workers${path}`, window.location.origin);
+  if (primaryAgent?.name) url.searchParams.set('agent', primaryAgent.name);
+  return `${url.pathname}${url.search}`;
+}
+
+async function workerApi(path = '', options = {}) {
+  const res = await fetch(workerApiUrl(path), {
+    ...options,
+    headers: {
+      accept: 'application/json',
+      ...(options.body ? { 'content-type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Worker API HTTP ${res.status}`);
+  return data;
+}
+
+function setupWorkersSurface() {
+  document.getElementById('workers-refresh-btn')?.addEventListener('click', () => {
+    loadWorkersSurface().catch((err) => renderWorkersError(err));
+  });
+  document.getElementById('worker-run-btn')?.addEventListener('click', () => {
+    runWorkerFromDashboard().catch((err) => {
+      const status = document.getElementById('worker-run-status');
+      if (status) status.textContent = err.message;
+    });
+  });
+  document.getElementById('workers-runs')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-worker-run-id]');
+    if (!button) return;
+    openWorkerReceipt(button.dataset.workerRunId).catch((err) => renderWorkerReceiptError(err));
+  });
+  document.getElementById('workers-receipt')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-worker-promote-memory]');
+    if (!button) return;
+    promoteWorkerMemory(button.dataset.workerPromoteMemory).catch((err) => renderWorkerReceiptError(err));
+  });
+}
+
+async function loadWorkersSurface() {
+  const [workersData, templatesData, runsData] = await Promise.all([
+    workerApi(''),
+    workerApi('/templates'),
+    workerApi('/runs'),
+  ]);
+  workersState = {
+    ...workersState,
+    workers: workersData.workers || [],
+    templates: templatesData.templates || [],
+    runs: runsData.runs || [],
+    lastLoadedAt: new Date(),
+  };
+  renderWorkersSurface();
+}
+
+function renderWorkersError(err) {
+  const roster = document.getElementById('workers-roster');
+  const runs = document.getElementById('workers-runs');
+  if (roster) roster.innerHTML = `<div class="h23-workers-empty">Worker connector unavailable: ${escapeHtml(err.message)}</div>`;
+  if (runs) runs.innerHTML = '<div class="h23-workers-empty">Recent runs are unavailable.</div>';
+}
+
+function renderWorkersSurface() {
+  renderWorkerStats();
+  renderWorkerRunSelect();
+  renderWorkerRoster();
+  renderWorkerRuns();
+}
+
+function renderWorkerStats() {
+  const stats = document.getElementById('workers-stats');
+  if (!stats) return;
+  const passCount = workersState.runs.filter(run => run.verifierStatus === 'pass').length;
+  const memoryCount = workersState.receipt?.memoryCandidates?.length || 0;
+  stats.innerHTML = [
+    ['Workers', workersState.workers.length],
+    ['Runs', workersState.runs.length],
+    ['Passing', passCount],
+    ['Memory Candidates', memoryCount],
+  ].map(([label, value]) => `<div class="h23-worker-stat"><span>${escapeHtml(value)}</span><label>${escapeHtml(label)}</label></div>`).join('');
+}
+
+function renderWorkerRunSelect() {
+  const select = document.getElementById('worker-run-select');
+  if (!select) return;
+  const current = select.value;
+  if (workersState.workers.length === 0) {
+    select.innerHTML = '<option value="">No workers available</option>';
+    return;
+  }
+  select.innerHTML = workersState.workers.map((worker) => {
+    const selected = current === worker.name ? ' selected' : '';
+    return `<option value="${escapeHtml(worker.name)}"${selected}>${escapeHtml(worker.displayName || worker.name)}</option>`;
+  }).join('');
+}
+
+function renderWorkerRoster() {
+  const container = document.getElementById('workers-roster');
+  if (!container) return;
+  if (workersState.workers.length === 0) {
+    container.innerHTML = '<div class="h23-workers-empty">No workers have been created yet. Open Setup to create the first worker from a template.</div>';
+    return;
+  }
+  container.innerHTML = workersState.workers.map((worker) => `
+    <div class="h23-worker-row">
+      <div>
+        <div class="h23-worker-name">${escapeHtml(worker.displayName || worker.name)}</div>
+        <div class="h23-worker-meta">${escapeHtml(worker.name)} · ${escapeHtml(worker.ownerAgent || 'house')} · ${escapeHtml(worker.class || 'worker')}</div>
+        <div class="h23-worker-purpose">${escapeHtml(worker.purpose || '')}</div>
+      </div>
+      <span class="h23-worker-pill">${escapeHtml(worker.class || 'worker')}</span>
+    </div>
+  `).join('');
+}
+
+function formatWorkerTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function workerStatusClass(value) {
+  if (value === 'fixed' || value === 'pass') return 'pass';
+  if (value === 'failed' || value === 'fail') return 'fail';
+  if (value === 'blocked' || value === 'cancelled') return 'blocked';
+  return 'neutral';
+}
+
+function renderWorkerRuns() {
+  const container = document.getElementById('workers-runs');
+  if (!container) return;
+  const runs = workersState.runs.slice(0, 20);
+  if (runs.length === 0) {
+    container.innerHTML = '<div class="h23-workers-empty">No worker runs yet.</div>';
+    return;
+  }
+  container.innerHTML = runs.map((run) => `
+    <button class="h23-worker-run-row" type="button" data-worker-run-id="${escapeHtml(run.runId)}">
+      <span class="h23-worker-run-main">
+        <strong>${escapeHtml(run.worker)}</strong>
+        <span>${escapeHtml(run.summary || run.runId)}</span>
+      </span>
+      <span class="h23-worker-run-side">
+        <span class="h23-worker-status ${workerStatusClass(run.status)}">${escapeHtml(run.status || 'running')}</span>
+        <span class="h23-worker-status ${workerStatusClass(run.verifierStatus)}">${escapeHtml(run.verifierStatus || 'unknown')}</span>
+        <time>${escapeHtml(formatWorkerTime(run.finishedAt || run.startedAt))}</time>
+      </span>
+    </button>
+  `).join('');
+}
+
+async function runWorkerFromDashboard() {
+  const select = document.getElementById('worker-run-select');
+  const promptEl = document.getElementById('worker-run-prompt');
+  const button = document.getElementById('worker-run-btn');
+  const status = document.getElementById('worker-run-status');
+  const worker = select?.value;
+  const prompt = promptEl?.value?.trim();
+  if (!worker) throw new Error('Select a worker first.');
+  if (!prompt) throw new Error('Enter a task for the worker.');
+
+  if (button) button.disabled = true;
+  if (status) status.textContent = 'Running...';
+  try {
+    const data = await workerApi(`/${encodeURIComponent(worker)}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt,
+        requestedBy: 'human',
+        requester: 'home23-dashboard',
+        ownerAgent: primaryAgent?.name,
+      }),
+    });
+    if (status) status.textContent = `Finished: ${data.receipt?.status || data.runId}`;
+    if (promptEl) promptEl.value = '';
+    workersState.receipt = data.receipt || null;
+    await loadWorkersSurface();
+    if (data.runId) await openWorkerReceipt(data.runId);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function openWorkerReceipt(runId) {
+  const receipt = await workerApi(`/runs/${encodeURIComponent(runId)}/receipt`);
+  workersState.receipt = receipt;
+  renderWorkerReceipt(receipt);
+  renderWorkerStats();
+}
+
+function renderWorkerReceiptError(err) {
+  const container = document.getElementById('workers-receipt');
+  if (container) container.innerHTML = `<div class="h23-workers-empty">Receipt unavailable: ${escapeHtml(err.message)}</div>`;
+}
+
+function renderWorkerReceipt(receipt) {
+  const container = document.getElementById('workers-receipt');
+  if (!container) return;
+  const evidence = (receipt.evidence || []).map(item => `
+    <li><span class="h23-worker-status ${workerStatusClass(item.status)}">${escapeHtml(item.status || 'unknown')}</span> ${escapeHtml(item.type)} — ${escapeHtml(item.detail)}</li>
+  `).join('');
+  const artifacts = (receipt.artifacts || []).map(item => `<li><code>${escapeHtml(item)}</code></li>`).join('');
+  const memory = (receipt.memoryCandidates || []).map(item => `<li>${escapeHtml(item.text)} <span>${escapeHtml(Math.round((item.confidence || 0) * 100))}%</span></li>`).join('');
+  container.innerHTML = `
+    <div class="h23-worker-receipt-head">
+      <div>
+        <div class="h23-worker-name">${escapeHtml(receipt.worker)} · ${escapeHtml(receipt.runId)}</div>
+        <div class="h23-worker-meta">${escapeHtml(formatWorkerTime(receipt.startedAt))} → ${escapeHtml(formatWorkerTime(receipt.finishedAt))}</div>
+      </div>
+      <div class="h23-worker-receipt-badges">
+        <span class="h23-worker-status ${workerStatusClass(receipt.status)}">${escapeHtml(receipt.status)}</span>
+        <span class="h23-worker-status ${workerStatusClass(receipt.verifierStatus)}">${escapeHtml(receipt.verifierStatus)}</span>
+      </div>
+    </div>
+    <p>${escapeHtml(receipt.summary || '')}</p>
+    ${receipt.rootCause ? `<div class="h23-worker-root-cause">${escapeHtml(receipt.rootCause)}</div>` : ''}
+    <div class="h23-worker-receipt-block">
+      <h4>Evidence</h4>
+      <ul>${evidence || '<li>No evidence recorded.</li>'}</ul>
+    </div>
+    <div class="h23-worker-receipt-block">
+      <h4>Artifacts</h4>
+      <ul>${artifacts || '<li>No artifacts recorded.</li>'}</ul>
+    </div>
+    <div class="h23-worker-receipt-block">
+      <h4>Memory Candidates</h4>
+      <ul>${memory || '<li>No memory candidates proposed.</li>'}</ul>
+      <button class="h23-worker-btn secondary" type="button" data-worker-promote-memory="${escapeHtml(receipt.runId)}">Send to Memory Curator</button>
+      <span class="h23-workers-status" id="worker-memory-status"></span>
+    </div>
+  `;
+}
+
+async function promoteWorkerMemory(runId) {
+  const data = await workerApi(`/runs/${encodeURIComponent(runId)}/promote-memory`, { method: 'POST', body: JSON.stringify({}) });
+  const status = document.getElementById('worker-memory-status');
+  if (status) status.textContent = `${data.candidates || 0} candidate(s) ready for the memory curator.`;
 }
 
 // ── Home Tiles (current dashboard agent) ──

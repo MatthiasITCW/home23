@@ -5,6 +5,7 @@
 const API = '/home23/api/settings';
 let modelsData = null;
 let skillsSettingsData = null;
+let workersSettingsData = { workers: [], templates: [], runs: [] };
 let tilesState = null;
 let tileConnectionsState = null;
 let editingCustomTileId = null;
@@ -27,6 +28,10 @@ const SETTINGS_TAB_CHROME = {
   agents: {
     icon: '♷',
     description: 'Create agents, choose the home primary, and inspect the multi-agent roster without mixing it into runtime defaults.',
+  },
+  workers: {
+    icon: '⚙',
+    description: 'Create and run reusable specialist workers that keep their own workspace and report back through receipts.',
   },
   models: {
     icon: '▣',
@@ -74,6 +79,12 @@ const DEFAULT_SETTINGS_SCOPE_REGISTRY = {
     chip: 'Roster',
     agentTarget: 'roster',
     summaryTemplate: 'Agents manages the multi-agent roster. Create agents, choose the home primary, and control each runtime independently.',
+  },
+  workers: {
+    kind: 'mixed',
+    chip: 'Workers',
+    agentTarget: 'selected',
+    summaryTemplate: 'Workers are reusable house capabilities. They run through {{selectedAgent}}\'s bridge connector, keep their own workspaces, and feed receipts back into house-agent memory.',
   },
   models: {
     kind: 'mixed',
@@ -292,6 +303,9 @@ async function refreshAgentScopedPanels() {
   loadFeeder();
   loadAgencyRecent();
   loadAgencyRequested();
+  if (activeSettingsTab === 'workers') {
+    loadWorkersSettings();
+  }
 }
 
 async function setSelectedSettingsAgent(name, options = {}) {
@@ -315,8 +329,209 @@ function setupSubTabs() {
       const panel = document.getElementById(`panel-${tab.dataset.stab}`);
       if (panel) panel.classList.add('active');
       refreshAgentScopeUI();
+      if (activeSettingsTab === 'workers') {
+        loadWorkersSettings().catch(() => {});
+      }
     });
   });
+}
+
+// ── Workers ──
+
+function workersApiUrl(path = '') {
+  const url = new URL(`/home23/api/workers${path}`, window.location.origin);
+  if (selectedSettingsAgent) url.searchParams.set('agent', selectedSettingsAgent);
+  return `${url.pathname}${url.search}`;
+}
+
+async function workersApi(path = '', options = {}) {
+  const res = await fetch(workersApiUrl(path), {
+    ...options,
+    headers: {
+      accept: 'application/json',
+      ...(options.body ? { 'content-type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Worker API HTTP ${res.status}`);
+  return data;
+}
+
+function setupWorkersSettings() {
+  document.getElementById('btn-refresh-workers')?.addEventListener('click', () => {
+    loadWorkersSettings().catch((err) => setWorkerSettingsStatus(err.message, true));
+  });
+  document.getElementById('btn-create-worker')?.addEventListener('click', () => {
+    createWorkerFromSettings().catch((err) => setWorkerSettingsStatus(err.message, true));
+  });
+  document.getElementById('btn-run-worker-settings')?.addEventListener('click', () => {
+    runWorkerFromSettings().catch((err) => {
+      const status = document.getElementById('settings-worker-run-status');
+      if (status) status.textContent = err.message;
+    });
+  });
+}
+
+function setWorkerSettingsStatus(message, isError = false) {
+  const status = document.getElementById('worker-create-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.style.color = isError ? 'var(--accent-red)' : 'var(--accent-green)';
+}
+
+async function loadWorkersSettings() {
+  const [workersData, templatesData, runsData] = await Promise.all([
+    workersApi(''),
+    workersApi('/templates'),
+    workersApi('/runs'),
+  ]);
+  workersSettingsData = {
+    workers: workersData.workers || [],
+    templates: templatesData.templates || [],
+    runs: runsData.runs || [],
+  };
+  renderWorkersSettings();
+}
+
+function renderWorkersSettings() {
+  renderWorkerCreateOptions();
+  renderSettingsWorkerRoster();
+  renderSettingsWorkerTemplates();
+  renderSettingsWorkerRunSelect();
+  renderSettingsWorkerRuns();
+}
+
+function renderWorkerCreateOptions() {
+  const templateSelect = document.getElementById('worker-create-template');
+  if (templateSelect) {
+    templateSelect.innerHTML = workersSettingsData.templates.length
+      ? workersSettingsData.templates.map(template => `<option value="${escapeHtml(template.name)}">${escapeHtml(template.displayName || template.name)}</option>`).join('')
+      : '<option value="">No templates available</option>';
+  }
+
+  const ownerSelect = document.getElementById('worker-create-owner');
+  if (ownerSelect) {
+    ownerSelect.innerHTML = settingsAgents.map((agent) => {
+      const selected = (selectedSettingsAgent || settingsPrimaryAgent?.name) === agent.name ? ' selected' : '';
+      return `<option value="${escapeHtml(agent.name)}"${selected}>${escapeHtml(agent.displayName || agent.name)}</option>`;
+    }).join('');
+  }
+}
+
+function renderSettingsWorkerRoster() {
+  const container = document.getElementById('settings-workers-roster');
+  if (!container) return;
+  if (!workersSettingsData.workers.length) {
+    container.innerHTML = '<div class="h23s-worker-empty">No workers created yet.</div>';
+    return;
+  }
+  container.innerHTML = workersSettingsData.workers.map(worker => `
+    <div class="h23s-worker-item">
+      <div>
+        <strong>${escapeHtml(worker.displayName || worker.name)}</strong>
+        <span>${escapeHtml(worker.name)} · ${escapeHtml(worker.ownerAgent || 'house')} · ${escapeHtml(worker.class || 'worker')}</span>
+        <p>${escapeHtml(worker.purpose || '')}</p>
+      </div>
+      <span class="h23s-badge mode">${escapeHtml(worker.class || 'worker')}</span>
+    </div>
+  `).join('');
+}
+
+function renderSettingsWorkerTemplates() {
+  const container = document.getElementById('settings-worker-templates');
+  if (!container) return;
+  if (!workersSettingsData.templates.length) {
+    container.innerHTML = '<div class="h23s-worker-empty">No worker templates available.</div>';
+    return;
+  }
+  container.innerHTML = workersSettingsData.templates.map(template => `
+    <div class="h23s-worker-item">
+      <div>
+        <strong>${escapeHtml(template.displayName || template.name)}</strong>
+        <span>${escapeHtml(template.name)} · default owner ${escapeHtml(template.ownerAgent || 'house')}</span>
+        <p>${escapeHtml(template.purpose || '')}</p>
+      </div>
+      <span class="h23s-badge custom">${escapeHtml(template.class || 'worker')}</span>
+    </div>
+  `).join('');
+}
+
+function renderSettingsWorkerRunSelect() {
+  const select = document.getElementById('settings-worker-run-select');
+  if (!select) return;
+  select.innerHTML = workersSettingsData.workers.length
+    ? workersSettingsData.workers.map(worker => `<option value="${escapeHtml(worker.name)}">${escapeHtml(worker.displayName || worker.name)}</option>`).join('')
+    : '<option value="">No workers available</option>';
+}
+
+function formatSettingsWorkerTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function renderSettingsWorkerRuns() {
+  const container = document.getElementById('settings-worker-runs');
+  if (!container) return;
+  const runs = workersSettingsData.runs.slice(0, 12);
+  if (!runs.length) {
+    container.innerHTML = '<div class="h23s-worker-empty">No worker runs yet.</div>';
+    return;
+  }
+  container.innerHTML = runs.map(run => `
+    <div class="h23s-worker-run">
+      <div>
+        <strong>${escapeHtml(run.worker)}</strong>
+        <span>${escapeHtml(run.summary || run.runId)}</span>
+      </div>
+      <div>
+        <span class="h23s-badge mode">${escapeHtml(run.status || 'running')}</span>
+        <span class="h23s-badge ${run.verifierStatus === 'pass' ? 'custom' : 'core'}">${escapeHtml(run.verifierStatus || 'unknown')}</span>
+        <time>${escapeHtml(formatSettingsWorkerTime(run.finishedAt || run.startedAt))}</time>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function createWorkerFromSettings() {
+  const name = document.getElementById('worker-create-name')?.value?.trim();
+  const template = document.getElementById('worker-create-template')?.value;
+  const ownerAgent = document.getElementById('worker-create-owner')?.value || selectedSettingsAgent;
+  if (!name) throw new Error('Worker name is required.');
+  if (!template) throw new Error('Worker template is required.');
+  setWorkerSettingsStatus('Creating...');
+  await workersApi('', {
+    method: 'POST',
+    body: JSON.stringify({ name, template, ownerAgent }),
+  });
+  document.getElementById('worker-create-name').value = '';
+  setWorkerSettingsStatus(`Created worker ${name}.`);
+  await loadWorkersSettings();
+}
+
+async function runWorkerFromSettings() {
+  const worker = document.getElementById('settings-worker-run-select')?.value;
+  const promptEl = document.getElementById('settings-worker-run-prompt');
+  const prompt = promptEl?.value?.trim();
+  const requestedBy = document.getElementById('settings-worker-requested-by')?.value || 'human';
+  const status = document.getElementById('settings-worker-run-status');
+  if (!worker) throw new Error('Select a worker first.');
+  if (!prompt) throw new Error('Enter a task for the worker.');
+  if (status) status.textContent = 'Running...';
+  const data = await workersApi(`/${encodeURIComponent(worker)}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      prompt,
+      requestedBy,
+      requester: 'home23-settings',
+      ownerAgent: selectedSettingsAgent,
+    }),
+  });
+  if (status) status.textContent = `Finished: ${data.receipt?.status || data.runId}`;
+  if (promptEl) promptEl.value = '';
+  await loadWorkersSettings();
 }
 
 // ── Providers ──
@@ -4042,13 +4257,18 @@ async function init() {
   await loadScopeRegistry();
   renderSettingsScopeChrome();
   setupSubTabs();
+  setupWorkersSettings();
   await loadAgents();
+  if (window.location.hash === '#workers') {
+    document.querySelector('.h23s-tab[data-stab="workers"]')?.click();
+  }
   await refreshAgentScopedPanels();
   loadProviders();
   loadSystem();
   loadFeeder();
   loadSkillsSettings();
   loadVibe();
+  loadWorkersSettings();
   loadOAuthStatus();
   loadTilesPanel();
   loadQuerySettings();

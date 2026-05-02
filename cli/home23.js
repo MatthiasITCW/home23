@@ -30,6 +30,7 @@ Commands:
   stop [name]             Stop agent(s) via PM2
   worker create <name>    Create a reusable worker without a full engine
   worker list             List reusable workers
+  worker run <name> "..." Run a reusable worker through the bridge connector
   update                  Update to latest release
   update --check          Check for updates
   agent create <name>     Create a new agent instance

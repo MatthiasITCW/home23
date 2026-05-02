@@ -41,6 +41,7 @@
         <nav class="h23s-tabs">
           <button class="h23s-tab" data-stab="providers" data-tab-label="Providers" data-tab-icon="&#9711;">Providers</button>
           <button class="h23s-tab" data-stab="agents" data-tab-label="Agents" data-tab-icon="&#9783;">Agents</button>
+          <button class="h23s-tab" data-stab="workers" data-tab-label="Workers" data-tab-icon="&#9881;">Workers</button>
           <button class="h23s-tab active" data-stab="models" data-tab-label="Models" data-tab-icon="&#9635;">Models</button>
           <button class="h23s-tab" data-stab="query" data-tab-label="Query" data-tab-icon="&#9906;">Query</button>
           <button class="h23s-tab" data-stab="feeder" data-tab-label="Feeder" data-tab-icon="&#8767;">Feeder</button>
@@ -331,6 +332,90 @@
       </div>
 
       <div class="h23s-agent-list" id="agent-list">
+      </div>
+    </div>
+
+    <!-- Workers Panel -->
+    <div class="h23s-panel" id="panel-workers">
+      <h2 class="h23s-panel-title">Workers</h2>
+      <p class="h23s-panel-desc">
+        Reusable specialist agents with their own workspace and receipts, but without a standalone Home23 engine.
+        Runs go through the selected agent's bridge connector and feed results back as worker receipts.
+      </p>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Create Worker</h3>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>Name</label>
+            <input type="text" id="worker-create-name" placeholder="systems">
+          </div>
+          <div class="h23s-field">
+            <label>Template</label>
+            <select id="worker-create-template"></select>
+          </div>
+          <div class="h23s-field">
+            <label>Owner Agent</label>
+            <select id="worker-create-owner"></select>
+          </div>
+        </div>
+        <div class="h23s-action-row">
+          <button class="h23s-btn-primary" id="btn-create-worker" type="button">Create Worker</button>
+          <button class="h23s-btn-secondary" id="btn-refresh-workers" type="button">Refresh</button>
+          <span class="h23s-save-status" id="worker-create-status"></span>
+        </div>
+      </div>
+
+      <div class="h23s-workers-layout">
+        <div class="h23s-section">
+          <h3 class="h23s-section-title">Roster</h3>
+          <div id="settings-workers-roster" class="h23s-worker-list"></div>
+        </div>
+        <div class="h23s-section">
+          <h3 class="h23s-section-title">Templates</h3>
+          <div id="settings-worker-templates" class="h23s-worker-list"></div>
+        </div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Run Worker</h3>
+        <div class="h23s-field-row">
+          <div class="h23s-field">
+            <label>Worker</label>
+            <select id="settings-worker-run-select"></select>
+          </div>
+          <div class="h23s-field">
+            <label>Requested By</label>
+            <select id="settings-worker-requested-by">
+              <option value="human">Human</option>
+              <option value="house-agent">House Agent</option>
+              <option value="live-problems">Live Problems</option>
+              <option value="good-life">Good Life</option>
+            </select>
+          </div>
+        </div>
+        <div class="h23s-field">
+          <label>Task</label>
+          <textarea id="settings-worker-run-prompt" rows="5" placeholder="Give the worker a bounded task."></textarea>
+        </div>
+        <div class="h23s-action-row">
+          <button class="h23s-btn-primary" id="btn-run-worker-settings" type="button">Run Worker</button>
+          <span class="h23s-save-status" id="settings-worker-run-status"></span>
+        </div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Recent Runs</h3>
+        <div id="settings-worker-runs" class="h23s-worker-runs"></div>
+      </div>
+
+      <div class="h23s-section">
+        <h3 class="h23s-section-title">Local Use</h3>
+        <div class="h23s-worker-commands">
+          <code>node cli/home23.js worker list</code>
+          <code>node cli/home23.js worker create systems --template systems --owner jerry</code>
+          <code>node cli/home23.js worker run systems "inspect the current live problem and produce a receipt"</code>
+        </div>
       </div>
     </div>
 
