@@ -48,6 +48,8 @@ export interface ToolContext {
   chatId: string;
   telegramAdapter: TelegramAdapterRef | null;
   runAgentLoop: AgentLoopRunner | null;
+  workerConnectorBaseUrl?: string;
+  fetch?: typeof fetch;
   onEvent?: AgentEventCallback;
   conversationHistory?: { append(chatId: string, records: unknown[]): void };
 }

@@ -16,6 +16,7 @@ import { cronScheduleTool, cronListTool, cronDeleteTool, cronEnableTool, cronDis
 import { selfUpdateTool, selfReadTool } from './identity.js';
 import { spawnAgentTool } from './subagent.js';
 import { promoteToMemoryTool } from './promote.js';
+import { workerListTool, workerRunTool, workerStatusTool, workerReceiptTool, workerPromoteMemoryTool } from './workers.js';
 import { skillsAuditTool, skillsGetTool, skillsListTool, skillsRunTool, skillsSuggestTool } from './skills.js';
 import {
   listBrainsTool,
@@ -132,6 +133,11 @@ export function createToolRegistry(opts: { web?: WebToolsConfig } = {}): ToolReg
   registry.register(getBrainGraphTool);
   registry.register(compileBrainTool);
   registry.register(compileSectionTool);
+  registry.register(workerListTool);
+  registry.register(workerRunTool);
+  registry.register(workerStatusTool);
+  registry.register(workerReceiptTool);
+  registry.register(workerPromoteMemoryTool);
   registry.register(promoteToMemoryTool);
 
   return registry;
