@@ -1,0 +1,11 @@
+{
+  "schema": "home23.workers.v1",
+  "templates": {
+    "systems": {
+      "displayName": "Systems",
+      "class": "ops",
+      "ownerAgent": "jerry",
+      "purpose": "Diagnose Home23 host, PM2, ports, logs, and scoped service issues without destructive global operations."
+    }
+  }
+}
