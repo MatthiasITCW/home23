@@ -855,18 +855,20 @@ async function main() {
     if (workCfg?.enabled) {
       const { AgendaChannel }        = await import('./channels/work/agenda-channel.js');
       const { LiveProblemsChannel }  = await import('./channels/work/live-problems-channel.js');
+      const { WorkerRunsChannel }    = await import('./channels/work/worker-runs-channel.js');
       const { GoalsChannel }         = await import('./channels/work/goals-channel.js');
       const { CronsChannel }         = await import('./channels/work/crons-channel.js');
       const { HeartbeatChannel }     = await import('./channels/work/heartbeat-channel.js');
       channelBus.register(new AgendaChannel({ path: path.join(runtimeRoot, 'agenda.jsonl') }));
       channelBus.register(new LiveProblemsChannel({ path: path.join(runtimeRoot, 'live-problems.json'), intervalMs: 30 * 1000 }));
+      channelBus.register(new WorkerRunsChannel({ path: path.join(repoRoot, 'instances', 'jerry', 'brain', 'worker-runs.jsonl'), intervalMs: 30 * 1000 }));
       channelBus.register(new GoalsChannel({ goalsDir: path.join(runtimeRoot, 'goals') }));
       channelBus.register(new CronsChannel({ path: path.join(conversationsDir, 'cron-jobs.json'), intervalMs: 60 * 1000 }));
       channelBus.register(new HeartbeatChannel({
         getEngineState: () => ({ at: new Date().toISOString() }),
         intervalMs: 60 * 1000,
       }));
-      registered.push('work.agenda', 'work.live-problems', 'work.goals', 'work.crons', 'work.heartbeat');
+      registered.push('work.agenda', 'work.live-problems', 'work.worker-runs', 'work.goals', 'work.crons', 'work.heartbeat');
     }
 
     // Phase 4: machine + OS channels (opt-in per config).
