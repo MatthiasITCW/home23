@@ -306,6 +306,76 @@ const remediators = {
   },
 
   /**
+   * Tier 3 typed dispatch: hand a live problem to a reusable worker through
+   * the worker connector. Workers are not engines; they run through the
+   * existing harness and leave receipts for the owner brain.
+   *
+   * args: { worker, budgetHours }
+   * ctx: { workerConnectorBaseUrl, harnessDiagnoseUrl, harnessNotifyToken, problem }
+   */
+  async dispatch_to_worker({ worker = 'systems', budgetHours = 4 } = {}, ctx = {}) {
+    const { problem } = ctx;
+    if (!problem) return { outcome: 'rejected', detail: 'no problem in context' };
+
+    if (problem.dispatchedAt) {
+      const elapsedHours = (Date.now() - Date.parse(problem.dispatchedAt)) / 3600000;
+      if (elapsedHours < budgetHours) {
+        return {
+          outcome: 'in_progress',
+          detail: `worker working (${elapsedHours.toFixed(1)}h / ${budgetHours}h) runId=${problem.dispatchedTurnId || '?'}`,
+        };
+      }
+      return {
+        outcome: 'failed',
+        detail: `worker budget exhausted (${elapsedHours.toFixed(1)}h >= ${budgetHours}h)`,
+      };
+    }
+
+    const baseUrl = ctx.workerConnectorBaseUrl
+      || (ctx.harnessDiagnoseUrl ? ctx.harnessDiagnoseUrl.replace(/\/api\/diagnose$/, '') : '')
+      || process.env.HOME23_WORKER_CONNECTOR_URL;
+    if (!baseUrl) return { outcome: 'rejected', detail: 'worker connector url unset' };
+
+    const prompt = [
+      `Live Problem: ${problem.title || problem.claim || problem.id}`,
+      `Problem ID: ${problem.id}`,
+      `Severity: ${problem.severity || 'unknown'}`,
+      '',
+      problem.description || problem.claim || '',
+      '',
+      'Diagnose with evidence. If you act, use scoped Home23 operations only. Re-run the verifier or record the concrete check used.',
+      '',
+      'End with VERIFIER_STATUS, DISPATCH_OUTCOME, and SUMMARY lines.'
+    ].join('\n');
+
+    try {
+      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/workers/${encodeURIComponent(worker)}/runs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(ctx.harnessNotifyToken ? { 'Authorization': `Bearer ${ctx.harnessNotifyToken}` } : {}),
+        },
+        body: JSON.stringify({
+          prompt,
+          requestedBy: 'live-problems',
+          requester: 'engine',
+          source: { type: 'live-problem', id: problem.id },
+          metadata: { budgetHours },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { outcome: 'failed', detail: data.error || `worker connector HTTP ${res.status}` };
+      return {
+        outcome: 'dispatched',
+        turnId: data.runId || null,
+        detail: data.receipt?.summary || `worker ${worker} dispatched`,
+      };
+    } catch (err) {
+      return { outcome: 'failed', detail: `worker dispatch call failed: ${err.message}` };
+    }
+  },
+
+  /**
    * Escalate to jtr via the harness notify endpoint.
    * Only called as a last resort; gated by the loop so it fires once per problem
    * per escalation window.

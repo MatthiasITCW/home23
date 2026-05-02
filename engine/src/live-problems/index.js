@@ -56,6 +56,7 @@ function initLiveProblems({ brainDir, memory, logger, agentName, dashboardPort, 
   const bport = bridgePort || process.env.BRIDGE_PORT || '5004';
   const harnessNotifyUrl = `http://127.0.0.1:${bport}/api/notify`;
   const harnessDiagnoseUrl = `http://127.0.0.1:${bport}/api/diagnose`;
+  const workerConnectorBaseUrl = `http://127.0.0.1:${bport}`;
 
   const ctxProvider = () => ({
     memory,
@@ -63,6 +64,7 @@ function initLiveProblems({ brainDir, memory, logger, agentName, dashboardPort, 
     integrations: loadActionAllowlistIntegrations(),
     harnessNotifyUrl,
     harnessDiagnoseUrl,
+    workerConnectorBaseUrl,
     harnessNotifyToken: harnessNotifyToken || process.env.BRIDGE_TOKEN || '',
   });
 

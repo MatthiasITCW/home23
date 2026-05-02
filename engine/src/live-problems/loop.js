@@ -186,11 +186,13 @@ class LiveProblemsLoop {
       return;
     }
 
-    // ── Serial Tier-3 lock: at most one dispatch_to_agent in flight across
+    const isTier3Dispatch = step.type === 'dispatch_to_agent' || step.type === 'dispatch_to_worker';
+
+    // ── Serial Tier-3 lock: at most one Tier-3 dispatch in flight across
     //    the whole store. If this problem is waiting to dispatch but another
     //    is already in progress, skip this tick. (Keeps it simple; agent can
     //    only diagnose one thing at a time without risking collisions.)
-    if (step.type === 'dispatch_to_agent' && !p.dispatchedAt) {
+    if (isTier3Dispatch && !p.dispatchedAt) {
       const otherDispatched = this.store.all().find(q => q.id !== p.id && q.dispatchedAt);
       if (otherDispatched) {
         this.logger.info?.(`[live-problems] ${p.id}: waiting — ${otherDispatched.id} holds Tier-3 lock`);
@@ -198,15 +200,15 @@ class LiveProblemsLoop {
       }
     }
 
-    // For dispatch_to_agent, skip the remediator call entirely when already
+    // For Tier-3 dispatch, skip the remediator call entirely when already
     // dispatched — avoids 480 unnecessary HTTP calls + log entries + file
     // writes over a 12h budget window. Just check budget expiry directly.
-    if (step.type === 'dispatch_to_agent' && p.dispatchedAt) {
+    if (isTier3Dispatch && p.dispatchedAt) {
       const completedRecipe = getCompletedDispatchRecipe(p);
       if (completedRecipe) {
         const completion = classifyDispatchRecipe(completedRecipe);
         const summary = String(completedRecipe.summary || 'agent run completed').replace(/\s+/g, ' ').trim().slice(0, 240);
-        this.logger.info?.(`[live-problems] ${p.id}: agent finished (${completion.outcome})`);
+        this.logger.info?.(`[live-problems] ${p.id}: dispatch finished (${completion.outcome})`);
         this.store.recordRemediation(p.id, {
           step: p.stepIndex,
           type: step.type,
@@ -262,7 +264,7 @@ class LiveProblemsLoop {
       this.store.advanceRemediationStep(p.id);
     } else if (out.outcome === 'rejected' || out.outcome === 'failed') {
       // Clear dispatch state if this was the agent step failing past budget.
-      if (step.type === 'dispatch_to_agent') this.store.clearDispatch(p.id);
+      if (isTier3Dispatch) this.store.clearDispatch(p.id);
       this.store.advanceRemediationStep(p.id);
     }
     // On 'success' for non-notify steps, leave stepIndex where it is. Next tick
@@ -292,7 +294,7 @@ function getSuccessAttemptLimit(step) {
 
 function shouldAdvanceAfterIneffectiveSuccess(problem, step) {
   if (!problem || !step) return false;
-  if (step.type === 'dispatch_to_agent' || step.type === 'notify_jtr') return false;
+  if (step.type === 'dispatch_to_agent' || step.type === 'dispatch_to_worker' || step.type === 'notify_jtr') return false;
   const stepIndex = problem.stepIndex || 0;
   const openedAt = Date.parse(problem.openedAt || problem.firstSeenAt || 0) || 0;
   const lastCheckedAt = Date.parse(problem.lastCheckedAt || 0) || 0;
