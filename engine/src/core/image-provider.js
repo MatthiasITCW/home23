@@ -28,7 +28,8 @@ const DEFAULT_CONFIG = {
     fallback: { provider: 'openai', model: 'gpt-4o-mini' }
   },
   providers: {
-    openai: { model: 'gpt-image-2', size: 'auto', quality: 'auto' }
+    openai: { model: 'gpt-image-2', size: 'auto', quality: 'auto' },
+    xai: { model: 'grok-imagine-image', size: 'auto' }
   }
 };
 
@@ -144,7 +145,9 @@ function resolveEngineConfig(engineConfig, homeConfig, agentConfig) {
 function applyHome23ImageGenerationConfig(config, homeConfig) {
   const configured = homeConfig?.media?.imageGeneration || {};
   const provider = pickFirstString([configured.provider, config.active, 'openai']) || 'openai';
-  const defaultModel = provider === 'minimax' ? 'image-01' : 'gpt-image-2';
+  const defaultModel = provider === 'minimax'
+    ? 'image-01'
+    : (provider === 'xai' ? 'grok-imagine-image' : 'gpt-image-2');
   const model = pickFirstString([
     configured.model,
     config.providers?.[provider]?.model,
@@ -684,7 +687,9 @@ function createImageProvider(runtime = {}) {
       '1024x1024': '1:1', '1536x1024': '3:2', '1024x1536': '2:3',
       '1792x1024': '16:9', '1024x1792': '9:16',
       '16:9': '16:9', '9:16': '9:16', '4:3': '4:3', '3:4': '3:4',
-      '1:1': '1:1', '3:2': '3:2', '2:3': '2:3', '21:9': '21:9',
+      '1:1': '1:1', '3:2': '3:2', '2:3': '2:3', '2:1': '2:1',
+      '1:2': '1:2', '19.5:9': '19.5:9', '9:19.5': '9:19.5',
+      '20:9': '20:9', '9:20': '9:20', '21:9': '21:9', 'auto': 'auto',
     };
     return map[size] || undefined;
   }
@@ -747,12 +752,74 @@ function createImageProvider(runtime = {}) {
     };
   }
 
+  async function generateXAI(prompt, options = {}) {
+    const config = getConfig();
+    const providerCfg = config.providers?.xai || {};
+    const model = options.model || providerCfg.model || 'grok-imagine-image';
+    const apiKey = providerCfg.apiKey || process.env.XAI_API_KEY || '';
+    const baseURL = (providerCfg.baseUrl || process.env.XAI_BASE_URL || 'https://api.x.ai/v1').replace(/\/$/, '');
+    if (!apiKey) throw new Error('XAI_API_KEY not configured');
+
+    const body = { model, prompt, n: 1, response_format: 'b64_json' };
+    const aspect = sizeToAspectRatio(options.size || providerCfg.size);
+    if (aspect) body.aspect_ratio = aspect;
+
+    const res = await fetch(`${baseURL}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`xAI Image API error: HTTP ${res.status} — ${errText.slice(0, 300)}`);
+    }
+
+    const data = await res.json();
+    const imgData = data.data?.[0];
+    if (!imgData) throw new Error('No image in xAI response');
+
+    const b64 = imgData.b64_json || null;
+    const url = imgData.url || null;
+    let localPath = null;
+
+    if (b64) {
+      fs.mkdirSync(IMAGES_DIR, { recursive: true });
+      const filename = `${uuidv4()}.png`;
+      localPath = path.join(IMAGES_DIR, filename);
+      fs.writeFileSync(localPath, Buffer.from(b64, 'base64'));
+    } else if (url) {
+      localPath = await downloadImageToLocal(url);
+    }
+
+    if (localPath) {
+      const metaPath = localPath.replace(/\.(png|jpg|jpeg)$/, '.json');
+      fs.writeFileSync(metaPath, JSON.stringify({
+        thought: prompt, generatedAt: new Date().toISOString(),
+        provider: 'xai', model,
+      }));
+    }
+
+    return {
+      url, b64, mimeType: 'image/png',
+      provider: 'xai', model, prompt,
+      generatedAt: new Date().toISOString(), localPath,
+    };
+  }
+
   async function generate(prompt, options = {}) {
     const config = getConfig();
     const active = options.provider || config.active || 'openai';
 
     if (active === 'minimax') {
       return generateMiniMax(prompt, options);
+    }
+    if (active === 'xai') {
+      return generateXAI(prompt, options);
     }
 
     const providerCfg = config.providers?.[active] || {};

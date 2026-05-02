@@ -394,6 +394,10 @@ function createSettingsRouter(home23Root) {
       displayName: 'MiniMax',
       models: ['image-01'],
     },
+    xai: {
+      displayName: 'xAI',
+      models: ['grok-imagine-image', 'grok-imagine-image-pro'],
+    },
   });
 
   function normalizeImageGenerationSettings(stored = {}) {

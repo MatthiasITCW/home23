@@ -37,6 +37,12 @@ function normalizeAnthropicCompatibleBase(baseUrl?: string): string {
   return raw.replace(/\/+$/, '').replace(/\/v1$/, '');
 }
 
+function defaultImageModel(provider: string): string {
+  if (provider === 'minimax') return 'image-01';
+  if (provider === 'xai') return 'grok-imagine-image';
+  return 'gpt-image-2';
+}
+
 function resolveImageGeneratorConfig(): ImageGeneratorConfig {
   const agentName = process.env.HOME23_AGENT ?? 'test-agent';
   const config = loadConfig(agentName);
@@ -46,7 +52,7 @@ function resolveImageGeneratorConfig(): ImageGeneratorConfig {
     : 'openai';
   const model = typeof configured.model === 'string' && configured.model.trim()
     ? configured.model.trim()
-    : provider === 'minimax' ? 'image-01' : 'gpt-image-2';
+    : defaultImageModel(provider);
 
   const providers = config.providers as Record<string, { apiKey?: string; baseUrl?: string }> | undefined;
 
@@ -56,6 +62,16 @@ function resolveImageGeneratorConfig(): ImageGeneratorConfig {
       model,
       apiKey: providers?.minimax?.apiKey ?? process.env.MINIMAX_API_KEY ?? '',
       baseUrl: normalizeMiniMaxApiBase(providers?.minimax?.baseUrl),
+    };
+  }
+
+  if (provider === 'xai') {
+    const xaiProvider = providers?.xai;
+    return {
+      provider,
+      model,
+      apiKey: xaiProvider?.apiKey ?? process.env.XAI_API_KEY ?? '',
+      baseUrl: xaiProvider?.baseUrl ?? process.env.XAI_BASE_URL ?? 'https://api.x.ai/v1',
     };
   }
 
@@ -116,7 +132,9 @@ function sizeToAspectRatio(size?: string): string | undefined {
     '1024x1024': '1:1', '1536x1024': '3:2', '1024x1536': '2:3',
     '1792x1024': '16:9', '1024x1792': '9:16',
     '16:9': '16:9', '9:16': '9:16', '4:3': '4:3', '3:4': '3:4',
-    '1:1': '1:1', '3:2': '3:2', '2:3': '2:3', '21:9': '21:9',
+    '1:1': '1:1', '3:2': '3:2', '2:3': '2:3', '2:1': '2:1',
+    '1:2': '1:2', '19.5:9': '19.5:9', '9:19.5': '9:19.5',
+    '20:9': '20:9', '9:20': '9:20', '21:9': '21:9', 'auto': 'auto',
   };
   return map[size] ?? undefined;
 }
@@ -218,11 +236,65 @@ async function generateOpenAIImage(
 
   if (!buf) return { content: `No image bytes returned from ${cfg.model}.`, is_error: true };
 
-  const filePath = join(ctx.tempDir, `openai-${Date.now()}.png`);
+  const filePath = join(ctx.tempDir, `${cfg.provider}-${Date.now()}.png`);
   writeFileSync(filePath, buf);
 
   return {
-    content: `Image generated via openai/${cfg.model}${imgData.revised_prompt ? ` (revised prompt: "${imgData.revised_prompt}")` : ''}`,
+    content: `Image generated via ${cfg.provider}/${cfg.model}${imgData.revised_prompt ? ` (revised prompt: "${imgData.revised_prompt}")` : ''}`,
+    media: [{ type: 'image', path: filePath, mimeType: 'image/png', caption: prompt.slice(0, 200) }],
+  };
+}
+
+async function generateXAIImage(
+  prompt: string, size: string | undefined,
+  cfg: ImageGeneratorConfig, ctx: ToolContext,
+): Promise<ToolResult> {
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    prompt,
+    n: 1,
+    response_format: 'b64_json',
+  };
+  const aspect = sizeToAspectRatio(size);
+  if (aspect) body.aspect_ratio = aspect;
+
+  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/images/generations`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${cfg.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    return { content: `xAI Image API error (${cfg.model}): HTTP ${res.status} — ${errText.slice(0, 300)}`, is_error: true };
+  }
+
+  const data = await res.json() as { data: Array<{ b64_json?: string; url?: string; revised_prompt?: string }> };
+  const imgData = data.data?.[0];
+  if (!imgData) return { content: `No image returned from ${cfg.model}.`, is_error: true };
+
+  let buf: Buffer | null = null;
+  if (imgData.b64_json) {
+    buf = Buffer.from(imgData.b64_json, 'base64');
+  } else if (imgData.url) {
+    const fileRes = await fetch(imgData.url, { signal: AbortSignal.timeout(60_000) });
+    if (!fileRes.ok) {
+      return { content: `Image download failed: HTTP ${fileRes.status}`, is_error: true };
+    }
+    buf = Buffer.from(await fileRes.arrayBuffer());
+  }
+
+  if (!buf) return { content: `No image bytes returned from ${cfg.model}.`, is_error: true };
+
+  const filePath = join(ctx.tempDir, `xai-${Date.now()}.png`);
+  writeFileSync(filePath, buf);
+
+  return {
+    content: `Image generated via xai/${cfg.model}${aspect ? ` (${aspect})` : ''}`,
     media: [{ type: 'image', path: filePath, mimeType: 'image/png', caption: prompt.slice(0, 200) }],
   };
 }
@@ -437,7 +509,7 @@ async function generateMiniMaxMusic(
 
 export const generateImageTool: ToolDefinition = {
   name: 'generate_image',
-  description: 'Generate an image from a text prompt. Supports OpenAI (gpt-image-2, GPT Image legacy models, DALL-E) and MiniMax (image-01). The image is returned to the current channel when that channel supports media. Size can be dimensions (1024x1024) or aspect ratio (16:9).',
+  description: 'Generate an image from a text prompt. Supports OpenAI (gpt-image-2, GPT Image legacy models, DALL-E), MiniMax (image-01), and xAI (grok-imagine-image, grok-imagine-image-pro). The image is returned to the current channel when that channel supports media. Size can be dimensions (1024x1024) or aspect ratio (16:9).',
   input_schema: {
     type: 'object',
     properties: {
@@ -463,8 +535,11 @@ export const generateImageTool: ToolDefinition = {
       if (imageConfig.provider === 'openai') {
         return await generateOpenAIImage(prompt, size, imageConfig, ctx);
       }
+      if (imageConfig.provider === 'xai') {
+        return await generateXAIImage(prompt, size, imageConfig, ctx);
+      }
       return {
-        content: `Image generation unavailable — provider "${imageConfig.provider}" is not implemented. Use "openai" or "minimax" in Settings.`,
+        content: `Image generation unavailable — provider "${imageConfig.provider}" is not implemented. Use "openai", "minimax", or "xai" in Settings.`,
         is_error: true,
       };
     } catch (err) {

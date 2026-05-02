@@ -25,6 +25,10 @@
       "size": "auto",
       "quality": "auto"
     },
+    "xai": {
+      "model": "grok-imagine-image",
+      "size": "auto"
+    },
     "stable-diffusion": {
       "endpoint": "http://localhost:7860",
       "steps": 20
