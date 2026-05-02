@@ -8,9 +8,10 @@
  * Replaces: semanticRecall, hardcoded evobrew/cosmo situational checks.
  */
 
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import yaml from 'js-yaml';
 import type { AssemblyResult, EventEnvelope } from '../types.js';
 import type { EventLedger } from './event-ledger.js';
 import type { TriggerIndex } from './trigger-index.js';
@@ -127,6 +128,78 @@ function verifyFreshness(surfaceName: string, content: string, isFact: boolean):
   return content;
 }
 
+// ─── Worker Context ─────────────────────────────────────
+
+function readJsonlTail(filePath: string, limit: number): Array<Record<string, unknown>> {
+  if (!existsSync(filePath)) return [];
+  return readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .slice(-limit)
+    .map(line => {
+      try {
+        return JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
+export function buildWorkerContextSection(projectRoot: string, agentName: string): string {
+  const workersRoot = join(projectRoot, 'instances', 'workers');
+  const workers = existsSync(workersRoot)
+    ? readdirSync(workersRoot, { withFileTypes: true })
+        .filter(entry => entry.isDirectory())
+        .map(entry => {
+          const configPath = join(workersRoot, entry.name, 'worker.yaml');
+          if (!existsSync(configPath)) return null;
+          const config = yaml.load(readFileSync(configPath, 'utf8')) as Record<string, unknown> | null;
+          if (!config || config.kind !== 'worker') return null;
+          const ownerAgent = typeof config.ownerAgent === 'string' ? config.ownerAgent : 'jerry';
+          const visibleTo = Array.isArray(config.visibleTo) ? config.visibleTo.filter((item): item is string => typeof item === 'string') : [ownerAgent];
+          return {
+            name: typeof config.name === 'string' ? config.name : entry.name,
+            ownerAgent,
+            class: typeof config.class === 'string' ? config.class : 'worker',
+            purpose: typeof config.purpose === 'string' ? config.purpose : 'Reusable Home23 worker.',
+            visibleTo,
+          };
+        })
+        .filter((item): item is { name: string; ownerAgent: string; class: string; purpose: string; visibleTo: string[] } => Boolean(item))
+    : [];
+
+  const visibleWorkers = workers.filter(worker => worker.ownerAgent === agentName || worker.visibleTo.includes(agentName));
+  const brainPath = join(projectRoot, 'instances', agentName, 'brain', 'worker-runs.jsonl');
+  const recent = readJsonlTail(brainPath, 5);
+  if (visibleWorkers.length === 0 && recent.length === 0) return '';
+
+  const roster = visibleWorkers.length > 0
+    ? visibleWorkers.map(worker => `- ${worker.name} (${worker.class}, owner ${worker.ownerAgent}): ${worker.purpose}`)
+    : ['- none'];
+  const receipts = recent.length > 0
+    ? recent.map(record => `- ${record.runId || 'unknown'} ${record.worker || 'worker'}: ${record.status || 'unknown'}, verifier ${record.verifierStatus || 'unknown'}. ${record.summary || ''}`.trim())
+    : ['- none'];
+
+  return [
+    '## Worker Agents',
+    '',
+    'Available reusable workers:',
+    ...roster,
+    '',
+    'Recent worker receipts:',
+    ...receipts,
+  ].join('\n');
+}
+
+function projectRootFromWorkspace(workspacePath: string): string {
+  return resolve(workspacePath, '..', '..', '..');
+}
+
+function agentNameFromWorkspace(workspacePath: string): string {
+  return basename(dirname(workspacePath));
+}
+
 // ─── Main Assembly Function ─────────────────────────────
 
 export async function assembleContext(
@@ -231,6 +304,19 @@ export async function assembleContext(
     });
   }
 
+  const workerSection = buildWorkerContextSection(
+    projectRootFromWorkspace(config.workspacePath),
+    agentNameFromWorkspace(config.workspacePath),
+  );
+  if (workerSection) {
+    surfacesLoaded.push('WORKERS');
+    salienceItems.push({
+      text: `\nRelevant context (WORKERS):\n${workerSection}`,
+      score: 0.9,
+      source: 'surface:WORKERS',
+    });
+  }
+
   events.push({
     event_id: randomUUID(),
     event_type: 'RetrievalExecuted',
@@ -273,6 +359,14 @@ export async function assembleContext(
     ];
     if (degradedSurfacePieces.length > 0) {
       pieces.push(degradedSurfacePieces.join('\n\n'));
+    }
+    const workerSection = buildWorkerContextSection(
+      projectRootFromWorkspace(config.workspacePath),
+      agentNameFromWorkspace(config.workspacePath),
+    );
+    if (workerSection) {
+      pieces.push(`\nRelevant context (WORKERS):\n${workerSection}`);
+      degradedSurfacesLoaded.push('WORKERS');
     }
 
     return {
