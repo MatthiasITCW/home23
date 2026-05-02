@@ -22,6 +22,31 @@ function assertWorkerName(name: string): string {
   return name;
 }
 
+function discoverDefaultOwnerAgent(projectRoot: string): string {
+  const manifestPath = path.join(projectRoot, 'config', 'agents.json');
+  if (!existsSync(manifestPath)) return 'agent';
+  try {
+    const agents = JSON.parse(readFileSync(manifestPath, 'utf8')) as Array<Record<string, unknown>>;
+    const primary = agents.find(agent => agent?.isPrimary === true && typeof agent.name === 'string');
+    if (primary?.name) return String(primary.name);
+    const first = agents.find(agent => typeof agent.name === 'string');
+    if (first?.name) return String(first.name);
+  } catch {
+    return 'agent';
+  }
+  return 'agent';
+}
+
+function replaceOwnerPlaceholders(value: unknown, ownerAgent: string): unknown {
+  if (Array.isArray(value)) {
+    return value.map(item => {
+      if (item === 'primary' || item === 'owner' || item === 'selected-agent') return ownerAgent;
+      return item;
+    });
+  }
+  return value;
+}
+
 export function createWorkerFromTemplate(projectRoot: string, opts: CreateWorkerOptions): CreateWorkerResult {
   const name = assertWorkerName(opts.name);
   const template = assertWorkerName(opts.template);
@@ -40,8 +65,11 @@ export function createWorkerFromTemplate(projectRoot: string, opts: CreateWorker
   mkdirSync(path.join(targetDir, 'workspace', 'artifacts'), { recursive: true });
 
   const raw = yaml.load(readFileSync(targetConfig, 'utf8')) as Record<string, unknown>;
+  const ownerAgent = opts.ownerAgent || discoverDefaultOwnerAgent(projectRoot);
   raw.name = name;
-  if (opts.ownerAgent) raw.ownerAgent = opts.ownerAgent;
+  raw.ownerAgent = ownerAgent;
+  raw.feedsBrains = replaceOwnerPlaceholders(raw.feedsBrains, ownerAgent);
+  raw.visibleTo = replaceOwnerPlaceholders(raw.visibleTo, ownerAgent);
   writeFileSync(targetConfig, yaml.dump(raw, { lineWidth: 120, noRefs: true }));
 
   return {

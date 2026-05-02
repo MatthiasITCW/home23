@@ -52,3 +52,33 @@ test('createWorkerFromTemplate refuses to overwrite existing worker config', () 
   const after = statSync(path.join(projectRoot, 'instances', 'workers', 'systems', 'worker.yaml')).mtimeMs;
   assert.equal(after, before);
 });
+
+test('createWorkerFromTemplate uses local primary owner when owner is omitted', () => {
+  const projectRoot = tempRoot();
+  mkdirSync(path.join(projectRoot, 'config'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'config', 'agents.json'), JSON.stringify([
+    { name: 'forrest', isPrimary: false },
+    { name: 'home', isPrimary: true }
+  ], null, 2));
+  writeFileSync(path.join(projectRoot, 'cli', 'templates', 'workers', 'systems', 'worker.yaml'), [
+    'kind: worker',
+    'name: systems',
+    'displayName: Systems',
+    'ownerAgent: primary',
+    'class: ops',
+    'purpose: Diagnose Home23 host/process issues.',
+    'feedsBrains:',
+    '  - primary',
+    'visibleTo:',
+    '  - selected-agent'
+  ].join('\n'));
+
+  const result = createWorkerFromTemplate(projectRoot, {
+    name: 'systems',
+    template: 'systems'
+  });
+
+  assert.equal(result.worker.ownerAgent, 'home');
+  assert.deepEqual(result.worker.feedsBrains, ['home']);
+  assert.deepEqual(result.worker.visibleTo, ['home']);
+});

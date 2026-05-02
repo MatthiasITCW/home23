@@ -351,13 +351,83 @@ const SETTINGS_WORKER_PROFILES = {
     unlocks: [
       'Process and PM2 checks without global destructive operations.',
       'Endpoint and freshness checks with proof receipts.',
-      'Findings Jerry and Forrest can reuse instead of rediscovering.'
+      'Findings house agents can reuse instead of rediscovering.'
     ],
     examples: [
       'Why is Home23 slow right now?',
       'Inspect the current live problem.',
       'Verify the dashboard and engine endpoints.',
       'Check whether a fix actually passed.'
+    ]
+  },
+  freshness: {
+    title: 'Freshness',
+    headline: 'Verify whether data is current enough to trust.',
+    unlocks: [
+      'Semantic freshness checks beyond file modification time.',
+      'Fresh/stale/historical-only classifications.',
+      'Receipts that explain why data can or cannot drive operations.'
+    ],
+    examples: [
+      'Is this sensor payload actually fresh?',
+      'Find stale signals in the current state.',
+      'Check whether the latest receipt reflects current truth.'
+    ]
+  },
+  memory: {
+    title: 'Memory',
+    headline: 'Audit stale beliefs, duplicate loops, and missing resolution receipts.',
+    unlocks: [
+      'Current-state-first memory audits.',
+      'Rediscovery-loop detection.',
+      'Memory-curator handoffs with evidence.'
+    ],
+    examples: [
+      'Is this belief still true?',
+      'Why does this problem keep coming back?',
+      'Does this completed work have a resolution receipt?'
+    ]
+  },
+  parity: {
+    title: 'Parity',
+    headline: 'Turn a Home23 feature into portable web/native client instructions.',
+    unlocks: [
+      'Product intent, endpoint, and UX handoffs.',
+      'Selected-agent routing checks.',
+      'Portable client parity notes that do not depend on one machine.'
+    ],
+    examples: [
+      'Make the Mac app match this web feature.',
+      'Write a native parity contract.',
+      'Check whether this client already supports the capability.'
+    ]
+  },
+  release: {
+    title: 'Release',
+    headline: 'Prepare release readiness evidence before shipping.',
+    unlocks: [
+      'Version/build preflight checks.',
+      'Release notes and artifact readiness.',
+      'Upload or deploy checklist without accidental publishing.'
+    ],
+    examples: [
+      'Run a release preflight.',
+      'Check what build number should ship.',
+      'Summarize changes since the last release.'
+    ]
+  },
+  feeder: {
+    title: 'Feeder',
+    headline: 'Diagnose whether documents are flowing into memory correctly.',
+    unlocks: [
+      'Watch path and manifest inspection.',
+      'Compiler, converter, pending, and quarantine checks.',
+      'Ingestion freshness and next repair steps.'
+    ],
+    examples: [
+      'Why are these documents not showing up?',
+      'Check ingestion health.',
+      'Find stuck or quarantined files.'
     ]
   }
 };

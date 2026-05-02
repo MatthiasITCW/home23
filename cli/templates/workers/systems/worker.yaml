@@ -1,7 +1,7 @@
 kind: worker
 name: systems
 displayName: Systems
-ownerAgent: jerry
+ownerAgent: primary
 class: ops
 purpose: Diagnose Home23 host, PM2, ports, logs, and scoped service issues without destructive global operations.
 tools:
@@ -16,10 +16,9 @@ safetyPolicy:
   forbidForcePush: true
   requireVerifierBeforeSuccess: true
 feedsBrains:
-  - jerry
+  - primary
 visibleTo:
-  - jerry
-  - forrest
+  - primary
 limits:
   maxRuntimeMinutes: 45
   maxToolCalls: 80

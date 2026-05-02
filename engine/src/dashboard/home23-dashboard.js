@@ -1504,7 +1504,7 @@ const WORKER_CAPABILITY_PROFILES = {
     useWhen: [
       'A dashboard, endpoint, PM2 process, or live problem needs a grounded check.',
       'You want evidence before restarting anything.',
-      'You need a specialist pass that Jerry and Forrest can remember.'
+      'You need a specialist pass that house agents can remember.'
     ],
     can: [
       'Inspect Home23 PM2 status',
@@ -1533,6 +1533,176 @@ const WORKER_CAPABILITY_PROFILES = {
       {
         label: 'Verify a fix',
         detail: 'Re-run the relevant Home23 verifier for the described issue and produce a receipt with pass/fail evidence. Do not change files unless explicitly requested.'
+      }
+    ]
+  },
+  freshness: {
+    title: 'Freshness',
+    headline: 'Use this when data may look recent but could be stale underneath.',
+    useWhen: [
+      'A metric, sensor, snapshot, or receipt may be stale.',
+      'A file was written recently but its payload has older dates.',
+      'A house agent needs to know whether evidence is current enough to trust.'
+    ],
+    can: [
+      'Compare wrapper timestamps with semantic dates',
+      'Check endpoint freshness',
+      'Classify data as fresh, stale, historical-only, or unknown',
+      'Identify the next freshness verifier'
+    ],
+    guardrails: [
+      'Read-only by default',
+      'No historical data as operational truth',
+      'No freshness claim from mtime alone'
+    ],
+    starterTasks: [
+      {
+        label: 'Check data freshness',
+        detail: 'Check whether the named Home23 data source is current enough to trust. Compare file timestamps, payload dates, receipts, and endpoint state.'
+      },
+      {
+        label: 'Find stale signals',
+        detail: 'Inspect current Home23 state for stale metrics, stale snapshots, or contradictory freshness evidence. Do not change files.'
+      },
+      {
+        label: 'Verify latest receipt',
+        detail: 'Inspect the latest relevant receipt or state snapshot and report whether it represents current truth or older belief.'
+      }
+    ]
+  },
+  memory: {
+    title: 'Memory',
+    headline: 'Use this when Home23 may be remembering old conclusions as current truth.',
+    useWhen: [
+      'A problem keeps being rediscovered.',
+      'Old memory may outrank current state.',
+      'Resolved work needs a receipt or suppression clue.'
+    ],
+    can: [
+      'Compare old beliefs with current snapshots',
+      'Find duplicate loops',
+      'Identify missing goal-resolution receipts',
+      'Prepare memory-curator handoffs'
+    ],
+    guardrails: [
+      'No silent memory rewrites',
+      'Current state before narrative memory',
+      'Exact evidence required'
+    ],
+    starterTasks: [
+      {
+        label: 'Audit stale belief',
+        detail: 'Audit whether the described belief is current, stale, resolved, duplicated, or unknown. Prefer state snapshots and resolution receipts over old narrative memory.'
+      },
+      {
+        label: 'Find rediscovery loop',
+        detail: 'Look for repeated Home23 memory or agenda entries that indicate a rediscovery loop. Return evidence and a memory-curator handoff.'
+      },
+      {
+        label: 'Check resolution receipt',
+        detail: 'Check whether the described completed work has a durable resolution receipt that should suppress future rediscovery.'
+      }
+    ]
+  },
+  parity: {
+    title: 'Parity',
+    headline: 'Use this when a native or web surface needs to match Home23 behavior.',
+    useWhen: [
+      'A Mac, iOS, tvOS, or web surface is missing a Home23 capability.',
+      'A feature needs portable client instructions.',
+      'A contract needs to explain product intent, not just endpoints.'
+    ],
+    can: [
+      'Compare source and target surfaces',
+      'Extract endpoint and response contracts',
+      'Separate portable behavior from local setup',
+      'Produce implementation handoffs'
+    ],
+    guardrails: [
+      'No intent from git diff alone',
+      'No site-specific defaults in portable contracts',
+      'Contract before client code'
+    ],
+    starterTasks: [
+      {
+        label: 'Create parity handoff',
+        detail: 'Compare the source Home23 feature with the target client surface and produce a portable parity handoff with routes, models, UX expectations, and smoke tests.'
+      },
+      {
+        label: 'Check client gap',
+        detail: 'Inspect whether the target client already implements the described Home23 feature. Return missing files, contract gaps, and next implementation steps.'
+      },
+      {
+        label: 'Review contract',
+        detail: 'Review the described API or UI contract for portability, selected-agent routing, and native-client readiness.'
+      }
+    ]
+  },
+  release: {
+    title: 'Release',
+    headline: 'Use this before shipping a Home23 app, package, or service change.',
+    useWhen: [
+      'A build or upload needs preflight evidence.',
+      'Version, build, changelog, or artifact state may be wrong.',
+      'A release needs a checklist before execution.'
+    ],
+    can: [
+      'Check version/build metadata',
+      'Inspect recent commits and release notes',
+      'Run targeted preflight commands',
+      'Produce release handoffs'
+    ],
+    guardrails: [
+      'No publishing without explicit request',
+      'No version bump without scope',
+      'Exact artifact evidence required'
+    ],
+    starterTasks: [
+      {
+        label: 'Release preflight',
+        detail: 'Run a release readiness preflight for the described target. Check version/build metadata, recent commits, required tests, and likely blockers.'
+      },
+      {
+        label: 'Build checklist',
+        detail: 'Produce a portable build and upload checklist for the described app or package without changing versions or publishing artifacts.'
+      },
+      {
+        label: 'Changelog summary',
+        detail: 'Summarize the release-relevant changes since the named commit or tag and identify any missing verification.'
+      }
+    ]
+  },
+  feeder: {
+    title: 'Feeder',
+    headline: 'Use this when documents are not flowing into memory correctly.',
+    useWhen: [
+      'Ingestion counts, watch paths, or compiler queues look wrong.',
+      'Files are pending, quarantined, stale, or not compiled.',
+      'A document source needs diagnosis before changing settings.'
+    ],
+    can: [
+      'Inspect feeder status and manifests',
+      'Compare watch paths to processed files',
+      'Check compiler, converter, and quarantine state',
+      'Report ingestion freshness'
+    ],
+    guardrails: [
+      'No moving user files by default',
+      'No watcher equals compiled assumption',
+      'Exact paths and counts when available'
+    ],
+    starterTasks: [
+      {
+        label: 'Check ingestion health',
+        detail: 'Inspect Home23 ingestion health for the selected agent. Report watch paths, pending files, processed count, compiled count, quarantine state, and freshness.'
+      },
+      {
+        label: 'Find stuck documents',
+        detail: 'Look for documents that are pending, quarantined, stale, or not compiled. Do not move or delete files.'
+      },
+      {
+        label: 'Verify feeder settings',
+        detail: 'Check whether feeder settings and live feeder status agree. Return mismatches and the next repair step.'
       }
     ]
   }

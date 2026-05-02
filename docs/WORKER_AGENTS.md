@@ -4,9 +4,20 @@ Worker agents are reusable specialists Home23 can call when a job needs focus bu
 
 The point is simple: when something needs checking, a worker can do the pass, leave evidence, and feed useful findings back to the house agents.
 
-## What You Can Use Them For
+## Packaged Worker Library
 
-The first worker is `systems`.
+Home23 ships a portable worker-pack catalog. Packs are generic by default; install applies the local selected/primary owner agent so the same Home23 repo can run on another machine without hard-coded local names.
+
+| Worker pack | Use it when | What it returns |
+| --- | --- | --- |
+| `systems` | Home23 feels slow, stale, broken, or confusing. | Process, endpoint, log, and verifier evidence. |
+| `freshness` | Data may look recent but be stale underneath. | Fresh/stale/historical-only classification with timestamp evidence. |
+| `memory` | Home23 may be remembering old conclusions as current truth. | Memory audit and curator handoff evidence. |
+| `parity` | A native or web surface needs to match Home23 behavior. | Portable parity handoff with routes, models, UX notes, and smoke tests. |
+| `release` | An app, package, or service change is near shipping. | Release preflight, blockers, artifact/version checks, and checklist. |
+| `feeder` | Documents are not flowing into memory correctly. | Ingestion, watch-path, queue, quarantine, converter, and freshness diagnosis. |
+
+### Systems Worker
 
 Use `systems` when:
 
@@ -28,6 +39,66 @@ It will not:
 - Clean up files or git state on its own.
 - Claim a fix without a concrete verifier or equivalent check.
 
+### Freshness Worker
+
+Use `freshness` when a source may be current at the wrapper level but stale inside the payload. It checks semantic dates, state snapshots, receipts, endpoint payloads, and source file timestamps.
+
+Good asks:
+
+```text
+Is this sensor payload actually fresh?
+Find stale signals in the current state.
+Check whether the latest receipt reflects current truth.
+```
+
+### Memory Worker
+
+Use `memory` when the system may be rediscovering a resolved issue, trusting old memory over current state, or missing a resolution receipt.
+
+Good asks:
+
+```text
+Is this belief still true?
+Why does this problem keep coming back?
+Does this completed work have a resolution receipt?
+```
+
+### Parity Worker
+
+Use `parity` when web, Mac, iOS, tvOS, docs, and contracts need to stay aligned. It produces portable handoffs instead of assuming one local setup.
+
+Good asks:
+
+```text
+Make the Mac app match this web feature.
+Write a native parity contract.
+Check whether this client already supports the capability.
+```
+
+### Release Worker
+
+Use `release` before shipping. It runs readiness checks and produces release evidence without publishing unless explicitly asked.
+
+Good asks:
+
+```text
+Run a release preflight.
+Check what build number should ship.
+Summarize changes since the last release.
+```
+
+### Feeder Worker
+
+Use `feeder` when documents are not flowing into memory correctly. It inspects watch paths, manifests, compiler queues, converter health, quarantine state, and freshness.
+
+Good asks:
+
+```text
+Why are these documents not showing up?
+Check ingestion health.
+Find stuck or quarantined files.
+```
+
 ## User Surfaces
 
 - Dashboard: `http://localhost:5002/home23`, then open `Workers` / `Worker Desk`.
@@ -39,10 +110,12 @@ It will not:
 
 From Settings, open `Workers`, pick a worker pack, choose the owner agent, enter a lowercase kebab-case name, and click `Install Worker`.
 
+If the owner is omitted in CLI usage, Home23 uses the local primary agent from `config/agents.json`, falling back to `agent` for a newly bootstrapped portable install.
+
 CLI equivalent:
 
 ```bash
-node cli/home23.js worker create systems --template systems --owner jerry
+node cli/home23.js worker create systems --template systems --owner <agent-name>
 ```
 
 The worker is created under:
@@ -97,9 +170,9 @@ Every run writes a `home23.worker-run.v1` receipt with:
 
 House agents observe the worker brain-feed JSONL and inject recent worker receipts into context. The dashboard receipt panel can also send memory candidates to the memory-curator handoff endpoint.
 
-## Built-In Template
+## Portable Defaults
 
-`systems` is the first packaged worker. It is meant for system diagnosis, process pressure, health bridge status, PM2 checks, and operational verification. It defaults to Jerry as owner and feeds worker receipts back to Jerry.
+Worker templates use symbolic owner placeholders such as `primary`. During install, Home23 replaces those placeholders with the selected owner or the local primary agent. Do not hard-code one operator's agent names into packaged worker templates.
 
 ## Safety Model
 

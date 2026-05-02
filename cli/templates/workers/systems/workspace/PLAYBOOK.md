@@ -10,7 +10,7 @@ Default inspection order:
 6. If a restart is needed, restart only the named Home23 process.
 7. Re-run the verifier and record the result.
 
-Useful commands:
+Useful local checks when the request does not provide a different host or port:
 
 - `pm2 jlist`
 - `curl -s http://localhost:5002/api/state`
