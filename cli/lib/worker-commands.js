@@ -50,7 +50,20 @@ export async function handleWorkerCommand(args, projectRoot) {
   }
 
   if (subcommand === 'run') {
-    throw new Error('worker run is added after the backend connector lands in Task 5');
+    const opts = parseOptions(rest);
+    const name = opts._[0];
+    const prompt = opts._.slice(1).join(' ');
+    if (!name || !prompt) throw new Error('Usage: home23 worker run <name> "<prompt>"');
+    const baseUrl = process.env.HOME23_WORKER_CONNECTOR_URL || 'http://127.0.0.1:5004';
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/workers/${encodeURIComponent(name)}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, requestedBy: 'cli', requester: 'home23-cli' })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `worker connector HTTP ${res.status}`);
+    console.log(JSON.stringify(data, null, 2));
+    return;
   }
 
   throw new Error('Usage: home23 worker <create|list|run> ...');

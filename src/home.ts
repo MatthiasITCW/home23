@@ -57,6 +57,7 @@ import { createRegisterDeviceHandler, createUnregisterDeviceHandler, createListD
 import { createChatHistoryHandler, createChatListHandler } from './routes/chat-history.js';
 import { syncSharedSkillsRegistry } from './skills/runtime.js';
 import { PromoterWorker } from './workers/promoter.js';
+import { createWorkerRouter } from './workers/connector.js';
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -815,6 +816,10 @@ async function main(): Promise<void> {
     token: bridgeToken,
     agentName: AGENT_NAME,
   };
+  bridgeApp.use(createWorkerRouter({
+    projectRoot: PROJECT_ROOT,
+    ctx: toolContext
+  }));
   bridgeApp.post('/api/chat', createEvobrewChatHandler(bridgeConfig));
   bridgeApp.post('/api/stop', createStopHandler(bridgeConfig));
   bridgeApp.get('/health', createHealthHandler({ agentName: AGENT_NAME, agent }));
