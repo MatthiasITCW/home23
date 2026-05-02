@@ -67,7 +67,8 @@ function parseVerifierStatus(text: string): WorkerRunReceipt['verifierStatus'] {
 function parseStatus(text: string, verifierStatus: WorkerRunReceipt['verifierStatus']): WorkerRunReceipt['status'] {
   const explicit = text.match(/DISPATCH_OUTCOME:\s*(fixed|failed|blocked|unknown|not_fixed)/i)?.[1]?.toLowerCase();
   if (explicit === 'fixed') return 'fixed';
-  if (explicit === 'failed' || explicit === 'not_fixed') return 'failed';
+  if (explicit === 'not_fixed') return verifierStatus === 'pass' ? 'no_change' : 'failed';
+  if (explicit === 'failed') return 'failed';
   if (explicit === 'blocked') return 'blocked';
   if (verifierStatus === 'pass' && /\bfixed\b/i.test(text)) return 'fixed';
   if (/\bblocked\b/i.test(text)) return 'blocked';

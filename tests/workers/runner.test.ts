@@ -72,3 +72,28 @@ test('runWorker writes input, transcript, receipt, and owner brain feed', async 
   assert.equal(existsSync(path.join(result.runPath, 'receipt.json')), true);
   assert.match(readFileSync(path.join(projectRoot, 'instances', 'jerry', 'brain', 'worker-runs.jsonl'), 'utf8'), /checked scoped PM2 state/);
 });
+
+test('runWorker treats read-only verifier pass as no_change even when no fix was needed', async () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'home23-runner-'));
+  seedWorker(projectRoot);
+  const loop: AgentLoopRunner = async () => ({
+    text: [
+      'Read-only check complete.',
+      'VERIFIER_STATUS: pass',
+      'DISPATCH_OUTCOME: not_fixed',
+      'SUMMARY: Endpoint responds and no process change was needed.'
+    ].join('\n'),
+    model: 'fake',
+    toolCallCount: 0,
+    durationMs: 5
+  });
+
+  const result = await runWorker({
+    projectRoot,
+    request: { worker: 'systems', prompt: 'Check endpoint only', requestedBy: 'api' },
+    ctx: fakeContext(projectRoot, loop)
+  });
+
+  assert.equal(result.receipt.verifierStatus, 'pass');
+  assert.equal(result.receipt.status, 'no_change');
+});
