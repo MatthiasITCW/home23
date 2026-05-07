@@ -1172,6 +1172,60 @@ restart safety and stale event suppression.
 
 ---
 
+## Patch 22 — Synthesis commit step and receipts
+
+**Files touched:**
+- `cosmo23/lib/synthesis-commit.js`
+- `cosmo23/lib/query-engine.js`
+- `cosmo23/lib/pgs-engine.js`
+- `cosmo23/pgs-engine/src/synthesizer.js`
+- `cosmo23/engine/src/agents/document-compiler-agent.js`
+- `cosmo23/launcher/config-generator.js`
+- `cosmo23/server/index.js`
+- `cosmo23/public/index.html`
+- `cosmo23/public/app.js`
+
+**Problem:** COSMO23 synthesis reliably accumulates named candidate entities
+but does not reliably commit, merge, or demote them. Dive/PGS outputs can read
+as peer-level enumerations even after critic and analyst pressure, so downstream
+cycles receive pretty markdown instead of a bounded verdict.
+
+**Fix:** synthesis prompts now have an optional commit step, enabled by
+default for `dive`, `pgs`, and `compile`. The block forces every named entity
+into a capped primary bucket (`SPINE` by default), a demoted bucket (`FACET`),
+or an unsupported/surface bucket (`ARTIFACT`), with a ranked experiment list.
+The load-bearing instruction requires the verdict to deform the body of the
+synthesis rather than appear as an appendix. Run launch config now emits:
+`synthesis.commitStep`, `synthesis.spineCap`, `synthesis.bucketNames`, and
+`synthesis.modeOverrides`, with compact Advanced Run Settings controls for
+commit enablement and spine cap.
+
+The prompt/receipt layer is intentionally the full scope of this patch. It
+does not change critic loops, graph storage, partitioning, traversal, or brain
+node schemas. Query/PGS APIs accept an optional `synthesis` override, and
+synthesis results include `metadata.synthesis_commit`. A run-local
+`synthesis-commit-receipts.jsonl` records query, mode, model, answer hash, and
+parsed bucket counts for later receipt analysis. Compile/document synthesis
+gets the same commit pressure while preserving the enterprise-package JSON
+envelope.
+
+**Verification:** `node --test --test-concurrency=1
+tests/cosmo23/synthesis-commit.test.cjs tests/cosmo23/pgs-engine.test.cjs
+tests/cosmo23/query-engine-context.test.cjs
+tests/cosmo23/query-engine-runtime.test.cjs
+tests/cosmo23/anthropic-client-request.test.cjs
+tests/cosmo23/synthesis-config-generator.test.cjs` covers helper defaults,
+prompt interpolation, parser extraction, PGS metadata/receipts, direct dive
+prompt on/off behavior, and launch YAML serialization. Syntax checks passed
+for the patched query, PGS, server, config-generator, standalone synthesizer,
+document compiler, and helper files.
+Live smoke against `labor23` after restarting only `home23-cosmo23`: enabled
+`dive` query returned `applied: true`, `spine_count: 2`, `facet_count: 3`,
+`artifact_count: 4`, and five ranked experiments; disabled `dive` query
+returned `applied: false` with `reason: commitStep disabled`.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -1266,3 +1320,7 @@ restart safety and stale event suppression.
   normalization, and keeps continuation fallbacks local unless a targeted
   external evidence gap requires search. Task-state queue replay is also
   hardened so stale task events cannot overwrite replacement plans.
+- **2026-05-07** — Patch 22 added after cross-run synthesis comparison showed
+  dive/PGS enumeration growth without commitment. Synthesis prompts now include
+  configurable SPINE/FACET/ARTIFACT commitment pressure and run-local receipts
+  record parsed bucket counts without altering graph storage.

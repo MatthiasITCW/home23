@@ -24,6 +24,8 @@ const FORM_FIELD_TYPES = {
   enableDirectAction: 'boolean',
   enableStabilization: 'boolean',
   enableConsolidationMode: 'boolean',
+  synthesisCommitStep: 'boolean',
+  synthesisSpineCap: 'number',
   enableExperimental: 'boolean'
 };
 
@@ -53,6 +55,8 @@ const FORM_DEFAULTS = {
   enableDirectAction: false,
   enableStabilization: false,
   enableConsolidationMode: false,
+  synthesisCommitStep: true,
+  synthesisSpineCap: 5,
   enableExperimental: false
 };
 

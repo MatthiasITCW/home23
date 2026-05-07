@@ -183,9 +183,14 @@
                       <span>Local LLM Base URL</span>
                       <input type="text" name="localLlmBaseUrl" value="http://localhost:11434/v1">
                     </label>
+                    <label class="field">
+                      <span>Spine Cap</span>
+                      <input type="number" name="synthesisSpineCap" min="1" value="5">
+                    </label>
                   </div>
 
                   <div class="toggle-grid">
+                    <label class="toggle-chip"><input type="checkbox" name="synthesisCommitStep" checked><span>Commit Synthesis</span></label>
                     <label class="toggle-chip"><input type="checkbox" name="enableWebSearch" checked><span>Web Search</span></label>
                     <label class="toggle-chip"><input type="checkbox" name="enableSleep" checked><span>Sleep</span></label>
                     <label class="toggle-chip"><input type="checkbox" name="enableCodingAgents" checked><span>Coding Agents</span></label>

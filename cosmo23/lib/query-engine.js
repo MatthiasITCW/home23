@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const zlib = require('zlib');
+const yaml = require('js-yaml');
 const { promisify } = require('util');
 const gunzip = promisify(zlib.gunzip);
 const OpenAI = require('openai');
@@ -20,6 +21,12 @@ const { ContextTracker } = require('./context-tracker');
 const AnthropicClient = require('./anthropic-client');
 const { PGSEngine } = require('./pgs-engine');
 const { hydrateStateMemory } = require('./memory-sidecar');
+const {
+  buildSynthesisCommitBlock,
+  parseSynthesisCommitReceipt,
+  resolveSynthesisCommitConfig,
+  writeSynthesisCommitReceipt
+} = require('./synthesis-commit');
 const { ChatCompletionsClient } = require('../engine/src/core/chat-completions-client');
 const {
   loadModelCatalogSync,
@@ -159,6 +166,7 @@ class QueryEngine {
     this.exportsDir = path.join(runtimeDir, 'exports');
     
     this.runMetadata = this.loadRunMetadataSync();
+    this.runConfig = this.loadRunConfigSync();
     this.modelCatalog = loadModelCatalogSync();
     this.modelDefaults = getCatalogDefaults(this.modelCatalog);
     this.embeddingConfig = getEmbeddingConfig(this.modelCatalog);
@@ -337,6 +345,19 @@ class QueryEngine {
       console.warn('[QueryEngine] Failed to load run metadata:', error.message);
     }
     return null;
+  }
+
+  loadRunConfigSync() {
+    try {
+      const configPath = path.join(this.runtimeDir, 'config.yaml');
+      if (fsSync.existsSync(configPath)) {
+        const content = fsSync.readFileSync(configPath, 'utf-8');
+        return yaml.load(content) || {};
+      }
+    } catch (error) {
+      console.warn('[QueryEngine] Failed to load config.yaml:', error.message);
+    }
+    return {};
   }
 
   resetClusterContext() {
@@ -1618,7 +1639,8 @@ STYLE:
       baseAnswer = null, // NEW: For executive mode - compress existing answer instead of re-querying
       priorContext = null, // NEW: For follow-up queries - includes prior query and answer
       onChunk = null, // NEW (2026-01-21): Optional streaming callback
-      explicitProvider = null // NEW: Explicit provider override (e.g. 'openai-codex')
+      explicitProvider = null, // NEW: Explicit provider override (e.g. 'openai-codex')
+      synthesis = null
     } = options;
 
     const {
@@ -1635,6 +1657,9 @@ STYLE:
     // Codex uses raw fetch (not OpenAI SDK) — client stays null, handled inline
     const client = isCodex ? null : resolvedClient;
     const model = effectiveModel;
+    const synthesisCommitConfig = mode === 'dive'
+      ? resolveSynthesisCommitConfig(synthesis || this.runConfig?.synthesis || this.runMetadata?.synthesis, 'dive')
+      : null;
     
     // EXECUTIVE MODE SPECIAL CASE: Compress existing answer, don't re-query brain
     if (mode === 'executive' && baseAnswer) {
@@ -1649,7 +1674,7 @@ STYLE:
     // Load data
     const state = await this.loadBrainState();
     const stateHash = getStateHashForCache(state);
-    const cacheKey = `${stateHash}:${query}:${model}:${mode}`;
+    const cacheKey = `${stateHash}:${query}:${model}:${mode}:${synthesisCommitConfig ? JSON.stringify(synthesisCommitConfig) : ''}`;
 
     if (this.queryCache.has(cacheKey)) {
       this.performanceMetrics.cacheHits++;
@@ -1882,6 +1907,9 @@ STYLE:
       // expert and deep get the deep prompt; others get standard
       instructions = this.getStandardSystemPrompt(mode);
     }
+    if (synthesisCommitConfig?.applied) {
+      instructions += `\n\n${buildSynthesisCommitBlock(synthesisCommitConfig)}`;
+    }
     
     // FOLLOW-UP MODIFIER: Add context awareness to instructions
     if (priorContext && priorContext.query && priorContext.answer) {
@@ -2006,6 +2034,18 @@ STYLE:
         timestamp: new Date().toISOString()
       }
     };
+
+    if (synthesisCommitConfig) {
+      result.metadata.synthesis_commit = parseSynthesisCommitReceipt(answer, synthesisCommitConfig);
+      await writeSynthesisCommitReceipt(this.runtimeDir, {
+        query,
+        mode,
+        model,
+        timestamp: result.metadata.timestamp,
+        answer,
+        synthesisCommit: result.metadata.synthesis_commit
+      });
+    }
 
     // NEW: Add evidence quality metrics (opt-in)
     if (includeEvidenceMetrics) {
@@ -4206,6 +4246,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
       pgsFullSweep = false,
       pgsConfig = null,
       pgsSweepModel = null,
+      synthesis = null,
       followUpContext = null,
       includeCoordinatorInsights = true,
       baseAnswer = null, // For executive mode compression
@@ -4238,6 +4279,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
         pgsFullSweep,
         pgsConfig,
         pgsSweepModel,
+        synthesis,
         onChunk,
         explicitProvider
       });
@@ -4312,7 +4354,8 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
       baseMetadata,
       priorContext, // Pass through for follow-up queries
       onChunk, // NEW (2026-01-21): Pass through streaming callback
-      explicitProvider // NEW: Pass through explicit provider override
+      explicitProvider, // NEW: Pass through explicit provider override
+      synthesis
     });
 
     // Add file access metadata

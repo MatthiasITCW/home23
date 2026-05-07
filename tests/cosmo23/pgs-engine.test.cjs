@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 
 const { PGSEngine } = require('../../cosmo23/lib/pgs-engine');
 
@@ -125,6 +128,118 @@ test('counts failed partition sweeps instead of passing them to synthesis', asyn
   assert.equal(result.answer, 'synthesis from one good sweep');
   assert.equal(result.metadata.pgs.successfulSweeps, 1);
   assert.equal(result.metadata.pgs.failedSweeps, 1);
+});
+
+test('PGS synthesis applies commit step and records receipt metadata', async () => {
+  const engine = makeEngine();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'home23-pgs-commit-'));
+  let instructions = '';
+
+  engine.qe = {
+    runtimeDir: tmpDir,
+    resolveQueryRuntime: () => ({
+      effectiveModel: 'claude-opus-4-7',
+      client: {
+        generate: async (params) => {
+          instructions = params.instructions;
+          return {
+            content: `# Committed PGS Verdict
+
+## SPINE
+1. retrieve_and_fill - primary commitment.
+2. projection - primary commitment.
+
+## FACET
+- induction_head_retrieval - facet of retrieve_and_fill.
+
+## ARTIFACT
+- benchmark_shell - surface label.
+
+## Ranked Experiments
+1. ablate retrieval heads
+   Moves: retrieve_and_fill stays spine vs splits
+   Cost-to-information: high info, moderate cost
+`
+          };
+        }
+      }
+    })
+  };
+
+  const result = await engine.synthesize('query', [{
+    partitionId: 1,
+    partitionSummary: 'mechanistic tests',
+    nodesIncluded: 3,
+    keywords: ['retrieve', 'projection'],
+    sweepOutput: 'retrieve_and_fill and projection are candidate operations.'
+  }], {
+    model: 'claude-opus-4-7',
+    totalNodes: 400,
+    totalEdges: 800,
+    totalPartitions: 4,
+    selectedPartitions: 1,
+    config: {
+      synthesis: { commitStep: true, spineCap: 2 }
+    }
+  });
+
+  assert.match(instructions, /Commit Step \(Required\)/);
+  assert.match(instructions, /SPINE bucket has a hard cap of 2/);
+  assert.equal(result.answer.includes('Committed PGS Verdict'), true);
+  assert.equal(result.synthesisCommit.applied, true);
+  assert.equal(result.synthesisCommit.spine_cap, 2);
+  assert.equal(result.synthesisCommit.spine_count, 2);
+  assert.equal(result.synthesisCommit.facet_count, 1);
+  assert.equal(result.synthesisCommit.artifact_count, 1);
+
+  const receipts = await fs.readFile(path.join(tmpDir, 'synthesis-commit-receipts.jsonl'), 'utf8');
+  const parsed = JSON.parse(receipts.trim());
+  assert.equal(parsed.mode, 'pgs');
+  assert.equal(parsed.model, 'claude-opus-4-7');
+  assert.equal(parsed.synthesis_commit.spine_count, 2);
+});
+
+test('PGS synthesis records disabled commit receipt without prompt block', async () => {
+  const engine = makeEngine();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'home23-pgs-no-commit-'));
+  let instructions = '';
+
+  engine.qe = {
+    runtimeDir: tmpDir,
+    resolveQueryRuntime: () => ({
+      effectiveModel: 'claude-opus-4-7',
+      client: {
+        generate: async (params) => {
+          instructions = params.instructions;
+          return { content: '# Enumerated synthesis\n\n- candidate one\n- candidate two' };
+        }
+      }
+    })
+  };
+
+  const result = await engine.synthesize('query', [{
+    partitionId: 1,
+    partitionSummary: 'domain',
+    nodesIncluded: 1,
+    keywords: [],
+    sweepOutput: 'candidate one'
+  }], {
+    model: 'claude-opus-4-7',
+    totalNodes: 400,
+    totalEdges: 800,
+    totalPartitions: 4,
+    selectedPartitions: 1,
+    config: {
+      synthesis: { commitStep: false }
+    }
+  });
+
+  assert.doesNotMatch(instructions, /Commit Step \(Required\)/);
+  assert.deepEqual(result.synthesisCommit, {
+    applied: false,
+    spine_cap: 5,
+    reason: 'commitStep disabled'
+  });
 });
 
 test('uses direct enhanced query path for small PGS brains', async () => {

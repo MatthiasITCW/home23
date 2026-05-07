@@ -27,6 +27,20 @@ function yamlIndent(block, spaces) {
     .join('\n');
 }
 
+function parseBoolean(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function buildModelMappingBlock(defaultModel, fastModel) {
   return [
     `gpt-5.5: "${defaultModel}"`,
@@ -124,7 +138,9 @@ class ConfigGenerator {
       fast_provider = null,
       fast_model = null,
       strategic_provider = null,
-      strategic_model = null
+      strategic_model = null,
+      synthesis_commit_step = true,
+      synthesis_spine_cap = 5
     } = settings || {};
 
     const enable_feeder = settings.enable_feeder !== false;
@@ -184,6 +200,8 @@ class ConfigGenerator {
     const usesOpenAIModels = selectedProviders.includes('openai') || enable_openai;
     const usesOllamaCloud = selectedProviders.includes('ollama-cloud') || enable_ollama_cloud;
     const usesCodexModels = selectedProviders.includes('openai-codex') || enable_openai_codex;
+    const synthesisCommitStep = parseBoolean(synthesis_commit_step, true);
+    const synthesisSpineCap = parsePositiveInt(synthesis_spine_cap, 5);
 
     const anthropicAvailableModelsBlock = availableAnthropicModels.length > 0
       ? availableAnthropicModels.map(model => [
@@ -500,6 +518,20 @@ models:
 ${providersBlock}
 
 ${modelAssignmentsBlock}
+
+synthesis:
+  commitStep: ${synthesisCommitStep}
+  spineCap: ${synthesisSpineCap}
+  bucketNames:
+    spine: "SPINE"
+    facet: "FACET"
+    artifact: "ARTIFACT"
+  modeOverrides:
+    dive: true
+    pgs: true
+    compile: true
+    explore: false
+
 coordinator:
   enabled: ${(dream_mode || enable_consolidation_mode) ? 'false' : 'true'}
   reviewCyclePeriod: ${usesLocalModels ? Math.max(review_period, 25) : (enable_stabilization ? 15 : review_period)}  # Increased for local LLM
@@ -894,10 +926,14 @@ experimental:
       anthropic_default_model = 'claude-sonnet-4-7',
       anthropic_strategic_model = 'claude-opus-4-7',
       xai_default_model = 'grok-4.3',
-      xai_strategic_model = 'grok-4.20-0309-reasoning'
+      xai_strategic_model = 'grok-4.20-0309-reasoning',
+      synthesis_commit_step = true,
+      synthesis_spine_cap = 5
     } = settings || {};
     const searxng_url = settings.searxng_url || process.env.SEARXNG_URL || '';
     const executionModeInfo = normalizeExecutionMode(exploration_mode, execution_mode);
+    const synthesisCommitStep = parseBoolean(synthesis_commit_step, true);
+    const synthesisSpineCap = parsePositiveInt(synthesis_spine_cap, 5);
 
     const maxCyclesValue = max_cycles === 'unlimited' ? 'null' : max_cycles;
 
@@ -1007,6 +1043,8 @@ experimental:
       anthropicStrategicModel: anthropic_strategic_model,
       xaiDefaultModel: xai_default_model,
       xaiStrategicModel: xai_strategic_model,
+      synthesisCommitStep,
+      synthesisSpineCap,
       searxngUrl: searxng_url || null,
       enableFeeder: settings.enable_feeder !== false,
       feederConverterEnabled: settings.feeder_converter_enabled !== false,
@@ -1095,6 +1133,8 @@ experimental:
       review_period: 20,
       max_concurrent: 4,
       file_access_paths: 'runtime/outputs/, runtime/exports/',
+      synthesis_commit_step: true,
+      synthesis_spine_cap: 5,
       cluster_enabled: false,
       cluster_backend: 'none',
       cluster_size: 1,

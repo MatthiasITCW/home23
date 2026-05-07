@@ -20,6 +20,12 @@
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const {
+  buildSynthesisCommitBlock,
+  parseSynthesisCommitReceipt,
+  resolveSynthesisCommitConfig,
+  writeSynthesisCommitReceipt
+} = require('./synthesis-commit');
 
 function readIntEnv(name, fallback) {
   const raw = process.env[name];
@@ -321,18 +327,22 @@ class PGSEngine {
       totalEdges: edges.length,
       totalPartitions: partitions.length,
       selectedPartitions: partitionsToSweep.length,
-      config
+      config,
+      synthesis: options.synthesis
     });
+    const synthesisAnswer = typeof synthesisResult === 'string' ? synthesisResult : synthesisResult.answer;
+    const synthesisCommit = typeof synthesisResult === 'string' ? null : synthesisResult.synthesisCommit;
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     emit({ type: 'pgs_phase', phase: 'done', phaseIndex: 4, totalPhases: 4, message: `Complete in ${elapsed}s` });
 
     // Build result in standard format
     return {
-      answer: synthesisResult,
+      answer: synthesisAnswer,
       metadata: {
         model,
         mode: 'pgs',
+        ...(synthesisCommit ? { synthesis_commit: synthesisCommit } : {}),
         pgs: {
           totalNodes: nodes.length,
           totalEdges: edges.length,
@@ -1232,6 +1242,10 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
   async synthesize(query, sweepResults, options = {}) {
     const { model = 'claude-opus-4-7', onChunk, totalNodes, totalEdges, totalPartitions, selectedPartitions, config: cfg } = options;
     const synthesisMaxTokens = cfg?.synthesisMaxTokens || PGS_DEFAULTS.synthesisMaxTokens;
+    const synthesisConfig = resolveSynthesisCommitConfig(
+      options.synthesis || cfg?.synthesis || this.qe.runConfig?.synthesis || this.qe.runMetadata?.synthesis,
+      'pgs'
+    );
 
     // Build synthesis context from sweep outputs
     let synthesisContext = `# Partitioned Graph Synthesis\n`;
@@ -1246,7 +1260,7 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
       synthesisContext += `\n\n`;
     }
 
-    const synthesisPrompt = `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepResults.length} successful partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
+    let synthesisPrompt = `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepResults.length} successful partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
 
 Your unique advantage: you see findings from ALL partitions simultaneously. No single sweep pass had this cross-domain view.
 
@@ -1259,6 +1273,8 @@ Your tasks:
 4. **Thesis Formation**: Do NOT just survey findings. Make claims. Commit to positions. Identify the most important insights and rank them. This should read as a thesis, not a literature review.
 
 Structure your response clearly with sections. Cite partition IDs and node IDs where relevant.`;
+    const commitBlock = buildSynthesisCommitBlock(synthesisConfig);
+    if (commitBlock) synthesisPrompt += `\n\n${commitBlock}`;
 
     const runtime = this.qe.resolveQueryRuntime(model);
 
@@ -1272,7 +1288,17 @@ Structure your response clearly with sections. Cite partition IDs and node IDs w
       onChunk
     });
 
-    return response.content || response.message?.content || '';
+    const answer = response.content || response.message?.content || '';
+    const synthesisCommit = parseSynthesisCommitReceipt(answer, synthesisConfig);
+    await writeSynthesisCommitReceipt(this.qe.runtimeDir, {
+      query,
+      mode: 'pgs',
+      model,
+      answer,
+      synthesisCommit
+    });
+
+    return { answer, synthesisCommit };
   }
 }
 

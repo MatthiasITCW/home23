@@ -146,6 +146,11 @@ function parseBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'on'].includes(normalized);
 }
 
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function getReferenceRunsPaths() {
   const envPaths = process.env.COSMO_REFERENCE_RUNS_PATHS || process.env.COSMO_REFERENCE_RUNS_PATH || '';
 
@@ -502,6 +507,8 @@ function serializeLaunchSettings(payload, setupConfig) {
     enable_consolidation_mode: parseBoolean(payload.enableConsolidationMode, false),
     consolidation_cycles: Number.parseInt(payload.consolidationCycles || 50, 10),
     consolidation_dreams_per_cycle: Number.parseInt(payload.consolidationDreamsPerCycle || 10, 10),
+    synthesis_commit_step: parseBoolean(payload.synthesisCommitStep, true),
+    synthesis_spine_cap: parsePositiveInt(payload.synthesisSpineCap, 5),
     enable_experimental: parseBoolean(payload.enableExperimental, false),
     enable_github_mcp: parseBoolean(payload.enableGithubMcp, false),
     github_token: payload.githubToken || '',
@@ -583,6 +590,8 @@ async function writeRuntimeMetadata(runPath, payload, launchSettings) {
     enableXAI: launchSettings.enable_xai,
     xaiDefaultModel: launchSettings.xai_default_model,
     xaiStrategicModel: launchSettings.xai_strategic_model,
+    synthesisCommitStep: launchSettings.synthesis_commit_step,
+    synthesisSpineCap: launchSettings.synthesis_spine_cap,
     savedAt: new Date().toISOString()
   };
 
@@ -1735,6 +1744,7 @@ app.post('/api/brain/:name/query', async (req, res) => {
       pgsFullSweep: parseBoolean(req.body.pgsFullSweep, false),
       pgsConfig: req.body.pgsConfig || null,
       pgsSweepModel: req.body.pgsSweepModel || null,
+      synthesis: req.body.synthesis || null,
       explicitProvider: req.body.provider || null
     });
 
@@ -1785,6 +1795,7 @@ app.post('/api/brain/:name/query/stream', async (req, res) => {
       pgsFullSweep: parseBoolean(req.body.pgsFullSweep, false),
       pgsConfig: req.body.pgsConfig || null,
       pgsSweepModel: req.body.pgsSweepModel || null,
+      synthesis: req.body.synthesis || null,
       explicitProvider: req.body.provider || null,
       onChunk: (event) => {
         res.write(`data: ${JSON.stringify(event)}\n\n`);

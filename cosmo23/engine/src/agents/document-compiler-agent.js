@@ -1,6 +1,12 @@
 const { BaseAgent } = require('./base-agent');
 const fs = require('fs').promises;
 const path = require('path');
+const {
+  buildSynthesisCommitBlock,
+  parseSynthesisCommitReceipt,
+  resolveSynthesisCommitConfig,
+  writeSynthesisCommitReceipt
+} = require('../../../lib/synthesis-commit');
 
 /**
  * DocumentCompilerAgent - Dual-substrate documentation compilation
@@ -79,6 +85,38 @@ class DocumentCompilerAgent extends BaseAgent {
       // Non-fatal - progress file is optional
       this.logger?.warn('Could not write progress file:', error.message);
     }
+  }
+
+  getSynthesisCommitConfig(mode = 'compile') {
+    return resolveSynthesisCommitConfig(
+      this.mission?.synthesis || this.config?.synthesis || null,
+      mode
+    );
+  }
+
+  appendSynthesisCommitPrompt(prompt, mode = 'compile', note = '') {
+    const commitConfig = this.getSynthesisCommitConfig(mode);
+    const commitBlock = buildSynthesisCommitBlock(commitConfig);
+    if (!commitBlock) return prompt;
+    return `${prompt}\n\n${commitBlock}${note ? `\n\n${note}` : ''}`;
+  }
+
+  async recordDocumentSynthesisCommit(documents) {
+    const commitConfig = this.getSynthesisCommitConfig('compile');
+    const answer = (documents || [])
+      .map(doc => `# ${doc.filename || 'document'}\n\n${doc.content || ''}`)
+      .join('\n\n---\n\n');
+    const synthesisCommit = parseSynthesisCommitReceipt(answer, commitConfig);
+
+    await writeSynthesisCommitReceipt(this.runDir, {
+      query: this.systemId,
+      mode: 'compile',
+      model: this.config.models?.strategicModel || this.config.models?.primary || '',
+      answer,
+      synthesisCommit
+    });
+
+    return synthesisCommit;
   }
 
   /**
@@ -160,6 +198,8 @@ class DocumentCompilerAgent extends BaseAgent {
       this.documentsGenerated.push(implDoc);
     }
 
+    const synthesisCommit = await this.recordDocumentSynthesisCommit(this.documentsGenerated);
+
     // STEP 7: Write documentation suite and package artifacts
     await this.reportProgress(90, 'Writing documentation and packaging artifacts');
     await this.writeProgressFile(90, 'Writing documentation and packaging artifacts');
@@ -215,6 +255,9 @@ class DocumentCompilerAgent extends BaseAgent {
       outputDir: path.relative(this.runDir, outputDir),
       documents: this.documentsGenerated.length,
       strategy: 'dual-substrate',
+      metadata: {
+        synthesis_commit: synthesisCommit
+      },
       errors: this.compilationErrors,
       warnings: this.compilationWarnings
     };
@@ -447,7 +490,7 @@ Generate the complete executive overview in markdown format:`;
     const response = await this.callGPT5({
       component: 'documentCompilerAgent',
       purpose: 'executiveOverview',
-      instructions: prompt,
+      instructions: this.appendSynthesisCommitPrompt(prompt, 'compile'),
       messages: [{ role: 'user', content: 'Generate executive overview' }],
       maxTokens: 16384,  // Maximum output tokens for comprehensive docs
       reasoningEffort: 'high'  // High reasoning for quality
@@ -557,7 +600,7 @@ Generate in markdown with mermaid diagrams where appropriate:`;
     const response = await this.callGPT5({
       component: 'documentCompilerAgent',
       purpose: 'systemArchitecture',
-      instructions: prompt,
+      instructions: this.appendSynthesisCommitPrompt(prompt, 'compile'),
       messages: [{ role: 'user', content: 'Generate system architecture document' }],
       maxTokens: 16384,  // Maximum output tokens for comprehensive technical docs
       reasoningEffort: 'high'  // High reasoning for complex architecture
@@ -674,7 +717,7 @@ Generate in markdown with code examples:`;
     const response = await this.callGPT5({
       component: 'documentCompilerAgent',
       purpose: 'implementationGuide',
-      instructions: prompt,
+      instructions: this.appendSynthesisCommitPrompt(prompt, 'compile'),
       messages: [{ role: 'user', content: 'Generate implementation guide' }],
       maxTokens: 16384,  // Maximum output tokens for detailed implementation examples
       reasoningEffort: 'high'  // High reasoning for practical guidance
@@ -882,7 +925,11 @@ Generate the complete package manifest:`;
     const response = await this.callGPT5({
       component: 'documentCompilerAgent',
       purpose: 'packageManifest',
-      instructions: prompt,
+      instructions: this.appendSynthesisCommitPrompt(
+        prompt,
+        'compile',
+        'Apply the commit step to generated document content inside the JSON fields. Preserve the JSON envelope exactly.'
+      ),
       messages: [{ role: 'user', content: context }],
       maxTokens: 32000,  // Large output for complete synthesis
       reasoningEffort: 'high'
@@ -1603,4 +1650,3 @@ Generate the complete package manifest:`;
 }
 
 module.exports = { DocumentCompilerAgent };
-

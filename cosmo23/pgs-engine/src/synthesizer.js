@@ -9,12 +9,18 @@
 
 'use strict';
 
+const {
+  buildSynthesisCommitBlock,
+  resolveSynthesisCommitConfig
+} = require('../../lib/synthesis-commit');
+
 /**
  * The synthesis system prompt. Four explicit tasks that no single-partition
  * sweep can perform — these require cross-partition visibility.
  */
-function buildSynthesisPrompt(sweepCount) {
-  return `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepCount} partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
+function buildSynthesisPrompt(sweepCount, synthesis = null) {
+  const commitConfig = resolveSynthesisCommitConfig(synthesis, 'pgs');
+  const basePrompt = `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepCount} partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
 
 Your unique advantage: you see findings from ALL partitions simultaneously. No single sweep pass had this cross-domain view.
 
@@ -25,6 +31,9 @@ Your tasks:
 4. **Thesis Formation**: Do NOT just survey findings. Make claims. Commit to positions. Identify the most important insights and rank them. This should read as a thesis, not a literature review.
 
 Structure your response clearly with sections. Cite partition IDs and node IDs where relevant.`;
+
+  const commitBlock = buildSynthesisCommitBlock(commitConfig);
+  return commitBlock ? `${basePrompt}\n\n${commitBlock}` : basePrompt;
 }
 
 /**
@@ -54,7 +63,7 @@ async function synthesize(query, sweepResults, llmProvider, context, config) {
     synthesisContext += `\n\n`;
   }
 
-  const instructions = buildSynthesisPrompt(sweepResults.length);
+  const instructions = buildSynthesisPrompt(sweepResults.length, context.synthesis || config.synthesis);
   const input = `${synthesisContext}\n\nOriginal Query: ${query}`;
 
   const response = await llmProvider.generate({
