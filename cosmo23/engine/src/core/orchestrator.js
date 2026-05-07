@@ -5605,6 +5605,14 @@ OUTPUT FORMAT (JSON ONLY):
       }
 
       this.logger.info(`⚡ Processing ${pendingActions.length} pending action(s) from MCP queue`);
+
+      const processingStartedAt = new Date().toISOString();
+      for (const action of pendingActions) {
+        action.status = 'processing';
+        action.processingStartedAt = processingStartedAt;
+        action.processingCycle = this.cycleCount;
+      }
+      await fs.writeFile(actionsQueuePath, JSON.stringify(actionsData, null, 2));
       
       for (const action of pendingActions) {
         try {

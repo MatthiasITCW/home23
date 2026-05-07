@@ -245,14 +245,35 @@ describe('GuidedModePlanner — Semantic Context Change Detection', () => {
     });
   });
 
+  describe('_isDomainDirectionChanged()', () => {
+    it('does not treat a leading continuation cue as a new domain', () => {
+      const planner = createPlanner();
+
+      const result = planner._isDomainDirectionChanged(
+        'Apply the substrate pressure-test criterion as a verdict, not a description.',
+        'Now Apply the substrate pressure-test criterion as a verdict, not a description.'
+      );
+
+      expect(result).to.equal(false);
+    });
+
+    it('still treats unrelated short domains as different', () => {
+      const planner = createPlanner();
+
+      const result = planner._isDomainDirectionChanged('Healthcare', 'Finance');
+
+      expect(result).to.equal(true);
+    });
+  });
+
   describe('Full detection block behavior', () => {
 
-    it('domain change always triggers contextRedirect regardless of context', async () => {
+    it('true thread pivot triggers contextRedirect', async () => {
       const logMessages = [];
       const planner = createPlanner({
         subsystems: {
           client: {
-            generate: async () => ({ content: 'same' })
+            generate: async () => ({ content: '{"relation":"pivot","confidence":0.9,"rationale":"different subject"}' })
           }
         }
       });
@@ -264,28 +285,16 @@ describe('GuidedModePlanner — Semantic Context Change Detection', () => {
       };
 
       // Simulate the detection block logic directly
-      const guidedFocus = { context: 'Same context', domain: 'New Domain' };
+      const guidedFocus = { context: 'Build a bond-pricing model', domain: 'Finance' };
       const existingPlan = {
-        _sourceContext: 'Same context',
-        _sourceDomain: 'Old Domain'
+        _sourceContext: 'Investigate clinical adoption',
+        _sourceDomain: 'Healthcare'
       };
 
-      const currentContext = (guidedFocus.context || '').trim();
-      const planContext = (existingPlan._sourceContext || '').trim();
-      const currentDomain = (guidedFocus.domain || '').trim();
-      const planDomain = (existingPlan._sourceDomain || '').trim();
+      const relation = await planner.assessThreadRelation(existingPlan, guidedFocus, []);
 
-      const domainChanged = currentDomain.toLowerCase() !== planDomain.toLowerCase();
-
-      let contextChanged = false;
-      if (!domainChanged && currentContext !== planContext) {
-        contextChanged = await planner._isContextDirectionChanged(planContext, currentContext, currentDomain);
-      }
-
-      const contextRedirect = domainChanged || contextChanged;
-
-      expect(domainChanged).to.equal(true);
-      expect(contextRedirect).to.equal(true);
+      expect(relation.relation).to.equal('pivot');
+      expect(relation.shouldRedirect).to.equal(true);
     });
 
     it('same domain + semantically same context does NOT trigger replan', async () => {
@@ -303,30 +312,17 @@ describe('GuidedModePlanner — Semantic Context Change Detection', () => {
         _sourceDomain: 'Healthcare'
       };
 
-      const currentContext = (guidedFocus.context || '').trim();
-      const planContext = (existingPlan._sourceContext || '').trim();
-      const currentDomain = (guidedFocus.domain || '').trim();
-      const planDomain = (existingPlan._sourceDomain || '').trim();
+      const relation = await planner.assessThreadRelation(existingPlan, guidedFocus, []);
 
-      const domainChanged = currentDomain.toLowerCase() !== planDomain.toLowerCase();
-
-      let contextChanged = false;
-      if (!domainChanged && currentContext !== planContext) {
-        contextChanged = await planner._isContextDirectionChanged(planContext, currentContext, currentDomain);
-      }
-
-      const contextRedirect = domainChanged || contextChanged;
-
-      expect(domainChanged).to.equal(false);
-      expect(contextChanged).to.equal(false);
-      expect(contextRedirect).to.equal(false);
+      expect(['same_thread', 'refinement']).to.include(relation.relation);
+      expect(relation.shouldRedirect).to.equal(false);
     });
 
     it('same domain + semantically different context triggers replan', async () => {
       const planner = createPlanner({
         subsystems: {
           client: {
-            generate: async () => ({ content: 'different' })
+            generate: async () => ({ content: '{"relation":"pivot","confidence":0.9,"rationale":"same broad domain but different objective"}' })
           }
         }
       });
@@ -337,26 +333,13 @@ describe('GuidedModePlanner — Semantic Context Change Detection', () => {
         _sourceDomain: 'Healthcare'
       };
 
-      const currentContext = (guidedFocus.context || '').trim();
-      const planContext = (existingPlan._sourceContext || '').trim();
-      const currentDomain = (guidedFocus.domain || '').trim();
-      const planDomain = (existingPlan._sourceDomain || '').trim();
+      const relation = await planner.assessThreadRelation(existingPlan, guidedFocus, []);
 
-      const domainChanged = currentDomain.toLowerCase() !== planDomain.toLowerCase();
-
-      let contextChanged = false;
-      if (!domainChanged && currentContext !== planContext) {
-        contextChanged = await planner._isContextDirectionChanged(planContext, currentContext, currentDomain);
-      }
-
-      const contextRedirect = domainChanged || contextChanged;
-
-      expect(domainChanged).to.equal(false);
-      expect(contextChanged).to.equal(true);
-      expect(contextRedirect).to.equal(true);
+      expect(relation.relation).to.equal('pivot');
+      expect(relation.shouldRedirect).to.equal(true);
     });
 
-    it('domain comparison is case-insensitive', async () => {
+    it('domain comparison is case-insensitive', () => {
       const planner = createPlanner({
         subsystems: {
           client: {
@@ -368,12 +351,12 @@ describe('GuidedModePlanner — Semantic Context Change Detection', () => {
       const currentDomain = 'Healthcare';
       const planDomain = 'healthcare';
 
-      const domainChanged = currentDomain.toLowerCase() !== planDomain.toLowerCase();
+      const domainChanged = planner._isDomainDirectionChanged(planDomain, currentDomain);
 
       expect(domainChanged).to.equal(false);
     });
 
-    it('skips semantic check when domain already changed', async () => {
+    it('does not rely on semantic comparison for a clear pivot', async () => {
       let llmCalled = false;
       const planner = createPlanner({
         subsystems: {
@@ -386,19 +369,13 @@ describe('GuidedModePlanner — Semantic Context Change Detection', () => {
         }
       });
 
-      const currentDomain = 'Finance';
-      const planDomain = 'Healthcare';
-      const currentContext = 'Different context text';
-      const planContext = 'Original context text';
+      const relation = await planner.assessThreadRelation(
+        { _sourceDomain: 'Healthcare', _sourceContext: 'Investigate clinical market trends' },
+        { domain: 'Finance', context: 'Build a bond-pricing spreadsheet' },
+        []
+      );
 
-      const domainChanged = currentDomain.toLowerCase() !== planDomain.toLowerCase();
-
-      let contextChanged = false;
-      if (!domainChanged && currentContext !== planContext) {
-        contextChanged = await planner._isContextDirectionChanged(planContext, currentContext, currentDomain);
-      }
-
-      expect(domainChanged).to.equal(true);
+      expect(relation.shouldRedirect).to.equal(true);
       expect(llmCalled).to.equal(false);
     });
 
@@ -415,22 +392,45 @@ describe('GuidedModePlanner — Semantic Context Change Detection', () => {
         }
       });
 
-      const currentDomain = 'Healthcare';
-      const planDomain = 'Healthcare';
-      const currentContext = 'Same context text';
-      const planContext = 'Same context text';
+      const relation = await planner.assessThreadRelation(
+        { _sourceDomain: 'Healthcare', _sourceContext: 'Same context text' },
+        { domain: 'Healthcare', context: 'Same context text' },
+        []
+      );
 
-      const domainChanged = currentDomain.toLowerCase() !== planDomain.toLowerCase();
-
-      let contextChanged = false;
-      if (!domainChanged && currentContext !== planContext) {
-        contextChanged = await planner._isContextDirectionChanged(planContext, currentContext, currentDomain);
-      }
-
-      expect(domainChanged).to.equal(false);
       // The outer `currentContext !== planContext` guard prevents the call
       expect(llmCalled).to.equal(false);
-      expect(contextChanged).to.equal(false);
+      expect(relation.shouldRedirect).to.equal(false);
+    });
+
+    it('treats a verdict instruction as a refinement of the same substrate thread', async () => {
+      let llmCalled = false;
+      const planner = createPlanner({
+        subsystems: {
+          client: {
+            generate: async () => {
+              llmCalled = true;
+              return { content: '{"relation":"pivot","confidence":0.9,"rationale":"should not be needed"}' };
+            }
+          }
+        }
+      });
+
+      const relation = await planner.assessThreadRelation(
+        {
+          _sourceDomain: 'Apply the substrate pressure-test criterion as a verdict, not a description.',
+          _sourceContext: 'Classify compact moves as spine, facet, or artifact.'
+        },
+        {
+          domain: 'Now Apply the substrate pressure-test criterion as a verdict, not a description.',
+          context: 'Produce the final <=5-move spine from the local artifacts.'
+        },
+        [{ state: 'PENDING' }]
+      );
+
+      expect(relation.shouldRedirect).to.equal(false);
+      expect(['same_thread', 'refinement']).to.include(relation.relation);
+      expect(llmCalled).to.equal(false);
     });
   });
 });

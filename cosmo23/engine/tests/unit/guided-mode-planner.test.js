@@ -143,4 +143,163 @@ describe('GuidedModePlanner', () => {
     expect(plan.agentMissions.length).to.be.at.least(2);
     expect(plan.strategy).to.include('Thread Domain');
   });
+
+  it('uses a local continuation fallback instead of broad web research when prior context exists', async () => {
+    const planner = createPlanner({
+      subsystems: {
+        client: {
+          generate: async () => ({ content: 'not valid json' })
+        }
+      }
+    });
+
+    const plan = await planner.generateMissionPlan(
+      {
+        domain: 'Now Apply the substrate pressure-test criterion as a verdict',
+        context: 'Use the reference outputs as necessary.'
+      },
+      { mcp: { tools: [] }, webSearch: true, codeExecution: false, agentTypes: ['research', 'ide'] },
+      [],
+      [],
+      {
+        hasContext: true,
+        researchDigest: {
+          topFindings: ['The graph supports retrieve-and-fill as a spine candidate.'],
+          priorityGaps: ['Produce the final verdict table.'],
+          artifactRefs: [{ path: '@outputs/pressure_test_artifact_manifest.json', label: 'manifest' }],
+          processedSourceUrls: []
+        },
+        knowledgeAssessment: {
+          answer: 'The brain already has local artifacts for the verdict; no broad source collection is needed.'
+        }
+      }
+    );
+
+    expect(plan.agentMissions).to.have.length(3);
+    expect(plan.agentMissions.map(m => m.type)).to.deep.equal(['ide', 'ide', 'ide']);
+    expect(plan.agentMissions.map(m => m.mission).join('\n')).to.not.include('Conduct comprehensive web research');
+    expect(plan.agentMissions.map(m => m.tools || [])).to.deep.equal([['read_file', 'write_file'], ['read_file', 'write_file'], ['read_file', 'write_file']]);
+    expect(plan.deliverable.filename).to.equal('guided_continuation_output.md');
+  });
+
+  it('rewrites generated web missions when the planning decision says local only', async () => {
+    const planner = createPlanner({
+      subsystems: {
+        client: {
+          generate: async () => ({
+            content: JSON.stringify({
+              strategy: 'bad web plan',
+              requiredResources: ['web_search'],
+              agentMissions: [
+                {
+                  type: 'research',
+                  mission: 'Use web_search to conduct broad research on the thread.',
+                  tools: ['web_search'],
+                  priority: 'high',
+                  expectedOutput: '@outputs/research.json'
+                }
+              ],
+              initialGoals: ['collect sources']
+            })
+          })
+        }
+      }
+    });
+
+    const plan = await planner.generateMissionPlan(
+      {
+        domain: 'Substrate pressure-test spine verdict',
+        context: 'Use the existing local artifacts only.'
+      },
+      { mcp: { tools: [] }, webSearch: true, codeExecution: false, agentTypes: ['research', 'ide'] },
+      [],
+      [],
+      {
+        hasContext: true,
+        planningDecision: {
+          threadRelation: 'refinement',
+          evidenceMode: 'local_sufficient',
+          webPolicy: 'none',
+          rationale: 'local artifacts are sufficient',
+          localArtifactCount: 3,
+          externalGaps: []
+        },
+        researchDigest: {
+          topFindings: ['prior finding'],
+          priorityGaps: [],
+          artifactRefs: [{ path: '@outputs/manifest.json', label: 'manifest' }],
+          processedSourceUrls: []
+        }
+      }
+    );
+
+    expect(plan.requiredResources).to.not.include('web_search');
+    expect(plan.agentMissions[0].type).to.equal('ide');
+    expect(plan.agentMissions[0].tools).to.deep.equal(['read_file', 'write_file']);
+    expect(plan.agentMissions[0].metadata.policyRewrite).to.equal('web_disallowed_by_planning_decision');
+  });
+
+  it('uses targeted web fallback only for explicit external evidence gaps', async () => {
+    const planner = createPlanner({
+      subsystems: {
+        client: {
+          generate: async () => ({ content: 'not valid json' })
+        }
+      }
+    });
+
+    const plan = await planner.generateMissionPlan(
+      {
+        domain: 'Thread Domain',
+        context: 'Continue from current artifacts.'
+      },
+      { mcp: { tools: [] }, webSearch: true, codeExecution: false, agentTypes: ['research', 'ide'] },
+      [],
+      [],
+      {
+        hasContext: true,
+        planningDecision: {
+          threadRelation: 'refinement',
+          evidenceMode: 'mixed',
+          webPolicy: 'targeted',
+          rationale: 'one external gap remains',
+          localArtifactCount: 4,
+          externalGaps: ['Missing primary source citation for claim A']
+        },
+        researchDigest: {
+          topFindings: ['local finding'],
+          priorityGaps: ['Missing primary source citation for claim A'],
+          artifactRefs: [{ path: '@outputs/local.json', label: 'local' }],
+          processedSourceUrls: []
+        }
+      }
+    );
+
+    expect(plan.agentMissions).to.have.length(2);
+    expect(plan.agentMissions[0].type).to.equal('research');
+    expect(plan.agentMissions[0].mission).to.include('targeted evidence gap');
+    expect(plan.agentMissions[0].mission).to.not.include('Conduct comprehensive web research');
+    expect(plan.agentMissions[1].type).to.equal('ide');
+  });
+
+  it('selects no-web planning decision for continuation with local artifacts', () => {
+    const planner = createPlanner();
+    const decision = planner.buildPlanningDecision(
+      { domain: 'Thread Domain', context: 'Use the existing local artifacts to produce the verdict.' },
+      { webSearch: true },
+      {
+        hasContext: true,
+        researchDigest: {
+          topFindings: ['finding'],
+          completedMissions: ['prior mission'],
+          priorityGaps: ['write verdict'],
+          artifactRefs: [{ path: '@outputs/a.json' }],
+          processedSourceUrls: []
+        }
+      }
+    );
+
+    expect(decision.evidenceMode).to.equal('local_sufficient');
+    expect(decision.webPolicy).to.equal('none');
+  });
 });

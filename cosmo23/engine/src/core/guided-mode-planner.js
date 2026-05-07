@@ -146,28 +146,25 @@ class GuidedModePlanner {
       const currentDomain = (guidedFocus.domain || '').trim();
       const planDomain = (existingPlan._sourceDomain || existingPlan.title || '').trim();
 
-      // Tier 1: Domain check (exact) — topic change is always a real direction change
-      const domainChanged = currentDomain.toLowerCase() !== planDomain.toLowerCase();
+      const threadRelation = await this.assessThreadRelation(existingPlan, guidedFocus, allTasks);
 
-      // Tier 2: Context check (semantic) — only if domain is same
-      let contextChanged = false;
-      if (!domainChanged && currentContext !== planContext) {
-        contextChanged = await this._isContextDirectionChanged(planContext, currentContext, currentDomain);
-      }
-
-      if (domainChanged || contextChanged) {
+      if (threadRelation.shouldRedirect) {
         contextRedirect = true;
         this.logger?.info('🔄 Research direction changed on continue — will archive old plan and regenerate', {
-          domainChanged,
-          contextChanged,
-          semantic: !domainChanged && contextChanged,
+          relation: threadRelation.relation,
+          confidence: threadRelation.confidence,
+          primarySignal: threadRelation.primarySignal,
           oldDomain: planDomain.substring(0, 60),
-          newDomain: currentDomain.substring(0, 60)
+          newDomain: currentDomain.substring(0, 60),
+          rationale: threadRelation.rationale
         });
       } else if (currentContext !== planContext) {
         this.logger?.info('📝 Context reworded but same direction — resuming existing plan', {
+          relation: threadRelation.relation,
+          confidence: threadRelation.confidence,
           oldContext: planContext.substring(0, 80),
-          newContext: currentContext.substring(0, 80)
+          newContext: currentContext.substring(0, 80),
+          rationale: threadRelation.rationale
         });
       }
     }
@@ -297,6 +294,16 @@ class GuidedModePlanner {
       planningContext.assessmentPath = knowledgeAssessment.jsonPath;
     }
 
+    planningContext.planningDecision = this.buildPlanningDecision(guidedFocus, resources, planningContext);
+    await this.persistPlanningDecision(planningContext.planningDecision);
+    this.logger?.info('🧭 Planning evidence policy selected', {
+      threadRelation: planningContext.planningDecision.threadRelation,
+      evidenceMode: planningContext.planningDecision.evidenceMode,
+      webPolicy: planningContext.planningDecision.webPolicy,
+      localArtifactCount: planningContext.planningDecision.localArtifactCount,
+      externalGapCount: planningContext.planningDecision.externalGaps.length
+    });
+
     if (planningContext.hasContext) {
       this.logger?.info('🧠 Brain-informed planning context loaded', {
         memoryMatches: planningContext.memoryMatches.length,
@@ -323,6 +330,7 @@ class GuidedModePlanner {
     plan.effectiveExecutionMode = executionMode;
     plan.requestedExecutionMode = executionModeInfo.requestedMode;
     plan.researchDigest = planningContext.researchDigest;
+    plan.planningDecision = planningContext.planningDecision;
 
     if (knowledgeAssessment) {
       plan._planningAssessment = {
@@ -1078,9 +1086,27 @@ class GuidedModePlanner {
       .trim();
   }
 
+  tokenizeThreadText(text) {
+    return this.normalizeThreadText(text)
+      .split(' ')
+      .map(token => token.trim())
+      .filter(token => token.length >= 3);
+  }
+
+  normalizeDomainDirection(text) {
+    // Compatibility wrapper for older tests/callers. Direction is now assessed
+    // by token relationship and optional semantic comparison, not cue stripping.
+    return this.normalizeThreadText(text);
+  }
+
+  _isDomainDirectionChanged(oldDomain, newDomain) {
+    const relationship = this.assessTextRelationship(oldDomain, newDomain);
+    return relationship.relation === 'pivot' || relationship.relation === 'fresh';
+  }
+
   calculateThreadSimilarity(a, b) {
-    const aTokens = new Set(this.normalizeThreadText(a).split(' ').filter(token => token.length >= 3));
-    const bTokens = new Set(this.normalizeThreadText(b).split(' ').filter(token => token.length >= 3));
+    const aTokens = new Set(this.tokenizeThreadText(a));
+    const bTokens = new Set(this.tokenizeThreadText(b));
 
     if (aTokens.size === 0 || bTokens.size === 0) {
       return 0;
@@ -1095,6 +1121,282 @@ class GuidedModePlanner {
 
     const union = new Set([...aTokens, ...bTokens]).size;
     return union === 0 ? 0 : intersection / union;
+  }
+
+  calculateThreadScores(a, b) {
+    const aTokens = new Set(this.tokenizeThreadText(a));
+    const bTokens = new Set(this.tokenizeThreadText(b));
+    const aSize = aTokens.size;
+    const bSize = bTokens.size;
+
+    if (aSize === 0 || bSize === 0) {
+      return {
+        jaccard: 0,
+        overlap: 0,
+        shared: 0,
+        minSize: Math.min(aSize, bSize),
+        maxSize: Math.max(aSize, bSize)
+      };
+    }
+
+    let shared = 0;
+    for (const token of aTokens) {
+      if (bTokens.has(token)) shared += 1;
+    }
+
+    const union = new Set([...aTokens, ...bTokens]).size;
+    return {
+      jaccard: union === 0 ? 0 : shared / union,
+      overlap: shared / Math.min(aSize, bSize),
+      shared,
+      minSize: Math.min(aSize, bSize),
+      maxSize: Math.max(aSize, bSize)
+    };
+  }
+
+  assessTextRelationship(oldText, newText) {
+    const oldNormalized = this.normalizeThreadText(oldText);
+    const newNormalized = this.normalizeThreadText(newText);
+
+    if (!oldNormalized && !newNormalized) {
+      return { relation: 'same_thread', confidence: 1, rationale: 'both sides empty' };
+    }
+    if (!oldNormalized && newNormalized) {
+      return { relation: 'fresh', confidence: 0.9, rationale: 'no prior text to compare' };
+    }
+    if (oldNormalized && !newNormalized) {
+      return { relation: 'pivot', confidence: 0.75, rationale: 'new direction is empty while prior text exists' };
+    }
+    if (oldNormalized === newNormalized) {
+      return { relation: 'same_thread', confidence: 1, rationale: 'normalized text matches exactly' };
+    }
+
+    const scores = this.calculateThreadScores(oldNormalized, newNormalized);
+    const details = `jaccard=${scores.jaccard.toFixed(2)}, overlap=${scores.overlap.toFixed(2)}, shared=${scores.shared}`;
+
+    if (scores.overlap >= 0.86 && scores.shared >= 1) {
+      return {
+        relation: scores.jaccard >= 0.86 ? 'same_thread' : 'refinement',
+        confidence: Math.min(0.96, 0.72 + scores.overlap * 0.22),
+        rationale: `one direction substantially contains the other (${details})`
+      };
+    }
+
+    if (scores.jaccard >= 0.34 && scores.shared >= 2) {
+      return {
+        relation: 'refinement',
+        confidence: Math.min(0.9, 0.6 + scores.jaccard),
+        rationale: `directions share enough substantive tokens (${details})`
+      };
+    }
+
+    if (scores.jaccard <= 0.16 && scores.overlap <= 0.25) {
+      return {
+        relation: 'pivot',
+        confidence: 0.82,
+        rationale: `directions have little shared substrate (${details})`
+      };
+    }
+
+    return {
+      relation: 'ambiguous',
+      confidence: 0.52,
+      rationale: `token evidence is mixed (${details})`
+    };
+  }
+
+  threadTextFromPlan(plan = {}) {
+    return [
+      plan._sourceDomain,
+      plan.title,
+      plan.researchDomain,
+      plan._sourceContext,
+      plan.context,
+      plan.researchContext,
+      plan.strategy
+    ].filter(Boolean).join('\n');
+  }
+
+  threadTextFromFocus(guidedFocus = {}) {
+    return [
+      guidedFocus.domain,
+      guidedFocus.researchDomain,
+      guidedFocus.context
+    ].filter(Boolean).join('\n');
+  }
+
+  assessThreadRelationDeterministic(existingPlan = {}, guidedFocus = {}, allTasks = []) {
+    const oldDomain = existingPlan._sourceDomain || existingPlan.title || existingPlan.researchDomain || '';
+    const newDomain = guidedFocus.domain || guidedFocus.researchDomain || '';
+    const oldContext = existingPlan._sourceContext || existingPlan.context || existingPlan.researchContext || '';
+    const newContext = guidedFocus.context || '';
+    const oldThread = this.threadTextFromPlan(existingPlan);
+    const newThread = this.threadTextFromFocus(guidedFocus);
+
+    const domain = this.assessTextRelationship(oldDomain, newDomain);
+    const context = this.assessTextRelationship(oldContext, newContext);
+    const combined = this.assessTextRelationship(oldThread, newThread);
+    const domainScores = this.calculateThreadScores(oldDomain, newDomain);
+    const activeWorkCount = (allTasks || []).filter(task =>
+      ['PENDING', 'CLAIMED', 'IN_PROGRESS', 'FAILED', 'BLOCKED'].includes(task.state)
+    ).length;
+
+    const sameSignals = [domain, context, combined].filter(item =>
+      ['same_thread', 'refinement'].includes(item.relation)
+    ).length;
+    const pivotSignals = [domain, context, combined].filter(item => item.relation === 'pivot').length;
+    const combinedPreservesThread = ['same_thread', 'refinement'].includes(combined.relation);
+
+    if (
+      domain.relation === 'pivot' &&
+      domainScores.shared === 0 &&
+      domainScores.minSize > 0 &&
+      (context.relation === 'pivot' || combined.relation === 'pivot')
+    ) {
+      return {
+        relation: 'pivot',
+        confidence: Math.max(0.82, domain.confidence),
+        shouldRedirect: true,
+        primarySignal: 'domain',
+        rationale: `domain changed with no shared substantive tokens: ${domain.rationale}`,
+        scores: { domain, context, combined }
+      };
+    }
+
+    if (domain.relation === 'pivot' && domainScores.shared === 0 && combinedPreservesThread) {
+      return {
+        relation: 'ambiguous',
+        confidence: 0.56,
+        shouldRedirect: false,
+        primarySignal: 'domain',
+        rationale: `domain title changed but broader context still overlaps; semantic arbitration required: ${combined.rationale}`,
+        scores: { domain, context, combined }
+      };
+    }
+
+    if (pivotSignals >= 2 && combined.relation === 'pivot') {
+      return {
+        relation: 'pivot',
+        confidence: Math.min(0.94, (domain.confidence + context.confidence + combined.confidence) / 3),
+        shouldRedirect: true,
+        primarySignal: domain.relation === 'pivot' ? 'domain' : 'context',
+        rationale: `domain/context/combined comparisons indicate a different thread: ${combined.rationale}`,
+        scores: { domain, context, combined }
+      };
+    }
+
+    if (domain.relation === 'pivot' && !combinedPreservesThread) {
+      return {
+        relation: 'ambiguous',
+        confidence: 0.56,
+        shouldRedirect: false,
+        primarySignal: 'domain',
+        rationale: `domain appears changed but combined thread evidence needs semantic arbitration: ${combined.rationale}`,
+        scores: { domain, context, combined }
+      };
+    }
+
+    if (context.relation === 'pivot' && ['same_thread', 'refinement'].includes(domain.relation) && !combinedPreservesThread) {
+      return {
+        relation: 'ambiguous',
+        confidence: 0.56,
+        shouldRedirect: false,
+        primarySignal: 'context',
+        rationale: `context appears changed inside the same domain; semantic arbitration required: ${context.rationale}`,
+        scores: { domain, context, combined }
+      };
+    }
+
+    if (sameSignals > 0) {
+      const strongest = [combined, domain, context]
+        .filter(item => ['same_thread', 'refinement'].includes(item.relation))
+        .sort((a, b) => b.confidence - a.confidence)[0];
+      return {
+        relation: strongest.relation,
+        confidence: Math.max(strongest.confidence, activeWorkCount > 0 ? 0.78 : 0.68),
+        shouldRedirect: false,
+        primarySignal: strongest === context ? 'context' : strongest === domain ? 'domain' : 'combined',
+        rationale: `existing thread evidence remains relevant: ${strongest.rationale}`,
+        scores: { domain, context, combined }
+      };
+    }
+
+    return {
+      relation: activeWorkCount > 0 ? 'refinement' : 'ambiguous',
+      confidence: activeWorkCount > 0 ? 0.62 : 0.5,
+      shouldRedirect: false,
+      primarySignal: 'combined',
+      rationale: activeWorkCount > 0
+        ? 'ambiguous comparison with active work present; preserve the live thread unless semantic check proves pivot'
+        : 'ambiguous comparison with no decisive redirect signal',
+      scores: { domain, context, combined }
+    };
+  }
+
+  async classifyThreadRelationWithLLM(existingPlan = {}, guidedFocus = {}, deterministic = {}) {
+    if (!this.client?.generate) return null;
+
+    try {
+      const response = await this.client.generate({
+        component: 'planner',
+        purpose: 'thread_relation',
+        model: this.config.models?.fast || this.config.models?.plannerModel || this.config.models?.primary,
+        reasoningEffort: 'low',
+        maxTokens: 260,
+        messages: [
+          {
+            role: 'user',
+            content: `Decide whether the new guided request is the same research thread, a refinement/continuation, or a pivot to a different thread.
+
+Return JSON only:
+{"relation":"same_thread|refinement|pivot|fresh","confidence":0.0,"rationale":"brief"}
+
+Prior plan:
+Domain: ${existingPlan._sourceDomain || existingPlan.title || ''}
+Context: ${this.summarizeText(existingPlan._sourceContext || existingPlan.context || existingPlan.researchContext || '', 1200)}
+
+New request:
+Domain: ${guidedFocus.domain || ''}
+Context: ${this.summarizeText(guidedFocus.context || '', 1200)}
+
+Token assessment:
+${JSON.stringify(deterministic.scores || {})}`
+          }
+        ]
+      });
+      const content = response.content || response.message?.content || '';
+      const match = content.match(/\{[\s\S]*\}/);
+      if (!match) return null;
+      const parsed = JSON.parse(match[0]);
+      if (!['same_thread', 'refinement', 'pivot', 'fresh'].includes(parsed.relation)) return null;
+      return {
+        relation: parsed.relation,
+        confidence: Number(parsed.confidence) || 0.5,
+        shouldRedirect: parsed.relation === 'pivot' || parsed.relation === 'fresh',
+        primarySignal: 'semantic',
+        rationale: parsed.rationale || 'semantic classifier result'
+      };
+    } catch (error) {
+      this.logger?.warn('Thread relation semantic check failed; using deterministic assessment', { error: error.message });
+      return null;
+    }
+  }
+
+  async assessThreadRelation(existingPlan = {}, guidedFocus = {}, allTasks = []) {
+    const deterministic = this.assessThreadRelationDeterministic(existingPlan, guidedFocus, allTasks);
+    if (deterministic.confidence >= 0.78) {
+      return deterministic;
+    }
+
+    const semantic = await this.classifyThreadRelationWithLLM(existingPlan, guidedFocus, deterministic);
+    if (semantic && semantic.confidence >= 0.62) {
+      return {
+        ...semantic,
+        scores: deterministic.scores
+      };
+    }
+
+    return deterministic;
   }
 
   async readJsonIfExists(filePath) {
@@ -1373,6 +1675,122 @@ class GuidedModePlanner {
       artifactRefs,
       processedSourceUrls: planningContext.processedSourceUrls || []
     };
+  }
+
+  identifyExternalEvidenceGaps(guidedFocus = {}, planningContext = {}) {
+    const candidateLines = [
+      ...(planningContext.reviewGaps || []),
+      ...(planningContext.activeGoals || []),
+      planningContext.knowledgeAssessment?.answer || '',
+      guidedFocus.context || ''
+    ]
+      .flatMap(text => String(text || '').split('\n'))
+      .map(line => this.summarizeText(line, 260))
+      .filter(Boolean);
+
+    const externalNeed = [
+      /\b(missing|gap|uncertain|unverified|needs?|requires?|corroborat|validate|verify|find|discover|collect|update)\b.{0,90}\b(source|sources|citation|citations|url|urls|external|web|internet|primary|current|latest|recent)\b/i,
+      /\b(source|sources|citation|citations|url|urls|external|web|internet|primary|current|latest|recent)\b.{0,90}\b(missing|gap|uncertain|unverified|needed|required|verify|validate|corroborat)\b/i
+    ];
+    const negated = /\b(do not|don't|no|avoid|without|skip)\b.{0,50}\b(web|internet|search|external|source collection|broad research)\b/i;
+
+    return [...new Set(candidateLines.filter(line =>
+      !negated.test(line) && externalNeed.some(pattern => pattern.test(line))
+    ))].slice(0, 6);
+  }
+
+  explicitNoWebRequested(guidedFocus = {}) {
+    const context = `${guidedFocus.domain || ''}\n${guidedFocus.context || ''}`;
+    return /\b(do not|don't|no|avoid|without|skip)\b.{0,70}\b(web|internet|web_search|search|external source collection|broad web research)\b/i.test(context) ||
+      /\b(local artifacts? only|existing local artifacts?|use the existing local)\b/i.test(context);
+  }
+
+  buildPlanningDecision(guidedFocus = {}, resources = {}, planningContext = {}) {
+    const researchDigest = planningContext.researchDigest || this.buildResearchDigest(planningContext);
+    const localArtifactCount = [
+      ...(researchDigest.topFindings || []),
+      ...(researchDigest.completedMissions || []),
+      ...(researchDigest.artifactRefs || []),
+      ...(planningContext.knowledgeAssessment?.answer ? [planningContext.knowledgeAssessment.answer] : [])
+    ].filter(Boolean).length;
+    const hasUsableLocalContext = Boolean(
+      !planningContext.contextRedirect &&
+      (
+        planningContext.hasContext ||
+        planningContext.threadAnchor ||
+        planningContext.knowledgeAssessment ||
+        localArtifactCount > 0
+      )
+    );
+    const externalGaps = this.identifyExternalEvidenceGaps(guidedFocus, planningContext);
+    const webAvailable = resources.webSearch !== false;
+    const noWebRequested = this.explicitNoWebRequested(guidedFocus);
+
+    let evidenceMode = 'fresh_unknown';
+    let webPolicy = webAvailable ? 'broad' : 'none';
+    const reasons = [];
+
+    if (hasUsableLocalContext) {
+      if (externalGaps.length > 0 && webAvailable && !noWebRequested) {
+        evidenceMode = 'mixed';
+        webPolicy = 'targeted';
+        reasons.push('Existing run context is usable, but specific external evidence gaps remain.');
+      } else {
+        evidenceMode = localArtifactCount > 0 ? 'local_sufficient' : 'local_gap';
+        webPolicy = 'none';
+        reasons.push(localArtifactCount > 0
+          ? 'Existing run artifacts/brain assessment are enough to plan the next move locally.'
+          : 'Continuation context exists but should be advanced through local inspection before any source expansion.');
+      }
+    } else if (externalGaps.length > 0 && webAvailable && !noWebRequested) {
+      evidenceMode = 'external_gap';
+      webPolicy = 'targeted';
+      reasons.push('No usable continuation context, but the request names specific external evidence gaps.');
+    } else if (!webAvailable || noWebRequested) {
+      evidenceMode = 'local_gap';
+      webPolicy = 'none';
+      reasons.push(noWebRequested
+        ? 'The guided request explicitly constrains planning to local/no-web work.'
+        : 'Web search is unavailable, so the plan must use local/code-capable work.');
+    } else {
+      reasons.push('Fresh thread without local evidence; broad discovery is allowed as a fallback.');
+    }
+
+    return {
+      threadRelation: planningContext.contextRedirect ? 'pivot' : (planningContext.threadAnchor ? 'refinement' : (hasUsableLocalContext ? 'refinement' : 'fresh')),
+      evidenceMode,
+      webPolicy,
+      noWebRequested,
+      localArtifactCount,
+      externalGaps,
+      hasUsableLocalContext,
+      rationale: reasons.join(' '),
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  async persistPlanningDecision(decision) {
+    if (!decision) return null;
+    const coordinatorDir = path.join(this.getLogsDir(), 'coordinator');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const jsonPath = path.join(coordinatorDir, `planning-decision-${timestamp}.json`);
+    const mdPath = path.join(coordinatorDir, `planning-decision-${timestamp}.md`);
+
+    await fs.mkdir(coordinatorDir, { recursive: true }).catch(() => {});
+    await fs.writeFile(jsonPath, JSON.stringify(decision, null, 2), 'utf8').catch(() => {});
+    await fs.writeFile(mdPath, [
+      '# Guided Planning Decision',
+      '',
+      `- threadRelation: ${decision.threadRelation}`,
+      `- evidenceMode: ${decision.evidenceMode}`,
+      `- webPolicy: ${decision.webPolicy}`,
+      `- localArtifactCount: ${decision.localArtifactCount}`,
+      `- externalGapCount: ${decision.externalGaps?.length || 0}`,
+      '',
+      decision.rationale || ''
+    ].join('\n'), 'utf8').catch(() => {});
+
+    return { jsonPath, mdPath };
   }
 
   async buildPlanningContext(guidedFocus, options = {}) {
@@ -1848,6 +2266,40 @@ Return JSON only:
     return this.parsePlanFromResponse(content, guidedFocus, { planningContext });
   }
 
+  formatPlanningDecisionBlock(decision = {}) {
+    const webPolicy = decision.webPolicy || 'broad';
+    const externalGaps = Array.isArray(decision.externalGaps) && decision.externalGaps.length > 0
+      ? decision.externalGaps.map(gap => `  - ${gap}`).join('\n')
+      : '  - none';
+    const rules = webPolicy === 'none'
+      ? [
+          '- Do not create research/web_search missions.',
+          '- Plan local artifact reading, transformation, classification, synthesis, code, or data-pipeline work.',
+          '- If evidence is insufficient, produce an explicit local gap inventory instead of expanding the web scope.'
+        ]
+      : webPolicy === 'targeted'
+        ? [
+            '- Use research/web_search only for the specific external gaps listed below.',
+            '- Do not create broad survey or comprehensive web-research phases.',
+            '- Local synthesis must consume existing artifacts before any targeted source expansion.'
+          ]
+        : [
+            '- Broad source discovery is allowed because no usable continuation context was found.',
+            '- Even broad discovery must produce concrete artifacts and avoid duplicate source waves.'
+          ];
+
+    return `\n\nPLANNING DECISION:
+- threadRelation: ${decision.threadRelation || 'fresh'}
+- evidenceMode: ${decision.evidenceMode || 'fresh_unknown'}
+- webPolicy: ${webPolicy}
+- rationale: ${decision.rationale || 'No planning rationale recorded.'}
+- targetedExternalGaps:
+${externalGaps}
+
+MISSION POLICY:
+${rules.join('\n')}`;
+  }
+
   /**
    * Build a SIMPLE planning prompt for local LLMs
    * Shorter, clearer, more likely to produce valid JSON
@@ -1857,6 +2309,8 @@ Return JSON only:
     const context = guidedFocus.context || '';
     const agentTypes = resources.agentTypes.join(', ');
     const continuationMode = planningContext.hasContext === true;
+    const planningDecision = planningContext.planningDecision || this.buildPlanningDecision(guidedFocus, resources, planningContext);
+    const decisionBlock = this.formatPlanningDecisionBlock(planningDecision);
     
     // IDE-First: Use ide for non-research tasks
     const ideFirst = this.config?.ideFirst?.enabled;
@@ -1879,8 +2333,10 @@ ${continuationMode ? `Existing thread context:
 - instruction: advance the existing research thread without repeating completed work
 ` : ''}
 
+${decisionBlock}
+
 Available agent types: ${agentTypes}
-${ideFirst ? 'NOTE: Use "research" only for web search. Use "ide" for analysis, writing, code.\n' : ''}Available tools: web_search
+${ideFirst ? 'NOTE: Use "research" only when webPolicy allows web_search. Use "ide" for analysis, writing, code.\n' : ''}Available tools: ${planningDecision.webPolicy === 'none' ? 'local file/code tools only' : 'web_search plus local file/code tools'}
 
 Return ONLY this JSON (no other text):
 {
@@ -1894,6 +2350,8 @@ Return ONLY this JSON (no other text):
    * Build the planning prompt
    */
   buildPlanningPrompt(guidedFocus, resources, filesRead = [], taskPhases = [], planningContext = {}) {
+    const planningDecision = planningContext.planningDecision || this.buildPlanningDecision(guidedFocus, resources, planningContext);
+    const decisionBlock = this.formatPlanningDecisionBlock(planningDecision);
     // NEW: If task phases detected, include them in prompt
     const phasesInfo = taskPhases.length > 0
       ? `\n\nSTRUCTURED TASK PHASES DETECTED (${taskPhases.length} phases):\n` +
@@ -1963,7 +2421,7 @@ Based on the assessment above:
         `All file contents are available via the planning context above.`
       : '';
 
-    return `You are planning a guided research mission.${filesInfo}${phasesInfo}${continuationInfo}${campaignInfo}${assessmentBlock}
+    return `You are planning a guided research mission.${filesInfo}${phasesInfo}${continuationInfo}${campaignInfo}${assessmentBlock}${decisionBlock}
 
 TASK DEFINITION:
 Domain: ${guidedFocus.domain}
@@ -1971,16 +2429,18 @@ Context: ${guidedFocus.context || 'None provided'}
 Depth: ${guidedFocus.depth || 'normal'}
 
 AVAILABLE RESOURCES:${mcpToolsList}
-Web search: ${resources.webSearch ? 'Yes' : 'No'}
+Web search: ${resources.webSearch && planningDecision.webPolicy !== 'none' ? `Yes (${planningDecision.webPolicy})` : 'No for this plan'}
 Code execution: ${resources.codeExecution ? 'Yes' : 'No'}
 Agent types: ${resources.agentTypes.join(', ')}
 ${this.config?.ideFirst?.enabled ? `
 AGENT SELECTION GUIDANCE (IDE-First Mode):
-- Use "research" ONLY for tasks that need web search to find sources
+- Use "research" ONLY when webPolicy allows web_search and the mission targets the listed external gaps
 - Use "ide" for ALL other tasks: analysis, synthesis, document creation, code creation, etc.
 - The IDE agent is a powerful generalist that can read/write files, analyze, create, and execute
 ` : ''}
-WEB SEARCH: Available via MCP web_search tool (free, no API key needed)
+${planningDecision.webPolicy === 'none'
+  ? 'WEB SEARCH: Not allowed for this plan. The planner must use local/code-capable work.'
+  : 'WEB SEARCH: Available via MCP web_search tool, constrained by the planning decision above.'}
 
 YOUR JOB:
 1. Understand what this task requires
@@ -2141,6 +2601,71 @@ ONLY use agent types from the available list above.`;
     throw new Error('Planner returned invalid JSON');
   }
 
+  localMissionTools(ideFirstEnabled) {
+    return ideFirstEnabled ? ['read_file', 'write_file'] : ['mcp_filesystem'];
+  }
+
+  localMissionType(ideFirstEnabled) {
+    return ideFirstEnabled ? 'ide' : 'document_analysis';
+  }
+
+  applyPlanningDecisionToMissions(missions, planningDecision, researchDigest, ideFirstEnabled) {
+    if (!planningDecision || planningDecision.webPolicy !== 'none') {
+      return missions;
+    }
+
+    const localTools = this.localMissionTools(ideFirstEnabled);
+    const localAgentType = this.localMissionType(ideFirstEnabled);
+    const artifactInputs = (researchDigest.artifactRefs || []).slice(0, 12);
+
+    return missions.map((mission, index) => {
+      const usesWeb = mission.type === 'research' ||
+        (Array.isArray(mission.tools) && mission.tools.includes('web_search')) ||
+        (Array.isArray(mission.requiredResources) && mission.requiredResources.includes('web_search'));
+
+      if (!usesWeb) {
+        return mission;
+      }
+
+      return {
+        ...mission,
+        type: localAgentType,
+        mission: `${mission.mission || `Advance local mission ${index + 1}`}\n\nPlanning policy: use existing local run artifacts only; do not call web_search. If the requested evidence is not present locally, record a precise gap in the expected output rather than expanding to web research.`,
+        tools: localTools,
+        priority: mission.priority || 'high',
+        sourceScope: mission.sourceScope || 'existing local run artifacts',
+        artifactInputs: Array.isArray(mission.artifactInputs) && mission.artifactInputs.length > 0
+          ? mission.artifactInputs
+          : artifactInputs,
+        expectedOutput: mission.expectedOutput || `@outputs/local_policy_rewrite_${index + 1}.md`,
+        metadata: {
+          ...(mission.metadata || {}),
+          policyRewrite: 'web_disallowed_by_planning_decision',
+          originalType: mission.type,
+          originalTools: mission.tools || []
+        }
+      };
+    });
+  }
+
+  normalizeRequiredResources(requiredResources, planningDecision, ideFirstEnabled) {
+    const requested = Array.isArray(requiredResources) ? requiredResources : [];
+    if (planningDecision?.webPolicy === 'none') {
+      return requested
+        .filter(resource => resource !== 'web_search')
+        .concat(this.localMissionTools(ideFirstEnabled))
+        .filter((resource, index, array) => array.indexOf(resource) === index);
+    }
+
+    if (requested.length > 0) {
+      return requested;
+    }
+
+    return planningDecision?.webPolicy === 'targeted'
+      ? ['web_search', ...this.localMissionTools(ideFirstEnabled)]
+      : ['web_search'];
+  }
+
   /**
    * Normalize plan object with defaults
    * Ensures required agent types are present for complete execution
@@ -2149,6 +2674,7 @@ ONLY use agent types from the available list above.`;
     const missions = plan.agentMissions || [];
     const ideFirstEnabled = this.config?.ideFirst?.enabled;
     const researchDigest = planningContext.researchDigest || this.buildResearchDigest(planningContext);
+    const planningDecision = planningContext.planningDecision || this.buildPlanningDecision(guidedFocus, {}, planningContext);
 
     // FRESH RUN FALLBACK: If LLM returned zero missions, generate domain-based defaults
     // This handles cases where the planner model fails to produce valid missions
@@ -2157,6 +2683,124 @@ ONLY use agent types from the available list above.`;
       const domain = guidedFocus?.domain || 'the research topic';
       const context = guidedFocus?.context || '';
       const deliverableType = ideFirstEnabled ? 'ide' : 'document_creation';
+      const hasContinuationContext = planningDecision.webPolicy === 'none' ||
+        ['local_sufficient', 'local_gap'].includes(planningDecision.evidenceMode) ||
+        Boolean(
+          planningDecision.webPolicy !== 'targeted' && (
+            planningContext?.hasContext ||
+            planningContext?.knowledgeAssessment ||
+            (researchDigest.topFindings || []).length > 0 ||
+            (researchDigest.priorityGaps || []).length > 0 ||
+            (researchDigest.artifactRefs || []).length > 0
+          )
+        );
+
+      if (hasContinuationContext) {
+        const localTools = this.localMissionTools(ideFirstEnabled);
+        const localAgentType = this.localMissionType(ideFirstEnabled);
+        const artifactInputs = (researchDigest.artifactRefs || []).slice(0, 12);
+        const artifactList = artifactInputs.length > 0
+          ? artifactInputs.map(ref => ref.workspacePath || ref.path || ref.label).filter(Boolean).slice(0, 8).join(', ')
+          : '@outputs/ and @coordinator/ planning/review artifacts';
+
+        this.logger?.warn(`⚠️ Planner produced zero agent missions — generating local continuation defaults for "${domain}"`);
+
+        plan.strategy = plan.strategy || `Continue the existing run from local artifacts and produce the requested verdict for ${domain}`;
+        plan.requiredResources = plan.requiredResources || localTools;
+        plan.initialGoals = plan.initialGoals || [
+          `Inventory local continuation artifacts for ${domain}`,
+          `Apply the requested verdict/classification using prior evidence`,
+          'Write the final continuation deliverable'
+        ];
+        plan.deliverable = plan.deliverable || {
+          type: 'markdown',
+          filename: 'guided_continuation_output.md',
+          location: '@outputs/',
+          accessibility: 'mcp-required',
+          requiredSections: ['Verdict', 'Spine', 'Facet Buckets', 'Artifact Buckets'],
+          minimumContent: 'Grounded continuation deliverable using existing run artifacts'
+        };
+
+        missions.push({
+          type: localAgentType,
+          mission: `Read the existing local artifacts for this continuation before doing any new research. Start with: ${artifactList}. Extract the named moves, prior taxonomy vocabulary, evidence status, and any open gaps relevant to the current instruction. Do not conduct web search. Save a compact evidence inventory to @outputs/guided_continuation_inventory.json.`,
+          tools: localTools,
+          priority: 'high',
+          sourceScope: 'existing local run artifacts and coordinator assessments',
+          artifactInputs,
+          expectedOutput: '@outputs/guided_continuation_inventory.json'
+        });
+
+        missions.push({
+          type: localAgentType,
+          mission: `Apply the current guided instruction as a verdict against the local evidence inventory. Classify every named move as spine, facet-of-X, or artifact; include boundary-addendum splits and output-shell-realization. Use the spine criterion exactly: localizable substrate, transferable activation, and dissociation evidence against a surface twin. Do not conduct web search. Save the machine-readable classification to @outputs/guided_continuation_verdict.json.`,
+          tools: localTools,
+          priority: 'high',
+          sourceScope: 'classification over local evidence inventory and prior pressure-test artifacts',
+          artifactInputs: [
+            ...artifactInputs,
+            { path: '@outputs/guided_continuation_inventory.json', label: 'local evidence inventory' }
+          ],
+          expectedOutput: '@outputs/guided_continuation_verdict.json'
+        });
+
+        missions.push({
+          type: localAgentType,
+          mission: 'Write the final continuation deliverable from @outputs/guided_continuation_verdict.json. Commit to one spine vocabulary throughout, produce a final <=5-move spine, and place every other named move into facet-of-X or artifact buckets. Do not restate the full research history and do not conduct web search. Save to @outputs/guided_continuation_output.md.',
+          tools: localTools,
+          priority: 'high',
+          sourceScope: 'final synthesis from local verdict classification only',
+          artifactInputs: [
+            { path: '@outputs/guided_continuation_verdict.json', label: 'classification verdict' }
+          ],
+          expectedOutput: '@outputs/guided_continuation_output.md'
+        });
+
+        plan.agentMissions = missions;
+        return this.normalizePlan(plan, guidedFocus, planningContext);
+      }
+
+      if (planningDecision.webPolicy === 'targeted' && planningDecision.externalGaps.length > 0) {
+        this.logger?.warn(`⚠️ Planner produced zero agent missions — generating targeted evidence defaults for "${domain}"`);
+        const localTools = this.localMissionTools(ideFirstEnabled);
+        const localAgentType = this.localMissionType(ideFirstEnabled);
+        const gaps = planningDecision.externalGaps.slice(0, 2);
+
+        plan.strategy = plan.strategy || `Fill targeted evidence gaps for ${domain}, then synthesize locally`;
+        plan.requiredResources = plan.requiredResources || ['web_search', ...localTools];
+        plan.initialGoals = plan.initialGoals || [
+          `Fill targeted external gaps for ${domain}`,
+          'Synthesize targeted findings with existing run artifacts'
+        ];
+
+        gaps.forEach((gap, index) => {
+          missions.push({
+            type: 'research',
+            mission: `Use web_search only for this targeted evidence gap: ${gap}. Record source URLs, why each source is relevant, and whether it changes the existing local conclusion. Save structured findings to @outputs/targeted_gap_${index + 1}.json.`,
+            tools: ['web_search'],
+            priority: 'high',
+            sourceScope: `targeted external evidence gap ${index + 1}`,
+            artifactInputs: (researchDigest.artifactRefs || []).slice(0, 12),
+            expectedOutput: `@outputs/targeted_gap_${index + 1}.json`
+          });
+        });
+
+        missions.push({
+          type: localAgentType,
+          mission: 'Read the targeted gap artifacts and the existing local run artifacts. Synthesize only what changes or confirms the current thread, and save the continuation deliverable to @outputs/guided_continuation_output.md.',
+          tools: localTools,
+          priority: 'high',
+          sourceScope: 'targeted gap artifacts plus existing local continuation artifacts',
+          artifactInputs: [
+            ...(researchDigest.artifactRefs || []).slice(0, 12),
+            ...gaps.map((_, index) => ({ path: `@outputs/targeted_gap_${index + 1}.json`, label: `targeted gap ${index + 1}` }))
+          ],
+          expectedOutput: '@outputs/guided_continuation_output.md'
+        });
+
+        plan.agentMissions = missions;
+        return this.normalizePlan(plan, guidedFocus, planningContext);
+      }
 
       this.logger?.warn(`⚠️ Planner produced zero agent missions — generating domain-based defaults for "${domain}"`);
 
@@ -2189,6 +2833,11 @@ ONLY use agent types from the available list above.`;
         artifactInputs: [],
         expectedOutput: 'Complete markdown research report'
       });
+    }
+
+    const policyMissions = this.applyPlanningDecisionToMissions(missions, planningDecision, researchDigest, ideFirstEnabled);
+    if (policyMissions !== missions) {
+      missions.splice(0, missions.length, ...policyMissions);
     }
 
     // Ensure a deliverable-producing agent is present
@@ -2235,6 +2884,7 @@ ONLY use agent types from the available list above.`;
           artifactInputs,
           expectedOutput,
           researchDigest,
+          planningDecision,
           guidedMission: true,
           effectiveExecutionMode: GUIDED_EFFECTIVE_MODE
         }
@@ -2247,7 +2897,7 @@ ONLY use agent types from the available list above.`;
       // Stamp source context/domain so we can detect changes on continue
       _sourceContext: (guidedFocus?.context || '').trim(),
       _sourceDomain: (guidedFocus?.domain || '').trim(),
-      requiredResources: plan.requiredResources || ['web_search'],
+      requiredResources: this.normalizeRequiredResources(plan.requiredResources, planningDecision, ideFirstEnabled),
       spawnAgents: plan.spawnAgents !== false, // Default true
       agentMissions: normalizedMissions,
       initialGoals: plan.initialGoals?.length > 0
@@ -2262,7 +2912,8 @@ ONLY use agent types from the available list above.`;
         requiredSections: [],
         minimumContent: 'Task completion report'
       },
-      researchDigest
+      researchDigest,
+      planningDecision
     };
   }
 

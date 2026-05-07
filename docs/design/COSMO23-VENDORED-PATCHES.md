@@ -1113,6 +1113,65 @@ full-mode session update counts.
 
 ---
 
+## Patch 21 — Guided continuation planning guardrails
+
+**Files touched:**
+- `cosmo23/engine/src/core/guided-mode-planner.js`
+- `cosmo23/engine/src/core/orchestrator.js`
+- `cosmo23/engine/src/cluster/task-state-queue.js`
+
+**Problem:** guided continuations can be short imperative refinements of the
+same run, for example asking for a verdict over artifacts already produced in
+the active run. The planner's old domain-change check used exact normalized
+text, so a same-thread continuation could archive the active plan and
+regenerate from scratch. If the LLM planner then failed to produce missions,
+Tier 3 generated broad web-research defaults even when the run already had
+local artifacts, PGS assessment, processed sources, and a concrete
+synthesis/verdict request.
+
+**Fix:** guided planning now computes a first-class planning decision before
+mission generation:
+- `assessThreadRelation()` compares the active/archived plan and new request
+  as thread evidence, using token relationship as a fast path and semantic
+  classification only for ambiguous cases. It is not based on continuation
+  trigger words.
+- `buildPlanningDecision()` chooses `evidenceMode` and `webPolicy`
+  (`none`, `targeted`, or `broad`) from run context, local artifacts, PGS
+  assessment, review gaps, explicit local/no-web constraints, and external
+  evidence gaps.
+- planning prompts receive the decision as mission policy, and
+  `normalizePlan()` enforces it. If the planner emits a `research` /
+  `web_search` mission while `webPolicy: none`, that mission is rewritten into
+  an IDE/local-artifact mission rather than trusted.
+- Tier 3 fallback uses local continuation defaults for local-sufficient/local
+  work, targeted gap-fill missions only for named external gaps, and broad web
+  discovery only for fresh topics without usable run context.
+- Action queue polling now marks selected pending actions as `processing`
+  before invoking long handlers so the immediate-action poller cannot re-enter
+  the same plan injection while planning is still running.
+- Task-state queue processing now persists processed flags back to disk and
+  skips stale task events queued before the current plan was created. Without
+  this, old task-update events could replay after a plan replacement and
+  overwrite the corrected local continuation task files.
+
+**Effect under Home23:** continuing an active COSMO23 run with a refinement like
+"Now apply..." stays anchored to the run instead of becoming a new generic
+research campaign. Fallback plans preserve the run's local evidence, target
+external search only when a real source gap requires it, and route verdict /
+synthesis work to local IDE missions.
+
+**Verification:** `cosmo23/engine/tests/unit/guided-mode-planner.test.js` and
+`cosmo23/engine/tests/unit/guided-mode-planner-context-detection.test.js` cover
+local continuation fallback, web-mission policy rewriting, targeted external
+gap fallback, and thread relation classification without continuation-cue
+matching.
+`cosmo23/engine/tests/unit/orchestrator-guided-continuation.test.js` covers
+pre-claiming queued actions before long handlers run.
+`cosmo23/engine/tests/unit/task-state-queue.test.js` covers processed-event
+restart safety and stale event suppression.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -1201,3 +1260,9 @@ full-mode session update counts.
   through PGS, loaded one cached partition, and produced one-partition
   synthesis caveats. Small runs now use the direct Query path; larger
   one-partition PGS skips cross-partition synthesis.
+- **2026-05-07** — Patch 21 added after a same-run "Now Apply..." continuation
+  was misread as a fresh web-research domain. Guided planning now makes an
+  explicit thread/evidence/web-policy decision, enforces it during mission
+  normalization, and keeps continuation fallbacks local unless a targeted
+  external evidence gap requires search. Task-state queue replay is also
+  hardened so stale task events cannot overwrite replacement plans.

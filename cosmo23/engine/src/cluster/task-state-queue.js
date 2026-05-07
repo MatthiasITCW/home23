@@ -124,7 +124,9 @@ class TaskStateQueue {
 
     // Remove processed events from queue (keep for 1 hour for debugging)
     const oneHourAgo = Date.now() - 3600000;
+    this.processed = this.processed.filter(e => e.processedAt > oneHourAgo);
     this.queue = this.queue.filter(e => !e.processed || e.processedAt > oneHourAgo);
+    await this.persistQueueSnapshot();
 
     if (processed > 0) {
       this.logger.debug('✅ Task state queue processed', { processed });
@@ -140,6 +142,15 @@ class TaskStateQueue {
    * @param {Object} orchestrator - Orchestrator (for recordPlanEvent)
    */
   async processEvent(event, stateStore, orchestrator) {
+    if (await this.isStalePlanEvent(event, stateStore)) {
+      this.logger.warn('Skipping stale task state event from a previous plan generation', {
+        type: event.type,
+        taskId: event.taskId,
+        queuedAt: event.queuedAt
+      });
+      return false;
+    }
+
     switch (event.type) {
       case 'CLAIM_TASK':
         return await stateStore.claimTask(event.taskId, event.instanceId, event.ttl);
@@ -202,6 +213,44 @@ class TaskStateQueue {
         error: error.message
       });
     }
+  }
+
+  /**
+   * Rewrite retained queue state so processed flags survive restarts.
+   * The queue is append-oriented while running, but replay safety requires a
+   * compacted snapshot after processing; otherwise old processed events reload
+   * as pending because the original JSONL line still says processed:false.
+   */
+  async persistQueueSnapshot() {
+    try {
+      const retained = [...this.processed, ...this.queue]
+        .sort((a, b) => (a.queuedAt || 0) - (b.queuedAt || 0));
+      const content = retained.length > 0
+        ? retained.map(event => JSON.stringify(event)).join('\n') + '\n'
+        : '';
+      await fs.writeFile(this.queuePath, content, 'utf8');
+    } catch (error) {
+      this.logger.error('Failed to persist task state queue snapshot', {
+        error: error.message
+      });
+    }
+  }
+
+  async isStalePlanEvent(event, stateStore) {
+    if (!event || !stateStore?.getPlan) return false;
+    const taskId = event.taskId || event.task?.id || '';
+    const planId = event.task?.planId || (taskId.startsWith('task:phase') || taskId === 'task:synthesis_final' ? 'plan:main' : null);
+    if (!planId) return false;
+
+    const plan = await stateStore.getPlan(planId).catch(() => null);
+    const planCreatedAt = Number(plan?.createdAt || 0);
+    const eventQueuedAt = Number(event.queuedAt || 0);
+    const taskCreatedAt = Number(event.task?.createdAt || 0);
+
+    if (!planCreatedAt) return false;
+    if (eventQueuedAt && eventQueuedAt < planCreatedAt) return true;
+    if (taskCreatedAt && taskCreatedAt < planCreatedAt) return true;
+    return false;
   }
 
   /**

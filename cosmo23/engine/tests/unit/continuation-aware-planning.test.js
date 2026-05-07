@@ -129,7 +129,7 @@ async function cleanupDir(dir) {
 
 describe('Continuation-Aware Planning — Context Change Detection Integration', () => {
 
-  it('reworded context with same domain does NOT set contextRedirect when LLM says "same"', async () => {
+  it('reworded context with same domain does NOT set contextRedirect', async () => {
     // Full integration: exercise the planMission detection block with an existing plan
     // whose context differs textually but the LLM deems it semantically the same.
     const generateCalls = [];
@@ -178,9 +178,10 @@ describe('Continuation-Aware Planning — Context Change Detection Integration',
 
     const result = await planner.planMission();
 
-    // The planner should have called the LLM for context comparison
-    const contextCall = generateCalls.find(c => c.purpose === 'context_comparison');
-    expect(contextCall).to.exist;
+    // The planner may resolve this through deterministic thread evidence without
+    // a semantic call; the important behavior is that it resumes the live plan.
+    const threadRelationCall = generateCalls.find(c => c.purpose === 'thread_relation');
+    expect(threadRelationCall).to.not.exist;
 
     // Since LLM said "same", the plan should be resumed (not regenerated)
     // When plan is ACTIVE with active tasks and no contextRedirect, planner resumes
@@ -190,16 +191,16 @@ describe('Continuation-Aware Planning — Context Change Detection Integration',
     expect(result.planningContext).to.be.undefined;
   });
 
-  it('different domain always sets contextRedirect (no LLM call needed)', async () => {
-    let contextComparisonCalled = false;
+  it('different domain sets contextRedirect through semantic arbitration when context overlaps', async () => {
+    let semanticRelationCalled = false;
     let archiveCalled = false;
 
     const planner = createPlanner({}, {
       client: {
         generate: async (opts) => {
-          if (opts.purpose === 'context_comparison') {
-            contextComparisonCalled = true;
-            return { content: 'same' };
+          if (opts.purpose === 'thread_relation') {
+            semanticRelationCalled = true;
+            return { content: '{"relation":"pivot","confidence":0.9,"rationale":"new domain changes the subject despite overlapping context"}' };
           }
           return { content: VALID_PLAN_JSON };
         }
@@ -241,8 +242,9 @@ describe('Continuation-Aware Planning — Context Change Detection Integration',
 
     const result = await planner.planMission();
 
-    // No semantic context comparison should be performed when domain differs
-    expect(contextComparisonCalled).to.equal(false);
+    // The old context overlaps the new request, so a smart planner asks the
+    // semantic relation classifier instead of redirecting on title tokens alone.
+    expect(semanticRelationCalled).to.equal(true);
     // Old plan should be archived (contextRedirect = true)
     expect(archiveCalled).to.equal(true);
     // New plan should be generated (has planningContext)
@@ -435,7 +437,7 @@ describe('Continuation-Aware Planning — Planning Prompt Injection', () => {
     expect(prompt).to.not.include('Old task done');
     expect(prompt).to.not.include('Old gap');
     // The standard prompt should reference fresh planning
-    expect(prompt).to.include('Plan research missions');
+    expect(prompt).to.include('Plan execution missions');
   });
 
   it('buildPlanningPrompt includes continuation context when hasContext is true and no redirect', () => {

@@ -1,4 +1,7 @@
 const { expect } = require('chai');
+const fs = require('fs').promises;
+const os = require('os');
+const path = require('path');
 
 const { Orchestrator } = require('../../src/core/orchestrator');
 
@@ -105,5 +108,37 @@ describe('Orchestrator guided continuation handling', () => {
     expect(fallbackQueued).to.equal(false);
     expect(emittedFailure.event).to.equal('guided_planner_failed');
     expect(emittedFailure.payload.error).to.equal('planner failed');
+  });
+
+  it('claims queued actions before running long action handlers', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cosmo-action-queue-test-'));
+    try {
+      const queuePath = path.join(tmpDir, 'actions-queue.json');
+      await fs.writeFile(queuePath, JSON.stringify({
+        actions: [{
+          actionId: 'action-test',
+          type: 'inject_plan',
+          status: 'pending',
+          immediate: true
+        }]
+      }, null, 2));
+
+      const orchestrator = createOrchestrator();
+      orchestrator.config.logsDir = tmpDir;
+
+      let statusSeenInsideHandler = null;
+      orchestrator.processAction = async () => {
+        const queued = JSON.parse(await fs.readFile(queuePath, 'utf8'));
+        statusSeenInsideHandler = queued.actions[0].status;
+      };
+
+      await orchestrator.pollActionQueue(true);
+
+      const finalQueue = JSON.parse(await fs.readFile(queuePath, 'utf8'));
+      expect(statusSeenInsideHandler).to.equal('processing');
+      expect(finalQueue.actions[0].status).to.equal('completed');
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
