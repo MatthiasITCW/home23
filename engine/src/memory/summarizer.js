@@ -1,8 +1,8 @@
 const { UnifiedClient } = require('../core/unified-client');
 
 /**
- * Memory Summarizer - GPT-5.2 Version
- * Uses GPT-5.2's extended reasoning for intelligent summarization
+ * Memory Summarizer - GPT-5.5 Version
+ * Uses GPT-5.5's extended reasoning for intelligent summarization
  */
 class MemorySummarizer {
   constructor(config, logger, fullConfig = null) {
@@ -19,7 +19,7 @@ class MemorySummarizer {
   }
 
   /**
-   * Summarize recent thoughts using GPT-5.2 with reasoning
+   * Summarize recent thoughts using GPT-5.5 with reasoning
    */
   async summarizeRecentThoughts(journal, startIdx = 0) {
     if (!journal || journal.length < this.summaryThreshold) {
@@ -37,7 +37,7 @@ class MemorySummarizer {
       .join('\n\n');
 
     const response = await this.gpt5.generate({
-      model: 'gpt-5-mini', // Use mini - more reliable, less prone to incomplete responses
+      model: 'gpt-5.4-mini', // Use mini - more reliable, less prone to incomplete responses
       instructions: `Summarize these AI thoughts into a concise, information-dense memory entry. 
 Capture key insights, decisions, patterns, and learnings. Preserve important facts.`,
       messages: [{ role: 'user', content: thoughtText }],
@@ -51,7 +51,7 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
     const summaryEntry = {
       type: 'summary',
       content: summary,
-      reasoning: response.reasoning, // GPT-5.2's reasoning about the summary
+      reasoning: response.reasoning, // GPT-5.5's reasoning about the summary
       sourceEntries: entriesToSummarize.length,
       sourceRange: { start: startIdx, end: startIdx + entriesToSummarize.length },
       timestamp: new Date(),
@@ -59,7 +59,7 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
       model: response.model
     };
 
-    this.logger?.info('Journal summarized (GPT-5.2)', {
+    this.logger?.info('Journal summarized (GPT-5.5)', {
       entries: entriesToSummarize.length,
       summaryLength: summary.length,
       hasReasoning: Boolean(response.reasoning),
@@ -70,14 +70,14 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
   }
 
   /**
-   * Extract topics using GPT-5-mini (fast)
+   * Extract topics using GPT-5.4-mini (fast)
    */
   async extractTopics(text) {
     try {
       const response = await this.gpt5.generateFast({
         instructions: 'Extract 2-4 topic keywords from the text. Return only comma-separated keywords.',
         messages: [{ role: 'user', content: text }],
-        max_completion_tokens: 1024 // API minimum for gpt-5-mini (was 50 - too low!)
+        max_completion_tokens: 1024 // API minimum for gpt-5.4-mini (was 50 - too low!)
       });
 
       const topics = response.content
@@ -92,7 +92,7 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
   }
 
   /**
-   * Consolidate memories using GPT-5.2 with web search for validation
+   * Consolidate memories using GPT-5.5 with web search for validation
    * OPTIMIZATION: Marks source nodes with consolidatedAt to prevent re-processing
    */
   async consolidateMemories(memoryNetwork, similarityThreshold = 0.75) {
@@ -124,7 +124,7 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
             node.consolidatedAt = consolidationTimestamp;
           }
 
-          this.logger?.info('Memories consolidated (GPT-5.2)', {
+          this.logger?.info('Memories consolidated (GPT-5.5)', {
             sourceCount: cluster.length,
             hasReasoning: Boolean(consolidated.reasoning),
             topics: cluster.map(n => n.tag)
@@ -143,14 +143,14 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
   }
 
   /**
-   * Create consolidated memory using GPT-5.2 extended reasoning
+   * Create consolidated memory using GPT-5.5 extended reasoning
    */
   async createConsolidatedMemoryGPT5(cluster) {
     const concepts = cluster.map(n => n.concept).join('\n\n');
 
     try {
       const response = await this.gpt5.generate({
-        model: 'gpt-5.2', // Use GPT-5.2 for deep consolidation/abstraction
+        model: 'gpt-5.5', // Use GPT-5.5 for deep consolidation/abstraction
         instructions: `Create a single, generalized abstract statement that captures the common insight 
 across these related memory entries. This should be a higher-level understanding that encompasses 
 the specific instances.`,
@@ -161,7 +161,7 @@ the specific instances.`,
 
       // Validate response
       if (!response || !response.content || response.content.trim().length === 0) {
-        this.logger?.warn('GPT-5.2 consolidation returned empty content');
+        this.logger?.warn('GPT-5.5 consolidation returned empty content');
         return null;
       }
 
@@ -300,7 +300,7 @@ the specific instances.`,
       }
     }
 
-    this.logger?.info('Memory garbage collection (GPT-5.2)', {
+    this.logger?.info('Memory garbage collection (GPT-5.5)', {
       removed: toRemove.length,
       remaining: memoryNetwork.nodes.size
     });
@@ -339,7 +339,7 @@ the specific instances.`,
 
       currentLevel = levelSummaries;
 
-      this.logger?.info('Summary level completed (GPT-5.2)', {
+      this.logger?.info('Summary level completed (GPT-5.5)', {
         level,
         summaries: levelSummaries.length,
         reduction: (levelSummaries.length / journal.length * 100).toFixed(1) + '%'

@@ -80,7 +80,7 @@ class PGSEngine {
    */
   async execute(query, options = {}) {
     const {
-      model = 'claude-opus-4-5',
+      model = 'claude-opus-4-7',
       mode: legacyMode = 'full',
       pgsMode,
       pgsSessionId = DEFAULT_SESSION_ID,
@@ -207,7 +207,8 @@ class PGSEngine {
     const sweepResults = await this.sweepPartitions(query, partitionsToSweep, nodeMap, edges, partitions, onChunk, sweepModel, config);
 
     const successfulSweeps = sweepResults.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
-    emit({ type: 'progress', message: `${successfulSweeps.length}/${partitionsToSweep.length} sweeps completed` });
+    const failedSweeps = partitionsToSweep.length - successfulSweeps.length;
+    emit({ type: 'progress', message: `${successfulSweeps.length}/${partitionsToSweep.length} sweeps completed (${failedSweeps} failed or empty)` });
 
     // Persist session: merge newly swept partition IDs
     const newSearchedIds = new Set([...searchedIds, ...partitionsToSweep.map(p => p.id)]);
@@ -260,6 +261,7 @@ class PGSEngine {
           totalPartitions: partitions.length,
           sweptPartitions: partitionsToSweep.length,
           successfulSweeps: successfulSweeps.length,
+          failedSweeps,
           sweepModel: sweepModel,
           synthesisModel: model,
           elapsed: `${elapsed}s`,
@@ -888,10 +890,12 @@ class PGSEngine {
             partitionIndex: idx,
             total,
             partitionId: partition.id,
-            status: 'complete',
+            status: result ? 'complete' : 'failed',
             summary,
             completed: completedCount,
-            message: `Complete (${completedCount}/${total}): ${summary}`
+            message: result
+              ? `Complete (${completedCount}/${total}): ${summary}`
+              : `Failed (${completedCount}/${total}): ${summary}`
           });
 
           return result;
@@ -998,6 +1002,12 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
     });
 
     const content = response.content || response.message?.content || '';
+    const trimmedContent = String(content || '').trim();
+    const modelHadError = response.hadError || /^\[Error:/i.test(trimmedContent);
+    if (modelHadError || trimmedContent.length === 0) {
+      const reason = response.errorType || trimmedContent.slice(0, 160) || 'empty sweep output';
+      throw new Error(`partition sweep produced no usable content: ${reason}`);
+    }
 
     return {
       partitionId: partition.id,
@@ -1006,7 +1016,7 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
       nodesIncluded: partitionNodes.length,
       keywords: partition.keywords?.slice(0, 10) || [],
       adjacentPartitions: partition.adjacentPartitions || [],
-      sweepOutput: content
+      sweepOutput: trimmedContent
     };
   }
 
@@ -1016,7 +1026,7 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
    * Synthesize all sweep outputs into a unified answer
    */
   async synthesize(query, sweepResults, options = {}) {
-    const { model = 'claude-opus-4-5', onChunk, totalNodes, totalEdges, totalPartitions, selectedPartitions, config: cfg } = options;
+    const { model = 'claude-opus-4-7', onChunk, totalNodes, totalEdges, totalPartitions, selectedPartitions, config: cfg } = options;
     const synthesisMaxTokens = cfg?.synthesisMaxTokens || PGS_DEFAULTS.synthesisMaxTokens;
 
     // Build synthesis context from sweep outputs
@@ -1032,9 +1042,11 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
       synthesisContext += `\n\n`;
     }
 
-    const synthesisPrompt = `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepResults.length} partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
+    const synthesisPrompt = `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepResults.length} successful partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
 
 Your unique advantage: you see findings from ALL partitions simultaneously. No single sweep pass had this cross-domain view.
+
+Reliability rule: only the partition outputs in the context below are evidence. Do not infer anything from failed, missing, empty, or unreachable partitions; those partitions are not included here. Do not describe model/API failures as graph findings.
 
 Your tasks:
 1. **Cross-Domain Connection Discovery**: Chase the outbound flags from each partition. When Partition A flags a connection to Partition B's domain, evaluate whether the connection is genuine and substantive.

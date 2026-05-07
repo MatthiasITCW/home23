@@ -97,6 +97,28 @@ test('DeepDive prompt bounds machine observations to host operations', () => {
         freePct: 3.1,
         freeBytes: 500_000_000,
         totalBytes: 16_000_000_000,
+        processes: [
+          {
+            pm2Name: 'home23-jerry',
+            script: '/Users/jtr/_JTR23_/release/home23/engine/src/index.js',
+            topology: {
+              agentName: 'jerry',
+              role: 'agent-engine',
+              expectedParallelRole: true,
+              duplicateCandidate: false,
+            },
+          },
+          {
+            pm2Name: 'home23-jerry-harness',
+            script: '/Users/jtr/_JTR23_/release/home23/dist/home.js',
+            topology: {
+              agentName: 'jerry',
+              role: 'agent-harness',
+              expectedParallelRole: true,
+              duplicateCandidate: false,
+            },
+          },
+        ],
       },
     },
   };
@@ -113,6 +135,8 @@ test('DeepDive prompt bounds machine observations to host operations', () => {
   );
 
   assert.match(instructions, /Home23 machine telemetry/);
+  assert.match(instructions, /Process topology metadata is authoritative/);
+  assert.match(instructions, /expected sibling process roles are not duplicates/i);
   assert.match(instructions, /not as a diagnosis of jtr's life/);
   assert.match(instructions, /Do not infer what jtr is doing/);
   assert.match(input, /bounded Home23 operational telemetry/);

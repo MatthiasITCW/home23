@@ -9,8 +9,10 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { PollChannel } from '../base/poll-channel.js';
 import { ChannelClass, makeObservation } from '../contract.js';
+import topology from '../../system/home23-process-topology.js';
 
 const execP = promisify(exec);
+const { classifyHome23Process } = topology;
 
 async function defaultList() {
   try {
@@ -34,12 +36,27 @@ export class Pm2Channel extends PollChannel {
       const name = p.name;
       const status = p.pm2_env?.status;
       const restartCount = p.pm2_env?.restart_time ?? 0;
+      const script = p.pm2_env?.pm_exec_path;
       const prev = this._seen.get(name);
       const changed = !prev || prev.status !== status || prev.restartCount !== restartCount;
       if (changed) {
         this._seen.set(name, { status, restartCount });
         if (this._primed) {
-          out.push({ name, status, restartCount, prevStatus: prev?.status, prevRestartCount: prev?.restartCount, at: new Date().toISOString() });
+          out.push({
+            name,
+            status,
+            restartCount,
+            prevStatus: prev?.status,
+            prevRestartCount: prev?.restartCount,
+            script,
+            cwd: p.pm2_env?.pm_cwd,
+            topology: classifyHome23Process({
+              name,
+              script,
+              cwd: p.pm2_env?.pm_cwd,
+            }),
+            at: new Date().toISOString(),
+          });
         }
       }
     }

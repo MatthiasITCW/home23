@@ -356,37 +356,47 @@ verifiers.jsonpath_http = async function jsonpath_http(args = {}) {
   const { url, timeoutMs = 5000, path: jsonPath, op, expectStatus } = args;
   if (!url) return { ok: false, detail: 'url required' };
   if (!op) return { ok: false, detail: 'op required' };
-  const controller = new AbortController();
-  const to = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    const expected = expectStatus
-      ? res.status === expectStatus
-      : res.ok;
-    if (!expected) {
-      return { ok: false, detail: `HTTP ${res.status}${expectStatus ? ` (expected ${expectStatus})` : ''}`, observed: { status: res.status } };
+
+  const maxAttempts = Math.max(1, Math.floor(args.maxAttempts ?? 2));
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      const expected = expectStatus
+        ? res.status === expectStatus
+        : res.ok;
+      if (!expected) {
+        return { ok: false, detail: `HTTP ${res.status}${expectStatus ? ` (expected ${expectStatus})` : ''}`, observed: { status: res.status } };
+      }
+      const body = await res.json();
+      const observed = walkPath(body, jsonPath);
+      const value = expandTemplate(args.value);
+      const passed = compareValues(observed, op, value);
+      // Short-form human detail
+      const obsSnippet = observed === undefined ? 'undefined'
+        : typeof observed === 'object' ? JSON.stringify(observed).slice(0, 80)
+        : String(observed).slice(0, 80);
+      const valSnippet = value === undefined ? '—'
+        : typeof value === 'object' ? JSON.stringify(value).slice(0, 80)
+        : String(value).slice(0, 80);
+      const retryDetail = attempt > 1 ? ` after ${attempt} attempts` : '';
+      return {
+        ok: passed,
+        detail: `${jsonPath}=${obsSnippet} ${op} ${valSnippet} → ${passed ? 'pass' : 'fail'}${retryDetail}`,
+        observed: { value: observed, compared: value },
+      };
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(250 * attempt, 1000)));
+      }
+    } finally {
+      clearTimeout(to);
     }
-    const body = await res.json();
-    const observed = walkPath(body, jsonPath);
-    const value = expandTemplate(args.value);
-    const passed = compareValues(observed, op, value);
-    // Short-form human detail
-    const obsSnippet = observed === undefined ? 'undefined'
-      : typeof observed === 'object' ? JSON.stringify(observed).slice(0, 80)
-      : String(observed).slice(0, 80);
-    const valSnippet = value === undefined ? '—'
-      : typeof value === 'object' ? JSON.stringify(value).slice(0, 80)
-      : String(value).slice(0, 80);
-    return {
-      ok: passed,
-      detail: `${jsonPath}=${obsSnippet} ${op} ${valSnippet} → ${passed ? 'pass' : 'fail'}`,
-      observed: { value: observed, compared: value },
-    };
-  } catch (err) {
-    return { ok: false, detail: `fetch failed: ${err.message}` };
-  } finally {
-    clearTimeout(to);
   }
+  return { ok: false, detail: `fetch failed after ${maxAttempts} attempts: ${lastError?.message || 'unknown error'}` };
 };
 
 /**

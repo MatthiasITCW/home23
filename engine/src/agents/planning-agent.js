@@ -176,7 +176,7 @@ Respond in JSON format:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.models?.strategicModel || 'gpt-5.2',
+        model: this.config.models?.strategicModel || 'gpt-5.5',
         instructions: prompt,
         messages: [{ role: 'user', content: 'Decompose this goal into sub-goals.' }],
         maxTokens: 20000,

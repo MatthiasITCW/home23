@@ -2,8 +2,8 @@ const { getOpenAIClient } = require('../core/openai-client');
 const { UnifiedClient } = require('../core/unified-client');
 
 /**
- * Goal Capture System - GPT-5.2 Version
- * Uses GPT-5.2 with extended reasoning and web search for goal analysis
+ * Goal Capture System - GPT-5.5 Version
+ * Uses GPT-5.5 with extended reasoning and web search for goal analysis
  */
 class GoalCaptureSystem {
   constructor(config, logger, fullConfig = null) {
@@ -36,12 +36,12 @@ class GoalCaptureSystem {
   }
 
   /**
-   * Capture goals from output (pattern-based + GPT-5.2 AI analysis)
+   * Capture goals from output (pattern-based + GPT-5.5 AI analysis)
    */
   async captureGoalsFromOutput(output, options = {}) {
     const patternGoals = this.capturePatternGoals(output);
     
-    // Use GPT-5.2 to analyze for implicit goals (only for substantial outputs)
+    // Use GPT-5.5 to analyze for implicit goals (only for substantial outputs)
     const aiGoals = output.length > 100 ? await this.captureGoalsWithGPT5(output) : [];
     
     const all = [...patternGoals, ...aiGoals];
@@ -49,7 +49,7 @@ class GoalCaptureSystem {
     const filtered = this.filterCapturedGoals(unique, options);
 
     if (filtered.length > 0) {
-      this.logger?.info('Goals captured (GPT-5.2)', {
+      this.logger?.info('Goals captured (GPT-5.5)', {
         total: filtered.length,
         pattern: patternGoals.length,
         aiDetected: aiGoals.length,
@@ -109,15 +109,15 @@ class GoalCaptureSystem {
   }
 
   /**
-   * Use GPT-5.2 to detect implicit goals
+   * Use GPT-5.5 to detect implicit goals
    */
   async captureGoalsWithGPT5(output) {
     try {
       const response = await this.gpt5.generateFast({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: `Analyze this AI thought and identify any implicit curiosities or topics that warrant investigation. List only clear, specific goals. Be concise.`,
         messages: [{ role: 'user', content: output.substring(0, 1000) }],
-        max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 200 - too low!)
+        max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 200 - too low!)
         reasoningEffort: 'low'
       });
 
@@ -134,7 +134,7 @@ class GoalCaptureSystem {
   }
 
   /**
-   * Analyze journal using GPT-5.2 with extended reasoning
+   * Analyze journal using GPT-5.5 with extended reasoning
    */
   async analyzeJournalForGoals(journal) {
     if (!journal || journal.length < 5) {
@@ -146,7 +146,7 @@ class GoalCaptureSystem {
       .join('\n\n');
 
     const response = await this.gpt5.generate({
-      model: 'gpt-5-mini', // Use mini - more reliable, less prone to incomplete responses
+      model: 'gpt-5.4-mini', // Use mini - more reliable, less prone to incomplete responses
       instructions: `Analyze these AI thoughts and identify unresolved questions, incomplete explorations, or topics that warrant deeper investigation.`,
       messages: [{ role: 'user', content: recentThoughts }],
       maxTokens: 1000, // Reasonable limit for goal identification
@@ -155,7 +155,7 @@ class GoalCaptureSystem {
 
     const goals = this.parseGoalsFromText(response.content);
 
-    this.logger?.info('Journal analyzed for goals (GPT-5.2)', {
+    this.logger?.info('Journal analyzed for goals (GPT-5.5)', {
       found: goals.length,
       hasReasoning: Boolean(response.reasoning),
       entriesAnalyzed: Math.min(30, journal.length)
@@ -165,7 +165,7 @@ class GoalCaptureSystem {
       text,
       source: 'journal_analysis',
       priority: 'medium',
-      reason: 'Identified through GPT-5.2 extended reasoning'
+      reason: 'Identified through GPT-5.5 extended reasoning'
     }));
   }
 
@@ -174,10 +174,10 @@ class GoalCaptureSystem {
    */
   async prioritizeGoal(goalText, context = {}) {
     const response = await this.gpt5.generateFast({
-      model: 'gpt-5-mini',
+      model: 'gpt-5.4-mini',
       instructions: 'Rate this goal priority (high/medium/low). Respond with ONLY: high, medium, or low',
       messages: [{ role: 'user', content: `Goal: "${goalText}"` }],
-      max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 50 - too low!)
+      max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 50 - too low!)
       reasoningEffort: 'low'
     });
 

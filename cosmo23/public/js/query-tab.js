@@ -666,6 +666,26 @@ async function executeQueryStreaming(brainRoute, query, model, mode, options, su
       }, 200);
 
       saveToHistory({ query: finalResult.query || query, ...finalResult });
+    } else if (accumulatedAnswer.trim()) {
+      const recoveredResult = {
+        query,
+        answer: accumulatedAnswer,
+        metadata: {
+          model,
+          mode,
+          recoveredFromStream: true,
+          timestamp: new Date().toISOString()
+        }
+      };
+      lastQueryResult = {
+        query,
+        answer: accumulatedAnswer,
+        metadata: recoveredResult.metadata,
+        fullResult: recoveredResult
+      };
+      enableFollowUp();
+      displayQueryResult(recoveredResult);
+      saveToHistory(recoveredResult);
     }
 
   } catch (error) {

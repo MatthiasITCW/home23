@@ -122,9 +122,9 @@ class DashboardServer {
               baseURL: metadata.localLlmBaseUrl || process.env.LOCAL_LLM_BASE_URL || 'http://192.168.6.205:11434/v1',
               defaultModel: metadata.localLlmDefaultModel || 'qwen3.5:9b',
               modelMapping: {
-                'gpt-5.2': metadata.localLlmDefaultModel || 'qwen3.5:9b',
+                'gpt-5.5': metadata.localLlmDefaultModel || 'qwen3.5:9b',
                 'gpt-5': metadata.localLlmDefaultModel || 'qwen3.5:9b',
-                'gpt-5-mini': metadata.localLlmFastModel || 'qwen3.5:9b'
+                'gpt-5.4-mini': metadata.localLlmFastModel || 'qwen3.5:9b'
               }
             }
           },
@@ -151,9 +151,9 @@ class DashboardServer {
               baseURL: process.env.LOCAL_LLM_BASE_URL || 'http://192.168.6.205:11434/v1',
               defaultModel: 'qwen3.5:9b',
               modelMapping: {
-                'gpt-5.2': 'qwen3.5:9b',
+                'gpt-5.5': 'qwen3.5:9b',
                 'gpt-5': 'qwen3.5:9b',
-                'gpt-5-mini': 'qwen3.5:9b'
+                'gpt-5.4-mini': 'qwen3.5:9b'
               }
             }
           },
@@ -3509,7 +3509,7 @@ OUTPUT FORMAT (JSON):
 Be specific, actionable, and maintain research continuity IN THE ORIGINAL DOMAIN.`;
 
         const response = await client.chat.completions.create({
-          model: 'gpt-5-mini',
+          model: 'gpt-5.4-mini',
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
           // NOTE: GPT-5 models don't support custom temperature, uses default (1.0)
@@ -4165,7 +4165,7 @@ Be specific, actionable, and maintain research continuity IN THE ORIGINAL DOMAIN
           language,          // File language (markdown, json, etc.)
           fileTreeContext,   // Project file structure (for awareness)
           currentFolder,     // Current working directory (for file creation)
-          model = 'gpt-5.2', // User can select model (gpt-5.2 or claude)
+          model = 'gpt-5.5', // User can select model (gpt-5.5 or claude)
           conversationHistory // Previous messages (optional)
         } = req.body;
         
@@ -4612,11 +4612,11 @@ Remember:
               const userMessages = messages.filter(m => m.role !== 'system');
 
               // Use exact model names from COSMO (tested and working)
-              const claudeModel = model === 'claude-opus-4-6'
-                ? 'claude-opus-4-6'  // Opus 4.6 - latest
-                : model === 'claude-opus-4-5'
-                ? 'claude-opus-4-5'  // Opus 4.5
-                : 'claude-sonnet-4-5';  // Sonnet 4.5 - default
+              const claudeModel = model === 'claude-opus-4-7'
+                ? 'claude-opus-4-7'  // Opus 4.6 - latest
+                : model === 'claude-opus-4-7'
+                ? 'claude-opus-4-7'  // Opus 4.5
+                : 'claude-sonnet-4-7';  // Sonnet 4.5 - default
               
               const stream = await anthropic.messages.create({
                 model: claudeModel,
@@ -4641,7 +4641,7 @@ Remember:
             } else {
               // OpenAI GPT Streaming
               const stream = await openai.chat.completions.create({
-                model: 'gpt-5.2',
+                model: 'gpt-5.5',
                 messages: messages,
                 temperature: 0.1,
                 max_completion_tokens: 16000,
@@ -4692,11 +4692,11 @@ Remember:
             const userMessages = messages.filter(m => m.role !== 'system');
 
             // Use exact model names from COSMO (tested and working)
-            const claudeModel = model === 'claude-opus-4-6'
-              ? 'claude-opus-4-6'  // Opus 4.6 - latest
-              : model === 'claude-opus-4-5'
-              ? 'claude-opus-4-5'  // Opus 4.5
-              : 'claude-sonnet-4-5';  // Sonnet 4.5 - default
+            const claudeModel = model === 'claude-opus-4-7'
+              ? 'claude-opus-4-7'  // Opus 4.6 - latest
+              : model === 'claude-opus-4-7'
+              ? 'claude-opus-4-7'  // Opus 4.5
+              : 'claude-sonnet-4-7';  // Sonnet 4.5 - default
             
             const response = await anthropic.messages.create({
               model: claudeModel,
@@ -4716,7 +4716,7 @@ Remember:
           } else {
             // Use OpenAI GPT-5.2 (default)
             const response = await openai.chat.completions.create({
-              model: 'gpt-5.2',
+              model: 'gpt-5.5',
               messages: messages,
               temperature: 0.1,
               max_completion_tokens: 16000  // Increased from 4000
@@ -4844,7 +4844,7 @@ Remember:
         console.log(`[QUERY API] Query: "${query.substring(0, 60)}..."`);
         console.log(`[QUERY API] Target Run: ${targetRunName}`);
         console.log(`[QUERY API] Directory: ${targetRunDir}`);
-        console.log(`[QUERY API] Model: ${model || 'gpt-5.2'} | Mode: ${mode || 'normal'}`);
+        console.log(`[QUERY API] Model: ${model || 'gpt-5.5'} | Mode: ${mode || 'normal'}`);
         console.log(`[QUERY API] Include Files: ${includeFiles !== false} | Allow Actions: ${allowActions || false} | PGS: ${enablePGS || false}`);
         console.log(`[QUERY API] Backend Override: ${backendOverride || 'auto (use run default)'}`);
 
@@ -4876,7 +4876,7 @@ Remember:
         
         // Execute enhanced query
         const result = await runQueryEngine.executeEnhancedQuery(query, {
-          model: model || 'gpt-5.2',
+          model: model || 'gpt-5.5',
           mode: mode || 'normal',
           exportFormat: exportFormat,
           includeFiles: includeFiles !== false, // Default true
@@ -4917,7 +4917,7 @@ Remember:
             timestamp: new Date().toISOString(),
             runName: targetRunName,
             query,
-            model: model || 'gpt-5.2',
+            model: model || 'gpt-5.5',
             mode: mode || 'normal',
             answer: result.answer,
             evidence: result.evidence ? result.evidence.length : 0,
@@ -5001,7 +5001,7 @@ Remember:
             kind: 'executive_view',
             base: {
               query,
-              model: metadata?.model || 'gpt-5.2',
+              model: metadata?.model || 'gpt-5.5',
               mode: metadata?.mode || 'normal',
               timestamp: metadata?.timestamp || null
             },
@@ -5264,7 +5264,7 @@ Remember:
 
         // Execute query with follow-up context
         const result = await this.queryEngine.executeQuery(query, {
-          model: model || 'gpt-5.2',
+          model: model || 'gpt-5.5',
           mode: mode || 'normal',
           followUpContext: {
             sessionId,
@@ -5285,9 +5285,9 @@ Remember:
     this.app.get('/api/query/models', (req, res) => {
       res.json({
         models: [
-          { id: 'gpt-5.2', name: 'GPT-5.2', description: 'Best general-purpose model (default)' },
-          { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast & economical' },
-          { id: 'gpt-5.1-codex-max', name: 'GPT-5.1 Codex Max', description: 'Specialized for coding' }
+          { id: 'gpt-5.5', name: 'GPT-5.2', description: 'Best general-purpose model (default)' },
+          { id: 'gpt-5.4-mini', name: 'GPT-5 Mini', description: 'Fast & economical' },
+          { id: 'gpt-5.3-codex', name: 'GPT-5.1 Codex Max', description: 'Specialized for coding' }
         ],
         modes: [
           { id: 'fast', name: 'Fast', description: 'Low reasoning (8K tokens), quick answers' },
@@ -5713,7 +5713,7 @@ Remember:
         const { 
           runDir, 
           queryTimestamps = [], 
-          model = 'claude-sonnet-4-5',
+          model = 'claude-sonnet-4-7',
           reviewType = 'enterprise',
           customPrompt = null
         } = req.body;
@@ -5783,7 +5783,7 @@ Remember:
         proc.unref();  // Allow parent to exit independently
         
         const timeEstimate = queryTimestamps.length * 
-          (model === 'claude-opus-4-6' ? 30 : model === 'claude-opus-4-5' ? 25 : model === 'claude-sonnet-4-5' ? 15 : 20);
+          (model === 'claude-opus-4-7' ? 30 : model === 'claude-opus-4-7' ? 25 : model === 'claude-sonnet-4-7' ? 15 : 20);
         
         res.json({
           success: true,
@@ -7177,7 +7177,7 @@ Remember:
               completed: !!goal.completedAt,
               completedAt: goal.completedAt,
               source: 'goals',
-              model: goal.source === 'dream_gpt5' ? 'gpt-5.2' : 'gpt-5.2'
+              model: goal.source === 'dream_gpt5' ? 'gpt-5.5' : 'gpt-5.5'
             });
           }
         });

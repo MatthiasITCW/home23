@@ -31,6 +31,16 @@ const path = require('path');
 const RESOLVED_KEEP_MS = 24 * 60 * 60 * 1000;   // keep resolved 24h so pulse can mention once
 const CHRONIC_AFTER_MS = 6 * 60 * 60 * 1000;    // open >6h with no progress → chronic
 
+function isTransientVerifierFailure(result) {
+  if (result?.ok) return false;
+  const detail = String(result?.detail || '').toLowerCase();
+  return detail.includes('fetch failed')
+    || detail.includes('operation was aborted')
+    || detail.includes('timeout')
+    || detail.includes('econnreset')
+    || detail.includes('econnrefused');
+}
+
 class LiveProblemStore {
   constructor({ brainDir, logger }) {
     this.brainDir = brainDir;
@@ -146,6 +156,7 @@ class LiveProblemStore {
     p.lastCheckedAt = now;
     p.lastResult = { ...result, at: now };
     if (result.ok) {
+      delete p.transientFailureCount;
       if (p.state !== 'resolved') {
         p.state = 'resolved';
         p.resolvedAt = now;
@@ -155,6 +166,16 @@ class LiveProblemStore {
       p.escalated = false;
       delete p.escalatedAt;
     } else {
+      // Do not reopen a resolved problem on a single transient transport
+      // failure. jsonpath_http already retries inside one check; this guards
+      // the next layer so a momentary localhost fetch failure does not
+      // dispatch an agent for a sensor that is otherwise healthy.
+      if (p.state === 'resolved' && isTransientVerifierFailure(result)) {
+        p.transientFailureCount = (p.transientFailureCount || 0) + 1;
+        this.save();
+        return;
+      }
+      delete p.transientFailureCount;
       // Re-open if previously resolved
       if (p.state === 'resolved') {
         p.state = 'open';

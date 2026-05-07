@@ -21,9 +21,9 @@ function initQueryTab() {
           <div class="option-group">
             <label>Model:</label>
             <select id="queryModel" class="query-select">
-              <option value="gpt-5.1" selected>GPT-5.1 (Default - Fast with 24h Caching)</option>
+              <option value="gpt-5.5" selected>GPT-5.1 (Default - Fast with 24h Caching)</option>
               <option value="gpt-5">GPT-5 (Maximum Reasoning Depth)</option>
-              <option value="gpt-5-mini">GPT-5 Mini (Ultra Fast & Economical)</option>
+              <option value="gpt-5.4-mini">GPT-5 Mini (Ultra Fast & Economical)</option>
             </select>
           </div>
 

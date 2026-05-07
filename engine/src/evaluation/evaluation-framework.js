@@ -475,6 +475,29 @@ class EvaluationFramework {
       lastUpdated: Date.now()
     };
   }
+
+  reconcileGoalState(goalsState = {}) {
+    const normalize = (entries) => {
+      if (!entries) return [];
+      if (entries instanceof Map) return Array.from(entries.values());
+      if (Array.isArray(entries)) {
+        return entries.map(entry => Array.isArray(entry) ? entry[1] : entry).filter(Boolean);
+      }
+      if (typeof entries === 'object') return Object.values(entries).filter(Boolean);
+      return [];
+    };
+
+    const activeGoals = normalize(goalsState.active);
+    const pursuedFromGoals = activeGoals.reduce((sum, goal) => {
+      const count = Number(goal?.pursuitCount || goal?.pursuit_count || 0);
+      return sum + (Number.isFinite(count) && count > 0 ? count : 0);
+    }, 0);
+
+    if (pursuedFromGoals > this.metrics.goals.pursued) {
+      this.metrics.goals.pursued = pursuedFromGoals;
+      this._updateGoalConversionRate();
+    }
+  }
   
   /**
    * Get agent type effectiveness ranking

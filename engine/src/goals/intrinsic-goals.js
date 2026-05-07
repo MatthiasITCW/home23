@@ -28,6 +28,14 @@ function toEpochMs(t) {
   return Date.now();
 }
 
+function normalizeGoalDescription(description) {
+  return String(description || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s/-]/g, '')
+    .trim();
+}
+
 /**
  * Intrinsic Goal System
  * Self-discovered objectives based on curiosity and uncertainty
@@ -316,6 +324,31 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
     return true;
   }
 
+  findGoalByDescription(description) {
+    const normalized = normalizeGoalDescription(description);
+    if (!normalized) return null;
+
+    for (const goal of this.goals.values()) {
+      if (normalizeGoalDescription(goal?.description) === normalized) {
+        return goal;
+      }
+    }
+
+    for (const goal of this.completedGoals || []) {
+      if (normalizeGoalDescription(goal?.description) === normalized) {
+        return goal;
+      }
+    }
+
+    for (const goal of this.archivedGoals || []) {
+      if (normalizeGoalDescription(goal?.description) === normalized) {
+        return goal;
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Add a goal to the system
    */
@@ -327,6 +360,17 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
         length: goalData?.description?.length || 0,
         type: typeof goalData?.description
       });
+      return null;
+    }
+
+    const existingGoal = this.findGoalByDescription(goalData.description);
+    if (existingGoal) {
+      this.logger?.warn('⚠️  Skipped duplicate goal description', {
+        existingGoalId: existingGoal.id,
+        existingStatus: existingGoal.status || 'active',
+        description: goalData.description.substring(0, 80)
+      });
+      this._rejectedDuplicateDescriptionCount24h = (this._rejectedDuplicateDescriptionCount24h || 0) + 1;
       return null;
     }
 

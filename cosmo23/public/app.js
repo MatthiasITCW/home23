@@ -895,9 +895,9 @@ class CosmoStandaloneApp {
     this.populateModelSelect('catalog-local-fast', localChatModels, this.modelDefaults.local?.fast);
 
     // Query tab model selects — single source of truth, no separate fetch
-    this.populateModelSelect('qt-model', chatModels, this.modelDefaults.queryModel || 'gpt-5.2');
-    this.populateModelSelect('qt-pgs-sweep-model', chatModels, this.modelDefaults.pgsSweepModel || this.modelDefaults.queryModel || 'gpt-5.2');
-    this.populateModelSelect('qt-pgs-synth-model', chatModels, this.modelDefaults.queryModel || 'gpt-5.2');
+    this.populateModelSelect('qt-model', chatModels, this.modelDefaults.queryModel || 'gpt-5.5');
+    this.populateModelSelect('qt-pgs-sweep-model', chatModels, this.modelDefaults.pgsSweepModel || this.modelDefaults.queryModel || 'gpt-5.5');
+    this.populateModelSelect('qt-pgs-synth-model', chatModels, this.modelDefaults.queryModel || 'gpt-5.5');
 
     // Interactive tab model select
     this.populateModelSelect('interactive-model', chatModels);

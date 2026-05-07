@@ -49,11 +49,11 @@ test('normalizeBrainMetadataToSettings maps runtime metadata into UI form settin
       enableConsolidationMode: false,
       enableExperimental: true,
       primaryProvider: 'openai',
-      primaryModel: 'gpt-5.2',
+      primaryModel: 'gpt-5.5',
       fastProvider: 'openai',
-      fastModel: 'gpt-5-mini',
+      fastModel: 'gpt-5.4-mini',
       strategicProvider: 'anthropic',
-      strategicModel: 'claude-sonnet-4-6',
+      strategicModel: 'claude-sonnet-4-7',
       localLlmBaseUrl: 'http://localhost:11434/v1',
       searxngUrl: 'http://localhost:8888'
     },
@@ -74,7 +74,7 @@ test('normalizeBrainMetadataToSettings maps runtime metadata into UI form settin
   assert.equal(settings.maxConcurrent, 6);
   assert.equal(settings.enableSleep, false);
   assert.equal(settings.enableDirectAction, true);
-  assert.equal(settings.primaryModel, 'gpt-5.2');
+  assert.equal(settings.primaryModel, 'gpt-5.5');
   assert.equal(settings.strategicProvider, 'anthropic');
 });
 
@@ -85,7 +85,7 @@ test('mergeContinuationPayload preserves base settings and route param wins', ()
     cycles: 80,
     maxConcurrent: 4,
     enableExperimental: false,
-    strategicModel: 'gpt-5.2'
+    strategicModel: 'gpt-5.5'
   });
 
   const merged = mergeContinuationPayload(base, {
@@ -98,7 +98,7 @@ test('mergeContinuationPayload preserves base settings and route param wins', ()
   assert.equal(merged.runName, 'jobhealth2');
   assert.equal(merged.maxConcurrent, 7);
   assert.equal(merged.enableExperimental, true);
-  assert.equal(merged.strategicModel, 'gpt-5.2');
+  assert.equal(merged.strategicModel, 'gpt-5.5');
   assert.equal(merged.brainId, 'brain-123');
 });
 
@@ -107,7 +107,7 @@ test('getChangedFields reports only fields modified from the continuation base',
     topic: 'Original',
     maxConcurrent: 4,
     enableExperimental: false,
-    primaryModel: 'gpt-5.2'
+    primaryModel: 'gpt-5.5'
   });
   const next = normalizeUiSettings({
     ...base,

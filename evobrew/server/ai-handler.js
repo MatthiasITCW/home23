@@ -38,6 +38,86 @@ function smartTruncate(text, maxLength = 75000) {
   return beginning + indicator + end;
 }
 
+function stableHash(parts) {
+  return require('crypto')
+    .createHash('sha1')
+    .update(parts.filter(Boolean).join('\n'))
+    .digest('hex')
+    .slice(0, 12);
+}
+
+function normalizeAgentChatSegment(value) {
+  const raw = String(value || 'local-agent')
+    .replace(/^local:/, '')
+    .trim() || 'local-agent';
+  return raw.replace(/[^a-zA-Z0-9_-]/g, '_') || 'local-agent';
+}
+
+function buildLocalAgentChatId({ providerId, requestedModelSelection, currentFolder, workspaceId, brainPath }) {
+  const agentKey = normalizeAgentChatSegment(providerId || requestedModelSelection);
+  const scopeParts = [];
+
+  if (workspaceId) scopeParts.push(`workspace:${workspaceId}`);
+  if (currentFolder) scopeParts.push(`folder:${currentFolder}`);
+  if (brainPath) scopeParts.push(`brain:${brainPath}`);
+
+  if (scopeParts.length === 0) {
+    return `evobrew:${agentKey}`;
+  }
+
+  return `evobrew:${agentKey}:${stableHash(scopeParts)}`;
+}
+
+function compactRecentMessages(history) {
+  if (!Array.isArray(history)) return [];
+
+  return history
+    .filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string' && message.content.trim())
+    .slice(-6)
+    .map((message) => ({
+      role: message.role,
+      content: message.content.length > 2000
+        ? `${message.content.slice(0, 2000)}\n[...truncated history...]`
+        : message.content
+    }));
+}
+
+function buildLocalAgentBridgeContext({
+  currentFolder,
+  fileName,
+  language,
+  selectedText,
+  documentContent,
+  fileTreeContext,
+  conversationHistory,
+  conversationSummary,
+  workspaceId,
+  brainEnabled,
+  brainInfo
+}) {
+  return {
+    source: 'evobrew',
+    currentFolder: currentFolder || null,
+    fileName: fileName || null,
+    language: language || null,
+    selectedText: selectedText
+      ? (selectedText.length > 10000 ? `${selectedText.slice(0, 10000)}\n[...truncated selection...]` : selectedText)
+      : null,
+    documentContent: documentContent && documentContent.length <= 10000 ? documentContent : null,
+    documentLength: documentContent ? documentContent.length : 0,
+    fileTreeContext: fileTreeContext || null,
+    conversationSummary: conversationSummary || null,
+    recentMessages: compactRecentMessages(conversationHistory),
+    workspaceId: workspaceId || null,
+    brain: {
+      enabled: Boolean(brainEnabled),
+      name: brainInfo?.name || null,
+      path: brainInfo?.path || null,
+      nodes: brainInfo?.nodes ?? null
+    }
+  };
+}
+
 // ============================================================================
 // MESSAGE TRIMMING - Prevent token explosion
 // ============================================================================
@@ -889,10 +969,12 @@ function formatToolResultContent(result, isClaudeFormat = false) {
  */
 async function handleFunctionCalling(openai, anthropic, xai, indexer, params, eventEmitter, options = {}) {
   const {
-    message, currentFolder, model = 'gpt-5.2', context = [],
+    message, currentFolder, model = 'claude-sonnet-4-7', context = [],
     documentContent, selectedText, fileName, language,
     fileTreeContext, conversationHistory, conversationSummary,
     allowedRoot, brainEnabled = false,
+    brainPath = null,
+    workspaceId = null,
     planningMode = false,
     executePlan = false,
     planState = null,
@@ -928,7 +1010,7 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
   if (currentFolder) activeSessions.set(currentFolder, { sessionId, startTime: Date.now() });
 
   const requestedModelSelection = String(model || '').trim() || 'anthropic/latest-sonnet';
-  let effectiveModel = getModelId(requestedModelSelection) || 'gpt-5.2';
+  let effectiveModel = getModelId(requestedModelSelection) || 'gpt-5.5';
   let resolvedModelSelection = requestedModelSelection;
   
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1130,6 +1212,12 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
     providerName: providerNameForPrompt,
     model: effectiveModel
   });
+  let activeBrainInfo = brainPath ? {
+    enabled: Boolean(brainEnabled),
+    name: String(brainPath).split('/').filter(Boolean).pop() || 'brain',
+    path: String(brainPath),
+    nodes: null
+  } : null;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BRAIN CONTEXT INJECTION: Auto-inject relevant brain knowledge when enabled
@@ -1143,6 +1231,12 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
     if (loader?.brainPath) {
       const brainName = String(loader.brainPath).split('/').filter(Boolean).pop() || 'brain';
       const nodeCount = loader.nodes?.length || 0;
+      activeBrainInfo = {
+        enabled: true,
+        name: brainName,
+        path: loader.brainPath,
+        nodes: nodeCount
+      };
       systemPrompt = systemPrompt.replace(
         /(\*\*Folder\*\*:.+)/,
         `$1\n**Brain**: ${brainName} (${nodeCount} nodes, path: ${loader.brainPath})`
@@ -1613,7 +1707,7 @@ Execute the pending steps now. Start with the first step that has status "pendin
         }
         
         // Use the selected model as-is (supports switching mid-conversation).
-        // If the model is provider-prefixed (e.g. "anthropic/claude-sonnet-4-5"), strip the prefix.
+        // If the model is provider-prefixed (e.g. "anthropic/claude-sonnet-4-7"), strip the prefix.
         const claudeModel = effectiveModel;
 
         console.log(`[AI] Anthropic model selected="${requestedModelSelection}" effective="${claudeModel}"`);
@@ -1933,13 +2027,36 @@ Execute the pending steps now. Start with the first step that has status "pendin
         console.log(`[AI] Calling local agent ${providerId} (${agentProvider.name})`);
 
         try {
+          const localAgentChatId = buildLocalAgentChatId({
+            providerId,
+            requestedModelSelection,
+            currentFolder,
+            workspaceId,
+            brainPath: activeBrainInfo?.path || brainPath
+          });
+          const localAgentContext = buildLocalAgentBridgeContext({
+            currentFolder,
+            fileName,
+            language,
+            selectedText,
+            documentContent,
+            fileTreeContext,
+            conversationHistory,
+            conversationSummary,
+            workspaceId,
+            brainEnabled,
+            brainInfo: activeBrainInfo
+          });
+
           const stream = agentProvider.streamMessage({
             model: effectiveModel,
             messages: trimmedMessages,
             tools: availableTools,
             temperature: 0.7,
             maxTokens: 64000,
-            systemPrompt: systemPrompt
+            systemPrompt: systemPrompt,
+            chatId: localAgentChatId,
+            context: localAgentContext
           });
 
           let textContent = '';
@@ -2074,8 +2191,8 @@ Execute the pending steps now. Start with the first step that has status "pendin
           parallel_tool_calls: true,
           truncation: 'auto',
           max_output_tokens: 64000,
-          reasoning: String(openaiModel).startsWith('gpt-5.2') ? { effort: 'none' } : undefined,
-          text: String(openaiModel).startsWith('gpt-5.2') ? { verbosity: 'medium' } : undefined,
+          reasoning: String(openaiModel).startsWith('gpt-5.5') ? { effort: 'none' } : undefined,
+          text: String(openaiModel).startsWith('gpt-5.5') ? { verbosity: 'medium' } : undefined,
           temperature: 0.1,
           stream: true
         };

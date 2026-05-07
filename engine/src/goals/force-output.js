@@ -96,7 +96,7 @@ function buildDigestGoal({ cycle, nodes, surfaces }) {
           criterion:
             `The file outputs/${filename} exists and synthesizes at least 3 of the referenced memory findings, ` +
             `each tied to a source cycle or sensor reading, with a "what we don't know yet" section.`,
-          judgeModel: 'gpt-5-mini',
+          judgeModel: 'gpt-5.4-mini',
           judgedAt: null,
           judgedVerdict: null,
         }

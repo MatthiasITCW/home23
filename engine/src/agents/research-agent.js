@@ -500,7 +500,7 @@ Respond with JSON array of query strings:
   }
 
   /**
-   * Perform web search using GPT-5.2's web search capability
+   * Perform web search using GPT-5.5's web search capability
    * or MCP web_search tool in local LLM mode
    */
   async performWebSearch(query) {
@@ -977,7 +977,7 @@ Respond with JSON array of follow-up directions:
             reportProgress_calls: (content.match(/await\s+this\.reportProgress\(/g) || []).length
           } : null,
           
-          // Code preview for GPT-5.2 review (first 300 lines or 15KB, whichever is smaller)
+          // Code preview for GPT-5.5 review (first 300 lines or 15KB, whichever is smaller)
           codePreview: lines.slice(0, Math.min(300, lines.length)).join('\n').substring(0, 15000)
         };
         

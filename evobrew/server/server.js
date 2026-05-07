@@ -3277,7 +3277,14 @@ process.on('exit', () => {
 // ============================================================================
 
 const { loadBrain, unloadBrain, getBrainLoader, getQueryEngine } = require('./brain-loader-module');
+const {
+  clearLastBrain,
+  getDefaultBrainRuntimeStatePath,
+  getRestorableBrainPath,
+  rememberLastBrain
+} = require('./brain-runtime-state');
 let brainLoadingInProgress = false;
+const brainRuntimeStatePath = getDefaultBrainRuntimeStatePath();
 
 // ============================================================================
 // PROVIDER ROUTES - Model-agnostic provider abstraction layer
@@ -3301,6 +3308,29 @@ app.get('/api/gateway-auth', (req, res) => {
   res.json(auth);
 });
 
+function getHome23AllowedModels() {
+  return serverConfig?.allowedModels && typeof serverConfig.allowedModels === 'object'
+    ? serverConfig.allowedModels
+    : null;
+}
+
+function hasAllowedModelCatalog(allowedModels) {
+  return Boolean(allowedModels && Object.values(allowedModels).some((models) => Array.isArray(models) && models.length > 0));
+}
+
+function providerDisplayName(providerId) {
+  const names = {
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+    'openai-codex': 'OpenAI Codex',
+    minimax: 'MiniMax',
+    xai: 'xAI',
+    'ollama-cloud': 'Ollama Cloud',
+    'ollama-local': 'Ollama Local'
+  };
+  return names[providerId] || String(providerId || '');
+}
+
 /**
  * GET /api/providers/models - List available models across all providers
  * Returns models for UI dropdown selection
@@ -3310,12 +3340,17 @@ app.get('/api/providers/models', async (req, res) => {
     const { getDefaultRegistry } = require('./providers');
     const registry = await getDefaultRegistry();
     const forceRefresh = ['1', 'true', 'yes'].includes(String(req.query.refresh || '').toLowerCase());
+    const allowedModels = getHome23AllowedModels();
+    const useHome23Catalog = hasAllowedModelCatalog(allowedModels);
 
-    if (forceRefresh) {
+    if (forceRefresh && !useHome23Catalog) {
       await registry.refreshModelCatalog({ force: true });
     }
 
-    let models = registry.listModels({ includeAliases: true });
+    let models = registry.listModels({
+      includeAliases: !useHome23Catalog,
+      allowedModels: useHome23Catalog ? allowedModels : null
+    });
 
     // Add OpenClaw (COZ) as a virtual provider option
     models.push({
@@ -3349,7 +3384,9 @@ app.get('/api/providers/models', async (req, res) => {
     res.json({
       success: true,
       models,
-      refreshed: forceRefresh,
+      curated: useHome23Catalog,
+      source: useHome23Catalog ? 'home23-allowedModels' : 'registry',
+      refreshed: forceRefresh && !useHome23Catalog,
       fetchedAt: Date.now(),
       providerCount: new Set(models.map((model) => model.provider)).size,
       platform: {
@@ -3376,11 +3413,21 @@ app.get('/api/harness/manifest', async (req, res) => {
     const platform = require('./config/platform');
 
     const registry = await getDefaultRegistry();
-    const providers = registry ? registry.getAllProviders().map(p => ({
-      id: p.id,
-      name: p.name,
-      models: typeof p.getAvailableModels === 'function' ? p.getAvailableModels() : []
-    })) : [];
+    const allowedModels = getHome23AllowedModels();
+    const useHome23Catalog = hasAllowedModelCatalog(allowedModels);
+    const providers = useHome23Catalog
+      ? Object.entries(allowedModels)
+          .filter(([, models]) => Array.isArray(models) && models.length > 0)
+          .map(([id, models]) => ({
+            id,
+            name: providerDisplayName(id),
+            models
+          }))
+      : (registry ? registry.getAllProviders().map(p => ({
+          id: p.id,
+          name: p.name,
+          models: typeof p.getAvailableModels === 'function' ? p.getAvailableModels() : []
+        })) : []);
 
     const brainLoader = getBrainLoader();
     const brain = brainLoader ? {
@@ -3690,6 +3737,7 @@ app.post('/api/brain/unload', (req, res) => {
 
     const unloadedPath = loader.brainPath;
     unloadBrain();
+    clearLastBrain(brainRuntimeStatePath);
 
     return res.json({
       success: true,
@@ -4477,6 +4525,23 @@ app.get('/api/setup/status', async (req, res) => {
     const hasXAIEnv = Boolean(process.env.XAI_API_KEY);
     const hasMiniMaxEnv = Boolean(process.env.MINIMAX_API_KEY);
     const hasOllamaCloudEnv = Boolean(process.env.OLLAMA_CLOUD_API_KEY);
+    const allowedModels = getHome23AllowedModels() || {};
+    const setEffectiveProviderStatus = (key, configured, label, configuredStatus = 'Configured') => {
+      const previous = configStatus[key] || {};
+      configStatus[key] = {
+        ...previous,
+        configured: Boolean(configured),
+        status: configured ? configuredStatus : (previous.status || 'Not configured'),
+        label: previous.label || label
+      };
+    };
+    setEffectiveProviderStatus('anthropic', providers.anthropic?.enabled === true || providers.anthropic?.oauth === true || hasAnthropicEnv, 'Anthropic');
+    setEffectiveProviderStatus('openaiApi', providers.openai?.enabled === true || hasOpenAIEnv, 'OpenAI API');
+    setEffectiveProviderStatus('openaiCodex', providers['openai-codex']?.enabled === true || (allowedModels['openai-codex'] || []).length > 0, 'OpenAI Codex', 'Available in Home23 catalog');
+    setEffectiveProviderStatus('xai', providers.xai?.enabled === true || hasXAIEnv, 'xAI');
+    setEffectiveProviderStatus('minimax', providers.minimax?.enabled === true || hasMiniMaxEnv, 'MiniMax');
+    setEffectiveProviderStatus('ollamaCloud', providers['ollama-cloud']?.enabled === true || hasOllamaCloudEnv, 'Ollama Cloud');
+    setEffectiveProviderStatus('ollama', providers.ollama?.enabled !== false, 'Ollama');
     const brainsDirectories = Array.isArray(brainsConfig?.directories)
       ? brainsConfig.directories.map((entry) => String(entry || '').trim()).filter(Boolean)
       : [];
@@ -5405,6 +5470,7 @@ app.post('/api/brain/load', async (req, res) => {
     console.log(`[BRAIN-PICKER] Loading brain: ${resolvedPath}`);
     unloadBrain(); // Clean up previous brain state
     await loadBrain(resolvedPath);
+    rememberLastBrain(brainRuntimeStatePath, resolvedPath);
     brainLoadingInProgress = false;
     const loader = getBrainLoader();
     res.json({
@@ -5423,12 +5489,23 @@ app.post('/api/brain/load', async (req, res) => {
   }
 });
 
-// CLI: Load brain before starting server
+// Startup: load CLI brain first, otherwise restore the last selected brain.
 const args = process.argv.slice(2);
-if (args.length > 0 && args[0] !== '--help' && fsSync.existsSync(args[0])) {
-  loadBrain(path.resolve(args[0])).then(() => {
-    console.log('✅ Brain Studio ready with brain loaded\n');
-  }).catch(err => {
-    console.error('❌ Failed to load brain:', err.message);
-  });
+async function loadStartupBrain() {
+  const cliBrainPath = args.length > 0 && args[0] !== '--help' && fsSync.existsSync(args[0])
+    ? path.resolve(args[0])
+    : null;
+  const restoreBrainPath = cliBrainPath || getRestorableBrainPath(brainRuntimeStatePath, BRAIN_DIRS);
+
+  if (!restoreBrainPath) return;
+
+  try {
+    await loadBrain(restoreBrainPath);
+    rememberLastBrain(brainRuntimeStatePath, restoreBrainPath);
+    console.log(`✅ Brain Studio ready with brain loaded: ${restoreBrainPath}\n`);
+  } catch (err) {
+    console.error('❌ Failed to load startup brain:', err.message);
+  }
 }
+
+loadStartupBrain();

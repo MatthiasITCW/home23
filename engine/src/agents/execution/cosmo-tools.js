@@ -1,7 +1,7 @@
 /**
  * COSMO Tool Schema v1.0
  * 
- * Production-grade tool definitions for GPT-5.2 function calling
+ * Production-grade tool definitions for GPT-5.5 function calling
  * Enables local OS autonomy with safety boundaries
  */
 

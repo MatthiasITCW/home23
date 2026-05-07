@@ -29,13 +29,14 @@ function yamlIndent(block, spaces) {
 
 function buildModelMappingBlock(defaultModel, fastModel) {
   return [
+    `gpt-5.5: "${defaultModel}"`,
+    `gpt-5.5-pro: "${defaultModel}"`,
     `gpt-5.4: "${defaultModel}"`,
-    `gpt-5.2: "${defaultModel}"`,
     `gpt-5: "${defaultModel}"`,
-    `gpt-5-mini: "${fastModel}"`,
-    `gpt-5-nano: "${fastModel}"`,
-    `gpt-4o: "${defaultModel}"`,
-    `gpt-4o-mini: "${fastModel}"`
+    `gpt-5.4-mini: "${fastModel}"`,
+    `gpt-5.4-nano: "${fastModel}"`,
+    `gpt-5.3-codex: "${defaultModel}"`,
+    `gpt-5.3-codex-spark: "${fastModel}"`
   ].join('\n');
 }
 
@@ -105,14 +106,14 @@ class ConfigGenerator {
       local_llm_fast_model = 'qwen2.5-coder:7b',
       // Anthropic Claude settings (OAuth primary, API key fallback)
       enable_anthropic = false,
-      anthropic_default_model = 'claude-sonnet-4-6',
-      anthropic_strategic_model = 'claude-opus-4-6',
+      anthropic_default_model = 'claude-sonnet-4-7',
+      anthropic_strategic_model = 'claude-opus-4-7',
       enable_minimax = false,
       minimax_api_key = '',
       enable_openai = true,
       enable_xai = false,
-      xai_default_model = 'grok-4-1-fast-reasoning',
-      xai_strategic_model = 'grok-4-1-fast-reasoning',
+      xai_default_model = 'grok-4.3',
+      xai_strategic_model = 'grok-4.20-0309-reasoning',
       // OpenAI Codex (ChatGPT OAuth)
       enable_openai_codex = false,
       // Ollama Cloud settings
@@ -890,10 +891,10 @@ experimental:
       fast_model = null,
       strategic_provider = null,
       strategic_model = null,
-      anthropic_default_model = 'claude-sonnet-4-6',
-      anthropic_strategic_model = 'claude-opus-4-6',
-      xai_default_model = 'grok-4-1-fast-reasoning',
-      xai_strategic_model = 'grok-4-1-fast-reasoning'
+      anthropic_default_model = 'claude-sonnet-4-7',
+      anthropic_strategic_model = 'claude-opus-4-7',
+      xai_default_model = 'grok-4.3',
+      xai_strategic_model = 'grok-4.20-0309-reasoning'
     } = settings || {};
     const searxng_url = settings.searxng_url || process.env.SEARXNG_URL || '';
     const executionModeInfo = normalizeExecutionMode(exploration_mode, execution_mode);
@@ -1113,10 +1114,10 @@ experimental:
       fast_model: defaults.launch.fast,
       strategic_provider: inferProviderFromModel(defaults.launch.strategic, modelCatalog) || 'openai',
       strategic_model: defaults.launch.strategic,
-      anthropic_default_model: 'claude-sonnet-4-6',
-      anthropic_strategic_model: 'claude-opus-4-6',
-      xai_default_model: 'grok-4-1-fast-reasoning',
-      xai_strategic_model: 'grok-4-1-fast-reasoning'
+      anthropic_default_model: 'claude-sonnet-4-7',
+      anthropic_strategic_model: 'claude-opus-4-7',
+      xai_default_model: 'grok-4.3',
+      xai_strategic_model: 'grok-4.20-0309-reasoning'
     };
   }
 }

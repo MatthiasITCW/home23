@@ -685,7 +685,7 @@
                 case 'reasoning':
                     items = insights.reasoningTraces || [];
                     title = 'Deep Reasoning Traces';
-                    subtitle = 'Thoughts with extensive GPT-5.2 reasoning';
+                    subtitle = 'Thoughts with extensive GPT-5.5 reasoning';
                     break;
                 case 'agents':
                     items = insights.agentBreakthroughs || [];
@@ -1071,7 +1071,7 @@
                 
                 ${item.reasoning ? `
                     <div class="detail-section">
-                        <div class="detail-label">Complete GPT-5.2 Reasoning Trace (Full Content)</div>
+                        <div class="detail-label">Complete GPT-5.5 Reasoning Trace (Full Content)</div>
                         <div class="detail-value" style="font-style: italic; opacity: 0.95; background: rgba(157, 78, 221, 0.08); padding: 20px; border-radius: 12px; line-height: 1.8; max-height: 600px; overflow-y: auto;">
                             ${escapeHtml(item.reasoning)}
                         </div>

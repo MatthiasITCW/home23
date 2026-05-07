@@ -243,10 +243,10 @@ Respond in JSON format:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5-mini', // Use mini for framing
+        model: 'gpt-5.4-mini', // Use mini for framing
         instructions: prompt,
         messages: [{ role: 'user', content: 'Frame the analysis problem.' }],
-        maxTokens: 1200, // Above gpt-5-mini minimum of 1024
+        maxTokens: 1200, // Above gpt-5.4-mini minimum of 1024
         reasoningEffort: 'low' // Simple framing task
       }, 3);
 
@@ -326,7 +326,7 @@ Be specific and substantive. Avoid generic observations.`;
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2', // Use GPT-5.2 for deep analysis
+        model: 'gpt-5.5', // Use GPT-5.5 for deep analysis
         instructions: prompt,
         messages: [{ role: 'user', content: `Analyze from ${frameworkName} perspective.` }],
         maxTokens: 20000, // Deep analysis needs space for non-obvious insights
@@ -377,7 +377,7 @@ Respond in JSON format:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2', // Use GPT-5.2 for synthesis
+        model: 'gpt-5.5', // Use GPT-5.5 for synthesis
         instructions: prompt,
         messages: [{ role: 'user', content: 'Synthesize cross-perspective insights.' }],
         maxTokens: 25000, // Cross-perspective synthesis is complex cognitive work
@@ -438,7 +438,7 @@ Respond with JSON array:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2', // Use GPT-5.2 for novel implications
+        model: 'gpt-5.5', // Use GPT-5.5 for novel implications
         instructions: prompt,
         messages: [{ role: 'user', content: 'Identify novel implications.' }],
         maxTokens: 15000, // Finding non-obvious implications needs reasoning space
@@ -476,7 +476,7 @@ Respond with JSON array:
     this.logger.info(`Found ${codeFiles.length} code files in memory`);
     await this.reportProgress(20, 'Analyzing code with multi-perspective approach');
     
-    // Use GPT-5.2 to analyze code with deep reasoning
+    // Use GPT-5.5 to analyze code with deep reasoning
     const analysisPrompt = `You are conducting deep analysis of code from memory.
 
 MISSION: ${this.mission.description}
@@ -516,7 +516,7 @@ Generate 5-10 key findings/insights that address the mission.`;
       await this.reportProgress(40, 'Performing deep analysis');
       
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2',
+        model: 'gpt-5.5',
         instructions: analysisPrompt,
         messages: [{ role: 'user', content: 'Analyze code and generate insights' }],
         maxTokens: 16000, // API maximum output limit

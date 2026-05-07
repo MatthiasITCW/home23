@@ -141,6 +141,20 @@ test('home23 engine process names remain restartable, including self names', () 
   }
 });
 
+test('thoughts_flowing seed diagnoses before restarting the engine', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
+  try {
+    const store = new LiveProblemStore({ brainDir: dir });
+    seedAll(store, { agentName: 'jerry', dashboardPort: '5002', bridgePort: '5004' });
+
+    const p = store.get('thoughts_flowing');
+    assert.equal(p.remediation[0].type, 'dispatch_to_agent');
+    assert.equal(p.remediation.some(step => step.type === 'pm2_restart'), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('fix_recipe_recorded verifier closes agenda diagnostics after agent report', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
   try {

@@ -194,7 +194,7 @@ class TopicQueueSystem {
   async enrichTopic(topicData) {
     try {
       const response = await this.gpt5.generate({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: 'You are an expert at breaking down exploration topics into actionable investigation prompts and sub-goals.',
         messages: [{
           role: 'user',

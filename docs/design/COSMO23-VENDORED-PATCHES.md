@@ -35,9 +35,9 @@ corrupts runtime state with encrypted strings that later get shipped as literal
 bearer tokens. First observed as `401 unauthorized: encrypted:...` errors during
 smoke testing (2026-04-10).
 
-There are currently **16 patches** in this file. Patches 1–3 are the config/key
-plumbing fixes from the initial integration. Patch 4 is a small admin HTTP
-surface that lets Home23 use cosmo23 as an OAuth broker (Step 18).
+The patches below are surgical Home23 integration fixes. Patches 1–3 are the
+config/key plumbing fixes from the initial integration. Patch 4 is a small admin
+HTTP surface that lets Home23 use cosmo23 as an OAuth broker (Step 18).
 
 ---
 
@@ -305,6 +305,37 @@ OAuth import/callback, and `engine/src/dashboard/server.js` polls them
 every 30 minutes in the background refresh poller to catch token rotations.
 
 **Effect under standalone COSMO:** unchanged — nothing else calls them.
+
+---
+
+## Patch 4b — `cosmo23/engine/src/services/anthropic-oauth-engine.js` · Home23 env token lookup
+
+**Problem:** Home23 successfully mirrors Anthropic OAuth into `config/secrets.yaml`
+and injects `ANTHROPIC_AUTH_TOKEN` into `home23-cosmo23`, but the vendored
+engine-side Anthropic OAuth service only checked cosmo23's standalone Prisma
+OAuth database. Runs launched under Home23 inherited the env token but still
+failed with:
+
+```text
+No Anthropic OAuth token configured. Use "Import from Claude CLI" or complete the OAuth flow.
+```
+
+**Fix:** `getAnthropicApiKey()` now checks `ANTHROPIC_AUTH_TOKEN` / OAuth-shaped
+`ANTHROPIC_API_KEY` before the standalone database. `getOAuthStatus()` reports
+env-backed credentials as configured. The DB flow remains the fallback for
+standalone COSMO.
+
+```js
+// HOME23 PATCH
+const envCredentials = getEnvCredentials();
+if (envCredentials) return envCredentials;
+```
+
+**Effect under Home23:** launched COSMO23 engine subprocesses can use the
+PM2-injected OAuth token directly.
+
+**Effect under standalone COSMO:** unchanged unless the user explicitly sets
+Anthropic credentials in the environment.
 
 ---
 
@@ -849,6 +880,191 @@ coalescing/routing regression tests pass, and a standalone
 
 ---
 
+## Patch 17 — Bounded quick mode for Query/agent brain_query
+
+**Files touched:**
+- `cosmo23/lib/query-engine.js`
+
+**Problem:** the agent `brain_query` wrapper now defaults ordinary chat queries
+to the dashboard's `quick` mode, but COSMO23's adaptive context builder still
+expanded quick mode by target brain coverage. On Jerry's ~56k-node brain that
+meant a "quick" query could still include hundreds of nodes, build a huge
+context, and outlive the agent tool timeout.
+
+**Fix:** add `QueryEngine.calculateMemoryNodeLimit()` and make `quick` / legacy
+`fast` modes use fixed small caps (`50` and `100` nodes respectively), smaller
+connected/thought slices, no meta-coordinator review block, and a 2.5k output
+token cap. `full`, `expert`, `dive`, and other deeper modes keep the existing
+adaptive coverage behavior up to each model's maximum node cap.
+
+**Effect under Home23:** agent chat can use `brain_search` followed by
+`brain_query mode=quick` without triggering a full graph-scale query. Deeper
+queries and PGS remain available when the user explicitly asks for coverage.
+
+**Effect under standalone COSMO:** the dashboard's Quick mode is now genuinely
+bounded on very large brains. Full/expert/dive behavior is unchanged.
+
+**Verification:** `tests/cosmo23/query-engine-context.test.cjs` proves quick
+mode stays at 50 nodes for a 56,210-node brain while full mode still reaches
+the `claude-opus-4-7` model cap of 900 nodes.
+
+---
+
+## Patch 18 — Claude Opus 4.7 request shape for Anthropic clients
+
+**Files touched:**
+- `cosmo23/lib/anthropic-client.js`
+- `cosmo23/engine/src/core/anthropic-client.js`
+
+**Problem:** agent chat `brain_query` defaulted back to `claude-opus-4-7` after
+Quick mode was bounded, but COSMO23's Anthropic adapters still sent the legacy
+`temperature` field on every Messages API call. Opus 4.7 rejects that sampling
+parameter, so the live query path failed before answering even with a small
+context.
+
+The native web-search path had the same inline `temperature` field, and
+reasoning requests still used the older `thinking: { type: 'enabled',
+budget_tokens: ... }` shape rather than Opus 4.7's adaptive thinking shape.
+
+**Fix:** add a greppable model guard for `claude-opus-4-7`, omit legacy sampling
+params for that model in both normal generation and native web-search requests,
+and map reasoning requests to:
+
+```js
+// HOME23 PATCH
+requestParams.thinking = {
+  type: 'adaptive',
+  display: 'summarized'
+};
+requestParams.output_config = {
+  effort: options.reasoningEffort || 'high'
+};
+```
+
+Other Claude models keep the previous temperature behavior and older thinking
+shape.
+
+**Effect under Home23:** `brain_query` can use the configured strong Claude
+query model without tripping Anthropic's Opus 4.7 request validation. The xAI
+fallback is no longer needed for ordinary agent-chat queries.
+
+**Effect under standalone COSMO:** Opus 4.7 requests become valid there too;
+non-Opus behavior is unchanged.
+
+**Verification:** `tests/cosmo23/anthropic-client-request.test.cjs` captures the
+request bodies for both COSMO23 client copies and proves Opus 4.7 omits
+`temperature`, uses adaptive thinking, and omits sampling params for native
+web search while Sonnet still keeps `temperature`.
+
+---
+
+## Patch 18b — Anthropic visible model names vs OAuth wire models
+
+**Files touched:**
+- `cosmo23/lib/anthropic-client.js`
+- `cosmo23/engine/src/core/anthropic-client.js`
+
+**Problem:** Home23 intentionally keeps visible Anthropic catalog names such as
+`claude-sonnet-4-7`, but some OAuth accounts do not have that exact wire model
+available. The standalone `cosmo23/lib/anthropic-client.js` already translated
+unavailable visible names to an available same-family wire model by calling
+`models.list()`, but the vendored engine client did not. COSMO23 runs therefore
+reached Anthropic successfully and then failed with:
+
+```text
+404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-sonnet-4-7"}}
+```
+
+**Fix:** port the same `_resolveWireModel()` fallback into the engine Anthropic
+client and make both client copies tolerate SDKs that expose model listing as
+`models.list()`, `beta.models.list()`, or neither. Older vendored SDKs fall back
+to a direct `/v1/models` request using the already loaded Anthropic credentials.
+The selected/displayed model remains unchanged; only the request payload's
+`model` field is replaced when the exact visible ID is not available to the
+current OAuth token.
+
+**Effect under Home23:** Anthropic runs can keep Home23's current visible model
+catalog while using a valid same-family wire model for accounts that do not
+serve the exact display ID.
+
+**Effect under standalone COSMO:** engine runs get the same fallback behavior
+the standalone query client already had.
+
+**Verification:** `tests/cosmo23/anthropic-client-request.test.cjs` proves the
+engine client falls back from `claude-sonnet-4-7` to an available Sonnet wire
+model while preserving normal Sonnet request shape, including SDK shapes where
+`models` is absent and where no SDK model-list resource exists.
+
+---
+
+## Patch 19 — QueryEngine MiniMax runtime routing
+
+**Files touched:**
+- `cosmo23/lib/query-engine.js`
+- `cosmo23/lib/anthropic-client.js`
+
+**Problem:** the Home23/COSMO catalog default query model is `MiniMax-M2.7`, but
+the historical `QueryEngine.resolveQueryRuntime()` only had explicit branches
+for Anthropic, xAI, Ollama Cloud, local models, Codex, and OpenAI. A MiniMax
+model correctly inferred `providerId=minimax`, then fell through to the OpenAI
+client. Agent `brain_query` exposed this because it calls the same backend route
+as the Query tab but relies on catalog defaults when no model is explicitly
+provided.
+
+**Fix:** initialize a MiniMax query client with `MINIMAX_API_KEY` or the
+Home23-managed COSMO config secret, using the Anthropic-compatible endpoint
+`https://api.minimax.io/anthropic`; route `providerId=minimax` to that client;
+and teach `cosmo23/lib/anthropic-client.js` to pass models through unchanged for
+non-Anthropic compatible providers instead of mapping them to Claude.
+
+**Effect under Home23:** dashboard/default query model `MiniMax-M2.7` now reaches
+MiniMax instead of OpenAI. Agent `brain_query` can stay aligned with catalog
+defaults and only force the chat-safe `quick` mode.
+
+**Effect under standalone COSMO:** MiniMax query defaults work when the provider
+is configured; missing credentials now fail clearly instead of silently routing
+to OpenAI.
+
+**Verification:** `tests/cosmo23/query-engine-runtime.test.cjs` proves
+`MiniMax-M2.7` resolves to the MiniMax query client and fails clearly when that
+client is absent.
+
+---
+
+## Patch 20 — Small-run and single-partition Query/PGS fallback
+
+**Files touched:**
+- `cosmo23/lib/pgs-engine.js`
+- `cosmo23/lib/query-engine.js`
+
+**Problem:** PGS is a large-graph coverage architecture, but COSMO23 can also
+query small completed runs. When a run has only a few dozen nodes or collapses
+to one partition, PGS adds latency and then asks the synthesis model for
+cross-partition insight that cannot exist. The Query tab can then produce
+caveats like "only one successful partition" even though the right product
+behavior is a normal full query over the small run. Because PGS branches before
+`executeEnhancedQuery()` scans outputs, the one-partition path also bypasses
+normal run deliverables that the standard Query path would include.
+
+**Fix:** add a direct-query fallback for small PGS brains
+(`PGS_DIRECT_QUERY_MAX_NODES`, default `200`) that re-enters
+`executeEnhancedQuery()` with `enablePGS: false`, preserving output-file,
+follow-up, action, and provider options. For larger graphs that still collapse
+to one partition, PGS now skips the cross-partition synthesis call and returns
+the single sweep output directly. Full-mode progress now reports the completed
+selected partitions instead of continuing to show the whole graph as remaining
+after the sweep.
+
+**Effect under Home23:** the COSMO23 Query tab remains robust on tiny research
+runs and no longer turns a 24-node / 1-partition graph into slow fake
+cross-partition synthesis. Large Jerry-style PGS still uses partitioned sweeps.
+
+**Verification:** `tests/cosmo23/pgs-engine.test.cjs` covers the small-run
+direct fallback, single-partition synthesis skip, failed-sweep accounting, and
+full-mode session update counts.
+
+---
+
 ## History
 
 - **2026-04-10** — initial patches applied during COSMO 2.3 integration smoke test.
@@ -922,3 +1138,18 @@ coalescing/routing regression tests pass, and a standalone
   also clamps stale session counts, avoids zero-partition routes on real
   graphs, skips giant stale cache parsing, and coalesces singleton-heavy
   partition output into usable bounded partitions.
+- **2026-05-03** — Patch 17 added after agent chat `brain_query` timed out even
+  in `quick` mode. Root cause was adaptive coverage turning quick mode into a
+  large-context query on Jerry's 56k-node graph. Quick/fast are now fixed-cap;
+  deeper modes keep adaptive coverage.
+- **2026-05-03** — Patch 18 added after bounded Quick mode exposed the next live
+  failure: `claude-opus-4-7` rejects `temperature`. COSMO23's Anthropic clients
+  now omit deprecated sampling params for Opus 4.7 and use adaptive thinking.
+- **2026-05-03** — Patch 19 added after agent `brain_query` revealed that the
+  current catalog query default, `MiniMax-M2.7`, was inferred as provider
+  `minimax` but routed through the OpenAI client. QueryEngine now has a real
+  MiniMax Anthropic-compatible query client.
+- **2026-05-07** — Patch 20 added after a 24-node COSMO23 research run routed
+  through PGS, loaded one cached partition, and produced one-partition
+  synthesis caveats. Small runs now use the direct Query path; larger
+  one-partition PGS skips cross-partition synthesis.

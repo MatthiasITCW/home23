@@ -87,7 +87,10 @@ class ProviderRegistry {
       Object.defineProperty(adapter, 'id', { value: 'openai-codex', writable: false });
       Object.defineProperty(adapter, 'name', { value: 'OpenAI Codex (OAuth)', writable: false });
       // Override available models for Codex
-      adapter.getAvailableModels = () => ['gpt-5.2', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'];
+      adapter.getAvailableModels = () => listCatalogModels(loadModelCatalogSync(), {
+        providers: ['openai-codex'],
+        kind: 'chat'
+      }).map(model => model.id);
       return adapter;
     });
 
@@ -103,19 +106,42 @@ class ProviderRegistry {
 
       // Seed list — used as fallback if live fetch fails
       const seedModels = [
+        'gpt-oss:120b',
+        'gpt-oss:20b',
+        'kimi-k2.6',
+        'kimi-k2.5',
+        'kimi-k2-thinking',
+        'kimi-k2:1t',
+        'gemma4:31b',
+        'glm-5.1',
+        'glm-5',
+        'glm-4.7',
+        'glm-4.6',
+        'qwen3.5:397b',
+        'qwen3-coder:480b',
+        'qwen3-coder-next',
+        'qwen3-next:80b',
+        'qwen3-vl:235b',
+        'qwen3-vl:235b-instruct',
+        'deepseek-v4-pro',
+        'deepseek-v4-flash',
+        'deepseek-v3.2',
+        'deepseek-v3.1:671b',
         'nemotron-3-super',
         'nemotron-3-nano:30b',
-        'qwen3.5:397b',
-        'qwen3-next:80b',
-        'deepseek-v3.1:671b',
-        'cogito-2.1:671b',
-        'kimi-k2:1t',
-        'kimi-k2-thinking',
-        'gemma3:12b',
+        'mistral-large-3:675b',
+        'ministral-3:14b',
+        'ministral-3:8b',
+        'ministral-3:3b',
+        'devstral-2:123b',
         'devstral-small-2:24b',
-        'gpt-oss:20b',
+        'minimax-m2.7',
         'minimax-m2.5',
-        'glm-5',
+        'minimax-m2.1',
+        'minimax-m2',
+        'gemini-3-flash-preview',
+        'cogito-2.1:671b',
+        'rnj-1:8b',
       ];
       const discoveryTtlMs = 5 * 60 * 1000;
       let cachedModels = seedModels.slice();
@@ -464,7 +490,7 @@ class ProviderRegistry {
 
       if (!assignment) {
         console.warn(`[Registry] No assignment for context: ${context}, using default provider`);
-        return this.getProvider('claude-sonnet-4-5');
+        return this.getProvider('claude-sonnet-4-7');
       }
 
       // Try primary provider
@@ -481,7 +507,7 @@ class ProviderRegistry {
 
       if (!provider) {
         console.warn(`[Registry] No provider available for context: ${context}`);
-        return this.getProvider('claude-sonnet-4-5');  // Ultimate fallback
+        return this.getProvider('claude-sonnet-4-7');  // Ultimate fallback
       }
 
       // Register model assignment for later lookups
@@ -492,7 +518,7 @@ class ProviderRegistry {
       return provider;
     } catch (e) {
       console.warn('[Registry] Config error, using default provider:', e.message);
-      return this.getProvider('claude-sonnet-4-5');
+      return this.getProvider('claude-sonnet-4-7');
     }
   }
 

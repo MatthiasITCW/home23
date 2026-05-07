@@ -93,7 +93,7 @@ Preserve specific facts. Be information-dense. Every sentence should teach somet
       const response = await this.gpt5.generateFast({
         instructions: 'Extract 2-4 topic keywords from the text. Return only comma-separated keywords.',
         messages: [{ role: 'user', content: text }],
-        max_completion_tokens: 1024 // API minimum for gpt-5-mini (was 50 - too low!)
+        max_completion_tokens: 1024 // API minimum for gpt-5.4-mini (was 50 - too low!)
       });
 
       const topics = response.content

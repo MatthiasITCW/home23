@@ -134,7 +134,7 @@ async function runInternetBoundaryChecks() {
     const unauthChat = await fetchJson(`${server.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: 'smoke', model: 'gpt-5.2' })
+      body: JSON.stringify({ message: 'smoke', model: 'gpt-5.5' })
     });
     assert.equal(unauthChat.response.status, 401, 'unauthenticated /api/chat should return 401');
 

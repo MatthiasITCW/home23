@@ -348,7 +348,7 @@ class QueryEngine {
 
     // Minimal technical metadata
     summaryInputParts.push('# TECHNICAL METADATA\n');
-    summaryInputParts.push(`Model: ${safeMetadata.model || 'gpt-5.2'}\n`);
+    summaryInputParts.push(`Model: ${safeMetadata.model || 'gpt-5.5'}\n`);
     summaryInputParts.push(`Mode: ${safeMetadata.mode || 'unknown'}\n`);
     if (safeMetadata.sources) {
       summaryInputParts.push(
@@ -405,7 +405,7 @@ STYLE:
 `.trim();
 
     const response = await this.gpt5Client.generate({
-      model: 'gpt-5.2',
+      model: 'gpt-5.5',
       instructions,
       input,
       reasoningEffort: 'medium',
@@ -418,9 +418,9 @@ STYLE:
     return {
       style: 'executive',
       text: executiveText,
-      model: response.model || 'gpt-5.2',
+      model: response.model || 'gpt-5.5',
       base: {
-        model: safeMetadata.model || 'gpt-5.2',
+        model: safeMetadata.model || 'gpt-5.5',
         mode: safeMetadata.mode || null,
         timestamp: safeMetadata.timestamp || null
       }
@@ -1146,7 +1146,7 @@ STYLE:
     const startTime = Date.now(); // Performance tracking
 
     const {
-      model = 'gpt-5.2',  // Default to gpt-5.2
+      model = 'gpt-5.5',  // Default to gpt-5.5
       mode = 'normal',
       exportFormat = null,
       // NEW: Enhancement options (all opt-in)
@@ -1161,7 +1161,7 @@ STYLE:
     
     // Validate model - ONLY GPT-5 models supported
     if (!model.includes('gpt-5')) {
-      throw new Error(`Model ${model} not supported. Only GPT-5 family models are supported (gpt-5.2, gpt-5-mini, gpt-5.1-codex-max).`);
+      throw new Error(`Model ${model} not supported. Only GPT-5 family models are supported (gpt-5.5, gpt-5.4-mini, gpt-5.3-codex).`);
     }
     
     // EXECUTIVE MODE SPECIAL CASE: Compress existing answer, don't re-query brain
@@ -2195,7 +2195,7 @@ SECTION E: Prioritize immediate next actions (design partners, pilots, validatio
    * This ensures executives get compressed views that are 100% faithful to the original answer
    */
   async executeExecutiveCompression(query, baseAnswer, options = {}) {
-    const { model = 'gpt-5.2', baseMetadata = {} } = options;
+    const { model = 'gpt-5.5', baseMetadata = {} } = options;
     
     // SMART DETECTION: Determine query type to add contextual emphasis
     const queryType = this.detectQueryType(query, baseAnswer);
@@ -2574,7 +2574,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
     let md = `# 🧠 COSMO Query Result\n\n`;
     md += `**Query:** ${query}\n\n`;
     md += `**Timestamp:** ${metadata.timestamp || new Date().toISOString()}\n\n`;
-    md += `**Model:** ${metadata.model || 'gpt-5.2'} (${metadata.mode || 'normal'} mode)\n\n`;
+    md += `**Model:** ${metadata.model || 'gpt-5.5'} (${metadata.mode || 'normal'} mode)\n\n`;
     md += `---\n\n`;
 
     // Evidence Quality Section
@@ -2770,7 +2770,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
       <div class="meta">
         <strong>Query:</strong> ${this.escapeHtml(query)}<br>
         <strong>Timestamp:</strong> ${metadata.timestamp || new Date().toISOString()}<br>
-        <strong>Model:</strong> ${metadata.model || 'gpt-5.2'} (${metadata.mode || 'normal'} mode)
+        <strong>Model:</strong> ${metadata.model || 'gpt-5.5'} (${metadata.mode || 'normal'} mode)
       </div>
     </header>`;
 
@@ -3370,7 +3370,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
    */
   async executeEnhancedQuery(query, options = {}) {
     const {
-      model = 'gpt-5.2',
+      model = 'gpt-5.5',
       mode = 'normal',
       exportFormat = null,
       includeFiles = true,

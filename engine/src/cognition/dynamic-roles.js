@@ -1,8 +1,8 @@
 const { UnifiedClient } = require('../core/unified-client');
 
 /**
- * Dynamic Role System - GPT-5.2 Version
- * Self-spawning roles with GPT-5.2 extended reasoning and tool access
+ * Dynamic Role System - GPT-5.5 Version
+ * Self-spawning roles with GPT-5.5 extended reasoning and tool access
  */
 class DynamicRoleSystem {
   constructor(config, logger, fullConfig = null) {
@@ -68,7 +68,7 @@ class DynamicRoleSystem {
       }
     }
     
-    this.logger?.info('Dynamic roles initialized (GPT-5.2)', {
+    this.logger?.info('Dynamic roles initialized (GPT-5.5)', {
       count: this.roles.size,
       evolutionEnabled: this.config.evolutionEnabled
     });
@@ -214,9 +214,9 @@ class DynamicRoleSystem {
       tools.push({ type: 'web_search' });
     }
 
-    // Use GPT-5.2 with tools (if any)
+    // Use GPT-5.5 with tools (if any)
     const generateOptions = {
-      model: 'gpt-5.2',
+      model: 'gpt-5.5',
       instructions,
       messages: [{ role: 'user', content: role.pureMode ? '' : 'Generate your next thought.' }],
       max_completion_tokens: role.maxTokens,
@@ -224,7 +224,7 @@ class DynamicRoleSystem {
       tools: tools.length > 0 ? tools : undefined,
       // Pure mode: Add system prompt for minimal framing
       systemPrompt: role.systemPrompt || undefined
-      // NOTE: GPT-5.2 doesn't support temperature parameter
+      // NOTE: GPT-5.5 doesn't support temperature parameter
     };
     
     let response;
@@ -256,7 +256,7 @@ class DynamicRoleSystem {
 
     role.useCount++;
 
-    this.logger?.debug('Role executed (GPT-5.2)', {
+    this.logger?.debug('Role executed (GPT-5.5)', {
       roleId: role.id,
       outputLength: response.content.length,
       hasReasoning: Boolean(response.reasoning),
@@ -329,7 +329,7 @@ class DynamicRoleSystem {
     this.roles.set(newRole.id, newRole);
     this.performanceHistory.set(newRole.id, []);
 
-    this.logger?.info('New role spawned (GPT-5.2)', {
+    this.logger?.info('New role spawned (GPT-5.5)', {
       id: newRole.id,
       purpose,
       totalRoles: this.roles.size
@@ -339,7 +339,7 @@ class DynamicRoleSystem {
   }
 
   /**
-   * Evolve a role using GPT-5.2 meta-reasoning
+   * Evolve a role using GPT-5.5 meta-reasoning
    */
   async evolveRole(roleId) {
     if (!this.config.evolutionEnabled) return;
@@ -354,9 +354,9 @@ class DynamicRoleSystem {
     if (timeSinceEvolution < 3600000) return;
 
     if (role.successRate < role.successThreshold) {
-      // Use GPT-5.2 with extended reasoning to improve the prompt
+      // Use GPT-5.5 with extended reasoning to improve the prompt
       const response = await this.gpt5.generateWithReasoning({
-        model: 'gpt-5.2',
+        model: 'gpt-5.5',
         instructions: `The following AI role has been underperforming (success rate: ${(role.successRate * 100).toFixed(1)}%).
 
 Current prompt: "${role.prompt}"
@@ -372,7 +372,7 @@ Provide only the improved prompt text, no explanation.`,
       role.prompt = response.content.trim();
       role.lastEvolved = new Date();
 
-      this.logger?.info('Role evolved (GPT-5.2)', {
+      this.logger?.info('Role evolved (GPT-5.5)', {
         roleId: role.id,
         oldSuccessRate: role.successRate,
         hasReasoning: Boolean(response.reasoning)

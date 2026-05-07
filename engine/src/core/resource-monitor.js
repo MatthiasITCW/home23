@@ -18,6 +18,10 @@ class ResourceMonitor {
     this.memoryLimitMB = config.resources?.memoryLimitMB || 512; // 512MB default
     this.memoryWarningThreshold = config.resources?.memoryWarningThreshold || 0.8; // 80%
     this.cpuWarningThreshold = config.resources?.cpuWarningThreshold || 0.9; // 90%
+    // PM2/verifiers care about RSS, not just V8 heap. Keep this below the
+    // live-problems 3500 MB RSS guard so GC runs before the process trips it.
+    this.rssLimitMB = config.resources?.rssLimitMB || 3200;
+    this.rssWarningThreshold = config.resources?.rssWarningThreshold || 0.85;
     
     // Tracking
     this.memorySnapshots = [];
@@ -113,6 +117,7 @@ class ResourceMonitor {
    */
   checkLimits(snapshot) {
     const memUsedPercent = snapshot.memUsedMB / this.memoryLimitMB;
+    const rssUsedPercent = snapshot.rss / this.rssLimitMB;
 
     // Memory warning threshold
     if (memUsedPercent >= this.memoryWarningThreshold && memUsedPercent < 1.0) {
@@ -125,11 +130,13 @@ class ResourceMonitor {
     }
 
     // Memory limit exceeded
-    if (snapshot.memUsedMB >= this.memoryLimitMB) {
+    if (snapshot.memUsedMB >= this.memoryLimitMB || snapshot.rss >= this.rssLimitMB) {
       this.limitExceededCount++;
       this.logger.error('[ResourceMonitor] Memory limit exceeded', {
         memUsedMB: snapshot.memUsedMB.toFixed(2),
         limitMB: this.memoryLimitMB,
+        rssMB: snapshot.rss.toFixed(2),
+        rssLimitMB: this.rssLimitMB,
         peakMB: this.peakMemoryMB.toFixed(2)
       });
       
@@ -142,6 +149,13 @@ class ResourceMonitor {
       } else {
         this.logger.warn('[ResourceMonitor] global.gc not available (run with --expose-gc)');
       }
+    } else if (rssUsedPercent >= this.rssWarningThreshold) {
+      this.warningCount++;
+      this.logger.warn('[ResourceMonitor] RSS warning', {
+        rssMB: snapshot.rss.toFixed(2),
+        rssLimitMB: this.rssLimitMB,
+        percent: (rssUsedPercent * 100).toFixed(1)
+      });
     }
 
     // CPU warning
@@ -180,7 +194,9 @@ class ResourceMonitor {
         peakMB: this.peakMemoryMB.toFixed(2),
         limitMB: this.memoryLimitMB,
         percentUsed: latestSnapshot ? ((latestSnapshot.memUsedMB / this.memoryLimitMB) * 100).toFixed(1) : 0,
-        rss: latestSnapshot ? latestSnapshot.rss.toFixed(2) : 0
+        rss: latestSnapshot ? latestSnapshot.rss.toFixed(2) : 0,
+        rssLimitMB: this.rssLimitMB,
+        rssPercentUsed: latestSnapshot ? ((latestSnapshot.rss / this.rssLimitMB) * 100).toFixed(1) : 0
       },
       cpu: {
         currentPercent: latestSnapshot ? latestSnapshot.cpuPercent.toFixed(1) : 0,

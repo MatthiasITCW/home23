@@ -43,6 +43,23 @@ test('document feeder applies configured exclude globs outside chokidar', () => 
   );
 });
 
+test('document feeder ignores volatile cron status snapshots by default', () => {
+  const feeder = makeFeeder();
+
+  assert.equal(
+    feeder._shouldIgnorePath('/tmp/home23/instances/jerry/workspace/cron/status.md'),
+    true
+  );
+  assert.equal(
+    feeder._shouldIgnorePath('/tmp/home23/instances/jerry/workspace/cron/catalog.json'),
+    true
+  );
+  assert.equal(
+    feeder._shouldIgnorePath('/tmp/home23/instances/jerry/workspace/cron/README.md'),
+    false
+  );
+});
+
 test('document feeder skips oversized files before reading or compiling', async () => {
   const logs = [];
   const feeder = makeFeeder({ maxFileBytes: 5 }, logs);

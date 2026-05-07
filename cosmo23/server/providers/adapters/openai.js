@@ -89,7 +89,7 @@ class OpenAIAdapter extends ProviderAdapter {
     const models = this.getAvailableModels();
     const defaults = getCatalogDefaults();
     const healthModel = models.find(model => model === defaults.queryModel)
-      || models.find(model => model === 'gpt-5.2')
+      || models.find(model => model === 'gpt-5.5')
       || models.find(model => !model.includes('codex'))
       || models[0];
 

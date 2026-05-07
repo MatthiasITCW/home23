@@ -1,0 +1,40 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { QueryEngine } = require('../../cosmo23/lib/query-engine');
+const { loadModelCatalogSync } = require('../../cosmo23/server/config/model-catalog');
+
+function makeRuntime(overrides = {}) {
+  const runtime = Object.create(QueryEngine.prototype);
+  runtime.modelCatalog = loadModelCatalogSync();
+  runtime.modelDefaults = { queryModel: 'MiniMax-M2.7' };
+  runtime.gpt5Client = { id: 'gpt' };
+  runtime.anthropicClient = { id: 'anthropic' };
+  runtime.minimaxQueryClient = { id: 'minimax' };
+  runtime.ollamaCloudClient = { id: 'ollama-cloud' };
+  runtime.xaiQueryClient = { id: 'xai' };
+  runtime.xaiResponsesClient = { id: 'xai-responses' };
+  runtime.localQueryClient = { id: 'local', defaultModel: 'qwen3.5:4b' };
+  runtime.runMetadata = {};
+  return Object.assign(runtime, overrides);
+}
+
+test('routes MiniMax query defaults to the MiniMax query client', () => {
+  const runtime = makeRuntime();
+
+  const resolved = runtime.resolveQueryRuntime('MiniMax-M2.7');
+
+  assert.equal(resolved.providerId, 'minimax');
+  assert.equal(resolved.providerLabel, 'MiniMax');
+  assert.equal(resolved.client, runtime.minimaxQueryClient);
+  assert.equal(resolved.effectiveModel, 'MiniMax-M2.7');
+});
+
+test('fails clearly when MiniMax is selected but no MiniMax query client is configured', () => {
+  const runtime = makeRuntime({ minimaxQueryClient: null });
+
+  assert.throws(
+    () => runtime.resolveQueryRuntime('MiniMax-M2.7'),
+    /MiniMax-M2\.7.*minimax.*not configured/i
+  );
+});

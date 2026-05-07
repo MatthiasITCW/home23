@@ -133,9 +133,9 @@ architecture:
     enabled: true
 
 models:
-  primary: gpt-5
-  fast: gpt-5-mini
-  nano: gpt-5-mini
+  primary: gpt-5.5
+  fast: gpt-5.4-mini
+  nano: gpt-5.4-mini
   embeddings: text-embedding-3-small
   defaultReasoningEffort: low
   defaultMaxTokens: 6000
@@ -149,7 +149,7 @@ providers:
 coordinator:
   enabled: true   # Enabled to allow consistency agent spawning
   reviewCyclePeriod: 50
-  model: gpt-5-mini
+  model: gpt-5.4-mini
   reasoningEffort: low
   maxTokens: 3000
   maxConcurrent: 2  # Allow consistency agents
@@ -172,4 +172,3 @@ mcp:
     enabled: false  # Disabled for test
   client:
     enabled: false  # Disabled for test
-

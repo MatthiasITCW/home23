@@ -15,11 +15,11 @@
  * const registry = await createRegistry();
  * 
  * // Get provider for a model
- * const provider = registry.getProvider('claude-sonnet-4-5');
+ * const provider = registry.getProvider('claude-sonnet-4-7');
  * 
  * // Use the provider
  * const response = await provider.createMessage({
- *   model: 'claude-sonnet-4-5',
+ *   model: 'claude-sonnet-4-7',
  *   messages: [{ role: 'user', content: 'Hello!' }]
  * });
  * ```
@@ -159,10 +159,11 @@ async function createRegistry(options = {}) {
   const codexModels = [
     ...(evobrewConfig?.allowedModels?.['openai-codex'] || []),
     evobrewConfig?.defaults?.provider === 'openai-codex' ? evobrewConfig?.defaults?.model : null,
+    'gpt-5.5',
+    'gpt-5.5-pro',
     'gpt-5.4',
     'gpt-5.4-mini',
     'gpt-5.4-nano',
-    'gpt-5.2',
     'gpt-5.3-codex',
     'gpt-5.3-codex-spark'
   ].filter(Boolean);
@@ -179,12 +180,10 @@ async function createRegistry(options = {}) {
       baseUrl: 'https://api.x.ai/v1'
     });
     // Register Grok models explicitly
-    registry.registerModel('grok-code-fast-1', 'xai');
-    registry.registerModel('grok-4-latest', 'xai');
-    registry.registerModel('grok-4-fast-reasoning-latest', 'xai');
-    registry.registerModel('grok-4.20-non-reasoning-latest', 'xai');
-    registry.registerModel('grok-4.20-reasoning-latest', 'xai');
-    registry.registerModel('grok-4.20-multi-agent-latest', 'xai');
+    registry.registerModel('grok-4.3', 'xai');
+    registry.registerModel('grok-4.20-0309-reasoning', 'xai');
+    registry.registerModel('grok-4.20-0309-non-reasoning', 'xai');
+    registry.registerModel('grok-4.20-multi-agent-0309', 'xai');
     console.log('[Providers] ✅ xAI (Grok) registered');
   }
 

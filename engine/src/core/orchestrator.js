@@ -66,8 +66,8 @@ const { NoticePass } = require('../sleep/notice-pass');
 const { readGoodLifeSleepPolicy } = require('../good-life/sleep-policy');
 
 /**
- * Phase 2B Orchestrator - GPT-5.2 Version
- * Uses GPT-5.2 Responses API with extended reasoning, web search, and tools
+ * Phase 2B Orchestrator - GPT-5.5 Version
+ * Uses GPT-5.5 Responses API with extended reasoning, web search, and tools
  */
 class Orchestrator {
   constructor(config, subsystems, logger) {
@@ -75,7 +75,7 @@ class Orchestrator {
     this.logger = logger;
     this.codingAgentsEnabled = config?.coordinator?.enableCodingAgents !== false;
     
-    // Subsystems (GPT-5.2 versions)
+    // Subsystems (GPT-5.5 versions)
     this.memory = subsystems.memory;
     this.roles = subsystems.roles;
     this.quantum = subsystems.quantum;
@@ -170,7 +170,7 @@ class Orchestrator {
       minimumCycles: 3  // Minimum sleep cycles before wake check (energy >= 0.8 is the real gate)
     };
     
-    // GPT-5.2 specific
+    // GPT-5.5 specific
     this.reasoningHistory = [];
     this.webSearchCount = 0;
     this.instanceId = (process.env.INSTANCE_ID || config.instanceId || 'cosmo-1').toLowerCase();
@@ -593,13 +593,13 @@ class Orchestrator {
     }
 
     this.logger.info('╔═══════════════════════════════════════════════════╗');
-    this.logger.info('║   Phase 2B GPT-5.2 System Initialized           ║');
+    this.logger.info('║   Phase 2B GPT-5.5 System Initialized           ║');
     this.logger.info('╚═══════════════════════════════════════════════════╝');
     this.logger.info('');
-    this.logger.info('GPT-5.2 Features Active:');
+    this.logger.info('GPT-5.5 Features Active:');
     this.logger.info('  • Extended Reasoning (see AI thinking process)');
     this.logger.info('  • Web Search (curiosity role + quantum branches)');
-    this.logger.info('  • Optimized Models (gpt-5, gpt-5-mini, gpt-5-nano)');
+    this.logger.info('  • Optimized Models (gpt-5, gpt-5.4-mini, gpt-5.4-nano)');
     this.logger.info('  • Responses API (modern format)');
     this.logger.info('');
     this.logger.info('Components:', {
@@ -796,7 +796,7 @@ class Orchestrator {
       this.logger.warn?.('pulse-remarks start failed (non-fatal)', { error: e.message });
     }
 
-    this.logger.info('🚀 Starting GPT-5.2 cognitive loop...');
+    this.logger.info('🚀 Starting GPT-5.5 cognitive loop...');
     
     while (this.running) {
       // Check recursive planner halt condition
@@ -1012,7 +1012,7 @@ class Orchestrator {
       });
     }
 
-    this.logger.info(`\n═══ Cycle ${this.cycleCount} [${this.oscillator.getCurrentMode().toUpperCase()}] [GPT-5.2] ═══`);
+    this.logger.info(`\n═══ Cycle ${this.cycleCount} [${this.oscillator.getCurrentMode().toUpperCase()}] [GPT-5.5] ═══`);
 
     // Evidence Receipt Trail — declared here so they're in scope for the finally
     // block. Populated inside the try so even if generateRunId() or anything else
@@ -1060,6 +1060,54 @@ class Orchestrator {
       // Phase A: Start cycle timeout (default 60s, configurable)
       const cycleTimeout = this.config.timeouts?.cycleTimeoutMs || 60000;
       this.timeoutManager.startCycleTimer(this.cycleCount, cycleTimeout);
+
+      // Long-cycle heartbeat: the live-problem verifier checks thoughts.jsonl freshness,
+      // but legitimate meta-coordinator/scoring cycles can run longer than the verifier
+      // window before a normal role thought is recorded. Emit a lightweight internal
+      // journal row while the cycle is still alive so freshness means loop liveness,
+      // not only completed reflections.
+      const heartbeatWindowMs = this.config?.architecture?.thoughtJournalHeartbeatMs || 10 * 60 * 1000;
+      let cycleHeartbeatTimer = null;
+      const emitCycleHeartbeat = async () => {
+        try {
+          const entry = {
+            cycle: this.cycleCount,
+            role: 'cycle-heartbeat',
+            thought: `Cycle ${this.cycleCount} still active — maintaining thought journal freshness during long-running work`,
+            reasoning: null,
+            goal: null,
+            surprise: 0,
+            cognitiveState: { ...this.stateModulator.getState() },
+            oscillatorMode: this.oscillator.getCurrentMode(),
+            perturbation: null,
+            tunnel: false,
+            goalsAutoCaptured: 0,
+            usedWebSearch: false,
+            temporalContext: this.currentTemporalContext,
+            model: 'internal',
+            timestamp: new Date()
+          };
+          this.journal.push(entry);
+          await this.logThought(entry);
+          cosmoEvents.emitThought({
+            cycle: this.cycleCount,
+            thought: entry.thought,
+            role: entry.role,
+            surprise: 0,
+            model: 'internal',
+            reasoning: null,
+            usedWebSearch: false,
+            temporalContext: this.currentTemporalContext,
+          });
+          this.logger?.info?.('[thoughts-flowing] cycle heartbeat wrote freshness row', { cycle: this.cycleCount });
+        } catch (e) {
+          this.logger?.warn?.('[thoughts-flowing] cycle heartbeat failed', { error: e.message });
+        }
+      };
+      if (heartbeatWindowMs > 0) {
+        cycleHeartbeatTimer = setInterval(() => { emitCycleHeartbeat(); }, heartbeatWindowMs);
+        if (typeof cycleHeartbeatTimer.unref === 'function') cycleHeartbeatTimer.unref();
+      }
 
       // Update TUI dashboard if active
       if (this.tuiDashboard) {
@@ -2051,7 +2099,7 @@ class Orchestrator {
         activeClusterSummary = null;
       }
 
-      // 8. Generate thought using GPT-5.2 Quantum Reasoning
+      // 8. Generate thought using GPT-5.5 Quantum Reasoning
       //
       // Cycle tools: if the role has enableMCPTools and we have an MCP bridge,
       // hand the reasoner a curated tool set. The branch can then call
@@ -2203,7 +2251,7 @@ class Orchestrator {
 
       const tunnel = await this.quantum.quantumTunnel(context, this.memory);
       if (tunnel) {
-        this.logger.info('⚡ Quantum tunnel (GPT-5.2 + web search)!');
+        this.logger.info('⚡ Quantum tunnel (GPT-5.5 + web search)!');
       }
 
       const thought = await this.quantum.collapseSuperposition(superposition);
@@ -2232,6 +2280,11 @@ class Orchestrator {
           success: false
         });
         
+        await this._logThoughtJournalFreshnessMarker({
+          roleId: role?.id,
+          reason: 'thought_too_short',
+          preview: thought?.hypothesis,
+        });
         return; // Skip rest of cycle
       }
 
@@ -2315,7 +2368,7 @@ class Orchestrator {
           
           const newGoal = this.goals.addGoal({
             description: captured.text,
-            reason: `Auto-captured via GPT-5.2: ${captured.source}`,
+            reason: `Auto-captured via GPT-5.5: ${captured.source}`,
             uncertainty: 0.5,
             source: captured.source
           });
@@ -2337,7 +2390,7 @@ class Orchestrator {
             }
           }
 
-          this.logger.info('📝 Goal auto-captured (GPT-5.2)', {
+          this.logger.info('📝 Goal auto-captured (GPT-5.5)', {
             text: captured.text.substring(0, 50),
             source: captured.source
           });
@@ -2385,6 +2438,11 @@ class Orchestrator {
             preview: String(thought?.hypothesis || '').slice(0, 120)
           });
           this._hallucinationsDiscardedCount24h = (this._hallucinationsDiscardedCount24h || 0) + 1;
+          await this._logThoughtJournalFreshnessMarker({
+            roleId: role?.id,
+            reason: inertReason,
+            preview: thought?.hypothesis,
+          });
           return;
         }
       }
@@ -2398,6 +2456,11 @@ class Orchestrator {
           cycle: this.cycleCount,
           role: role.id,
           preview: String(thought?.hypothesis || '').slice(0, 140),
+        });
+        await this._logThoughtJournalFreshnessMarker({
+          roleId: role?.id,
+          reason: 'operational_truth_ungrounded',
+          preview: thought?.hypothesis,
         });
         return;
       }
@@ -3066,7 +3129,7 @@ class Orchestrator {
         }
       }
 
-      // 15. Periodic summarization (GPT-5.2)
+      // 15. Periodic summarization (GPT-5.5)
       if (this.journal.length - this.lastSummarization >= 20) {
         await this.performSummarization();
       }
@@ -3123,7 +3186,7 @@ class Orchestrator {
           30 * 24 * 60 * 60 * 1000
         );
         if (removed > 0) {
-          this.logger.info('🗑️  Memory GC (GPT-5.2)', { removed, remaining: this.memory.nodes.size });
+          this.logger.info('🗑️  Memory GC (GPT-5.5)', { removed, remaining: this.memory.nodes.size });
         }
 
         const pruned = this.roles.pruneRoles();
@@ -3245,7 +3308,7 @@ class Orchestrator {
       this.thermodynamic.advanceAnnealing();
 
       const cycleDuration = Date.now() - cycleStart.getTime();
-      this.logger.info(`✓ Cycle completed in ${cycleDuration}ms (GPT-5.2)`);
+      this.logger.info(`✓ Cycle completed in ${cycleDuration}ms (GPT-5.5)`);
 
       // Closer-status snapshot — primary signal for watching the doneWhen
       // primitive actually close goals after the 2026-04-17 migration.
@@ -3430,6 +3493,7 @@ class Orchestrator {
     } finally {
       // Phase A: Always cancel cycle timeout (success or failure)
       try { this.timeoutManager.cancelCycleTimer(); } catch (e) { /* best-effort */ }
+      try { if (cycleHeartbeatTimer) clearInterval(cycleHeartbeatTimer); } catch (e) { /* best-effort */ }
 
       // Full-Loop Enforcer — MANDATORY: fills any missing stage receipts with
       // no_change_detected fallbacks so every cycle closes with all 5 stages.
@@ -3586,7 +3650,7 @@ class Orchestrator {
   }
 
   /**
-   * Deep sleep with GPT-5.2 enhanced processing
+   * Deep sleep with GPT-5.5 enhanced processing
    * Returns: { consolidated: boolean, deferred: boolean, reason: string, nextAvailableIn: string }
    */
   async performDeepSleepConsolidation() {
@@ -3615,11 +3679,11 @@ class Orchestrator {
     
     this.logger.info('');
     this.logger.info('╔═══════════════════════════════════════════════════╗');
-    this.logger.info('║     DEEP SLEEP CONSOLIDATION (GPT-5.2)          ║');
+    this.logger.info('║     DEEP SLEEP CONSOLIDATION (GPT-5.5)          ║');
     this.logger.info('╚═══════════════════════════════════════════════════╝');
     
-    // 1. Summarize with GPT-5.2 extended reasoning
-    this.logger.info('📚 Summarizing with GPT-5.2 extended reasoning...');
+    // 1. Summarize with GPT-5.5 extended reasoning
+    this.logger.info('📚 Summarizing with GPT-5.5 extended reasoning...');
     if (this.journal.length > this.lastSummarization) {
       const summary = await this.summarizer.summarizeRecentThoughts(
         this.journal,
@@ -3642,7 +3706,7 @@ class Orchestrator {
 
           this.lastSummarization = this.journal.length;
           
-          this.logger.info('✓ Memory summarized (GPT-5.2)', {
+          this.logger.info('✓ Memory summarized (GPT-5.5)', {
             entries: summary.sourceEntries,
             topics: summary.topics,
             model: summary.model
@@ -3655,8 +3719,8 @@ class Orchestrator {
       }
     }
 
-    // 2. Consolidate with GPT-5.2 deep reasoning
-    this.logger.info('🔗 Consolidating with GPT-5.2 deep reasoning...');
+    // 2. Consolidate with GPT-5.5 deep reasoning
+    this.logger.info('🔗 Consolidating with GPT-5.5 deep reasoning...');
     const consolidations = await this.summarizer.consolidateMemories(this.memory);
     
     if (consolidations.length > 0) {
@@ -3669,7 +3733,7 @@ class Orchestrator {
             'consolidated'
           );
           
-          this.logger.info('✓ Consolidated (GPT-5.2)', {
+          this.logger.info('✓ Consolidated (GPT-5.5)', {
             sourceNodes: cons.sourceNodes.length,
             hasReasoning: Boolean(cons.reasoning),
             concept: consolidationValidation.content.substring(0, 60)
@@ -3687,7 +3751,7 @@ class Orchestrator {
     this.lastConsolidation = new Date();
 
     // 3. Analyze journal for goals with GPT-5
-    this.logger.info('🎯 Analyzing for goals (GPT-5.2 extended reasoning)...');
+    this.logger.info('🎯 Analyzing for goals (GPT-5.5 extended reasoning)...');
     const journalGoals = await this.goalCapture.analyzeJournalForGoals(this.journal);
     
     for (const goal of journalGoals) {
@@ -3697,7 +3761,7 @@ class Orchestrator {
         
         const newGoal = this.goals.addGoal({
           description: goal.text,
-          reason: goal.reason || 'GPT-5.2 sleep analysis',
+          reason: goal.reason || 'GPT-5.5 sleep analysis',
           uncertainty: priorityValue,
           source: 'sleep_analysis_gpt5'
         });
@@ -3722,11 +3786,11 @@ class Orchestrator {
     }
 
     if (journalGoals.length > 0) {
-      this.logger.info('✓ Goals identified (GPT-5.2)', { count: journalGoals.length });
+      this.logger.info('✓ Goals identified (GPT-5.5)', { count: journalGoals.length });
     }
 
-    // 4. DREAM MODE with GPT-5.2 high creativity
-    this.logger.info('💭 Entering dream mode (GPT-5.2)...');
+    // 4. DREAM MODE with GPT-5.5 high creativity
+    this.logger.info('💭 Entering dream mode (GPT-5.5)...');
     this.temporal.enterDreamMode();
     
     // Use custom dream count if in dream mode, otherwise 2-3 random
@@ -3738,7 +3802,7 @@ class Orchestrator {
       
       try {
         const dreamThought = await this.quantum.singleReasoning(dreamPrompt, {
-          // GPT-5.2 doesn't support temperature parameter
+          // GPT-5.5 doesn't support temperature parameter
         });
 
         this.logger.info(`  Dream ${i + 1} (${dreamThought.model}):`, {
@@ -3777,7 +3841,7 @@ class Orchestrator {
             // AUDIT: Attach dream metadata for traceability
             const newGoal = this.goals.addGoal({
               description: dg.text,
-              reason: 'Emerged from GPT-5.2 dream state',
+              reason: 'Emerged from GPT-5.5 dream state',
               uncertainty: 0.6,
               source: 'dream_gpt5',
               metadata: {
@@ -3835,7 +3899,7 @@ class Orchestrator {
     }
 
     this.temporal.exitDreamMode();
-    this.logger.info('✓ Dream mode complete (GPT-5.2)');
+    this.logger.info('✓ Dream mode complete (GPT-5.5)');
 
     // 5. Memory cleanup
     this.logger.info('🗑️  Memory cleanup...');
@@ -3866,7 +3930,7 @@ class Orchestrator {
 
     this.logger.info('');
     this.logger.info('╔═══════════════════════════════════════════════════╗');
-    this.logger.info('║   DEEP SLEEP CONSOLIDATION COMPLETE (GPT-5.2)   ║');
+    this.logger.info('║   DEEP SLEEP CONSOLIDATION COMPLETE (GPT-5.5)   ║');
     this.logger.info('╚═══════════════════════════════════════════════════╝');
     this.logger.info('');
 
@@ -3954,7 +4018,7 @@ class Orchestrator {
   }
 
   async performSummarization() {
-    this.logger.info('📚 Summarizing (GPT-5.2 extended reasoning)...');
+    this.logger.info('📚 Summarizing (GPT-5.5 extended reasoning)...');
 
     const summary = await this.summarizer.summarizeRecentThoughts(
       this.journal,
@@ -3972,7 +4036,7 @@ class Orchestrator {
 
         this.lastSummarization = this.journal.length;
 
-        this.logger.info('Summary created (GPT-5.2)', {
+        this.logger.info('Summary created (GPT-5.5)', {
           entries: summary.sourceEntries,
           topics: summary.topics,
           hasReasoning: Boolean(summary.reasoning),
@@ -3989,7 +4053,7 @@ class Orchestrator {
   }
 
   async performMemoryConsolidation() {
-    this.logger.info('🔗 Consolidating (GPT-5.2 deep reasoning)...');
+    this.logger.info('🔗 Consolidating (GPT-5.5 deep reasoning)...');
 
     const consolidations = await this.summarizer.consolidateMemories(this.memory, 0.75);
 
@@ -4015,7 +4079,7 @@ class Orchestrator {
     this.lastConsolidation = new Date();
 
     if (validCount > 0) {
-      this.logger.info('Consolidation complete (GPT-5.2)', {
+      this.logger.info('Consolidation complete (GPT-5.5)', {
         created: validCount,
         skipped: consolidations.length - validCount
       });
@@ -4023,7 +4087,7 @@ class Orchestrator {
   }
 
   async performReflection() {
-    this.logger.info('🔍 Reflecting (GPT-5.2 meta-analysis)...');
+    this.logger.info('🔍 Reflecting (GPT-5.5 meta-analysis)...');
 
     const analysis = await this.reflection.analyzeJournal(this.journal);
     
@@ -4037,7 +4101,7 @@ class Orchestrator {
       const insights = this.reflection.getMetaCognitiveInsights();
       
       for (const insight of insights) {
-        this.logger.info('Insight (GPT-5.2)', { 
+        this.logger.info('Insight (GPT-5.5)', { 
           type: insight.type, 
           message: insight.message 
         });
@@ -4474,7 +4538,7 @@ class Orchestrator {
       });
       
       // Use Meta-Coordinator to create intelligent mission specs
-      // (It uses GPT-5.2 to select appropriate agent type for each goal)
+      // (It uses GPT-5.5 to select appropriate agent type for each goal)
       const missionSpecs = await this.coordinator.createMissionSpecs(
         goals,
         this.cycleCount,
@@ -5965,6 +6029,50 @@ class Orchestrator {
     }
   }
 
+  async _logThoughtJournalFreshnessMarker({ roleId = null, reason = 'discarded', preview = '' } = {}) {
+    try {
+      const entry = {
+        cycle: this.cycleCount,
+        role: 'journal_freshness',
+        thought: `Cycle ${this.cycleCount} produced a ${roleId || 'unknown'} candidate that was discarded by guardrails (${reason}); cognition is still active.`,
+        reasoning: null,
+        goal: null,
+        surprise: 0,
+        cognitiveState: { ...this.stateModulator.getState() },
+        oscillatorMode: this.oscillator.getCurrentMode(),
+        perturbation: null,
+        tunnel: false,
+        goalsAutoCaptured: 0,
+        usedWebSearch: false,
+        temporalContext: this.currentTemporalContext,
+        discardedRole: roleId,
+        discardReason: reason,
+        discardedPreview: String(preview || '').slice(0, 220),
+        model: 'internal',
+        timestamp: new Date(),
+      };
+      this.journal.push(entry);
+      await this.logThought(entry);
+      cosmoEvents.emitThought({
+        cycle: this.cycleCount,
+        thought: entry.thought,
+        role: entry.role,
+        surprise: 0,
+        model: 'internal',
+        reasoning: null,
+        usedWebSearch: false,
+        temporalContext: this.currentTemporalContext,
+      });
+      this.logger?.info?.('[thoughts-flowing] guardrail discard wrote freshness row', {
+        cycle: this.cycleCount,
+        discardedRole: roleId,
+        reason,
+      });
+    } catch (error) {
+      this.logger?.warn?.('[thoughts-flowing] guardrail freshness marker failed', { error: error.message });
+    }
+  }
+
   _thoughtLooksOperational(text) {
     const s = String(text || '').toLowerCase();
     if (!s) return false;
@@ -6165,6 +6273,7 @@ class Orchestrator {
 
     // Save evaluation metrics
     if (this.evaluation) {
+      this.evaluation.reconcileGoalState?.(this.goals.export());
       await this.evaluation.save();
     }
     
@@ -6353,7 +6462,7 @@ class Orchestrator {
         }
       }
 
-      this.logger.info('State saved (GPT-5.2)', {
+      this.logger.info('State saved (GPT-5.5)', {
         cycle: this.cycleCount,
         nodesWithEmbeddings,
         totalNodes,
@@ -6380,11 +6489,24 @@ class Orchestrator {
       // so the loader can validate integrity.
       try {
         const { writeSnapshot } = require('./brain-snapshot');
+        const countGoalEntries = (entries) => {
+          if (!entries) return 0;
+          if (Array.isArray(entries)) return entries.length;
+          if (entries instanceof Map) return entries.size;
+          if (typeof entries === 'object') return Object.keys(entries).length;
+          return 0;
+        };
+        const goalCounts = {
+          active: countGoalEntries(state.goals?.active),
+          completed: countGoalEntries(state.goals?.completed),
+          archived: countGoalEntries(state.goals?.archived),
+        };
         writeSnapshot(this.logsDir, {
           savedAt: new Date().toISOString(),
           cycle: this.cycleCount,
           nodeCount: totalNodes,
           edgeCount: expectedEdges,
+          goalCounts,
           fileSize: saveResult.size || 0,
           memorySource: sidecarsWritten ? 'sidecar' : 'inline',
           ...(sidecarsWritten && {
@@ -6759,7 +6881,7 @@ class Orchestrator {
           }
 
           const nodesWithEmbeddings = Array.from(this.memory.nodes.values()).filter(n => n.embedding).length;
-          this.logger.info('Memory loaded (GPT-5.2)', {
+          this.logger.info('Memory loaded (GPT-5.5)', {
             nodes: this.memory.nodes.size,
             edges: this.memory.edges.size,
             clusters: this.memory.clusters.size,
@@ -6863,7 +6985,7 @@ class Orchestrator {
         this.webSearchCount = state.gpt5Stats.webSearchCount || 0;
       }
 
-      this.logger.info('State loaded (GPT-5.2)', {
+      this.logger.info('State loaded (GPT-5.5)', {
         cycle: this.cycleCount,
         journalSize: this.journal.length,
         memoryNodes: this.memory.nodes.size,
@@ -7313,7 +7435,7 @@ class Orchestrator {
   }
 
   async stop() {
-    this.logger.info('Stopping GPT-5.2 system...');
+    this.logger.info('Stopping GPT-5.5 system...');
     this.running = false;
 
     if (this.liveProblems) {
@@ -7373,7 +7495,7 @@ class Orchestrator {
       await this.saveState();
     }
     
-    this.logger.info('GPT-5.2 system stopped');
+    this.logger.info('GPT-5.5 system stopped');
   }
 
   determineReviewRole(plan) {

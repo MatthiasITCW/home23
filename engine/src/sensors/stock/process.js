@@ -16,6 +16,7 @@ function poll() {
         heapUsedMB: mb(mem.heapUsed),
         heapTotalMB: mb(mem.heapTotal),
         rssMB: mb(mem.rss),
+        rss_mb: mb(mem.rss),
         externalMB: mb(mem.external),
         uptimeSeconds: Math.floor(uptime),
         uptimeString: formatDuration(uptime),

@@ -10,42 +10,61 @@ const BUILTIN_MODEL_CATALOG = {
     openai: {
       label: 'OpenAI',
       models: [
+        { id: 'gpt-5.5', label: 'GPT-5.5', kind: 'chat' },
+        { id: 'gpt-5.5-pro', label: 'GPT-5.5 Pro', kind: 'chat' },
+        { id: 'gpt-5.4', label: 'GPT-5.4', kind: 'chat' },
         { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini', kind: 'chat' },
         { id: 'gpt-5.4-nano', label: 'GPT-5.4 nano', kind: 'chat' },
-        { id: 'gpt-5.2', label: 'GPT-5.2', kind: 'chat' },
-        { id: 'gpt-5-mini', label: 'GPT-5 mini', kind: 'chat' },
-        { id: 'gpt-4o', label: 'GPT-4o', kind: 'chat' },
-        { id: 'gpt-4o-mini', label: 'GPT-4o mini', kind: 'chat' },
         { id: 'text-embedding-3-small', label: 'text-embedding-3-small', kind: 'embedding' }
       ]
     },
     'ollama-cloud': {
       label: 'Ollama Cloud',
       models: [
-        { id: 'qwen3.5:397b', label: 'Qwen 3.5 397B', kind: 'chat' },
+        { id: 'gpt-oss:120b', label: 'GPT OSS 120B', kind: 'chat' },
+        { id: 'gpt-oss:20b', label: 'GPT OSS 20B', kind: 'chat' },
         { id: 'kimi-k2.6', label: 'Kimi K2.6', kind: 'chat' },
-        { id: 'nemotron-3-super', label: 'Nemotron 3 Super 120B', kind: 'chat' },
-        { id: 'minimax-m2.7', label: 'Minimax M2.7', kind: 'chat' },
+        { id: 'kimi-k2.5', label: 'Kimi K2.5', kind: 'chat' },
+        { id: 'kimi-k2-thinking', label: 'Kimi K2 Thinking', kind: 'chat' },
+        { id: 'kimi-k2:1t', label: 'Kimi K2 1T', kind: 'chat' },
+        { id: 'gemma4:31b', label: 'Gemma 4 31B', kind: 'chat' },
+        { id: 'glm-5.1', label: 'GLM-5.1', kind: 'chat' },
         { id: 'glm-5', label: 'GLM-5 744B', kind: 'chat' },
+        { id: 'glm-4.7', label: 'GLM-4.7', kind: 'chat' },
+        { id: 'glm-4.6', label: 'GLM-4.6', kind: 'chat' },
+        { id: 'qwen3.5:397b', label: 'Qwen 3.5 397B', kind: 'chat' },
+        { id: 'qwen3-coder:480b', label: 'Qwen 3 Coder 480B', kind: 'chat' },
         { id: 'qwen3-coder-next', label: 'Qwen 3 Coder Next', kind: 'chat' },
         { id: 'qwen3-next:80b', label: 'Qwen 3 Next 80B', kind: 'chat' },
-        { id: 'mistral-large-3:675b', label: 'Mistral Large 3 675B', kind: 'chat' },
-        { id: 'deepseek-v3.2', label: 'DeepSeek V3.2', kind: 'chat' },
         { id: 'qwen3-vl:235b', label: 'Qwen 3 VL 235B', kind: 'chat' },
-        { id: 'devstral-small-2:24b', label: 'Devstral Small 2 24B', kind: 'chat' },
+        { id: 'qwen3-vl:235b-instruct', label: 'Qwen 3 VL 235B Instruct', kind: 'chat' },
+        { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', kind: 'chat' },
+        { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', kind: 'chat' },
+        { id: 'deepseek-v3.2', label: 'DeepSeek V3.2', kind: 'chat' },
+        { id: 'deepseek-v3.1:671b', label: 'DeepSeek V3.1 671B', kind: 'chat' },
+        { id: 'nemotron-3-super', label: 'Nemotron 3 Super 120B', kind: 'chat' },
         { id: 'nemotron-3-nano:30b', label: 'Nemotron 3 Nano 30B', kind: 'chat' },
+        { id: 'mistral-large-3:675b', label: 'Mistral Large 3 675B', kind: 'chat' },
         { id: 'ministral-3:14b', label: 'Ministral 3 14B', kind: 'chat' },
+        { id: 'ministral-3:8b', label: 'Ministral 3 8B', kind: 'chat' },
+        { id: 'ministral-3:3b', label: 'Ministral 3 3B', kind: 'chat' },
+        { id: 'devstral-2:123b', label: 'Devstral 2 123B', kind: 'chat' },
+        { id: 'devstral-small-2:24b', label: 'Devstral Small 2 24B', kind: 'chat' },
+        { id: 'minimax-m2.7', label: 'Minimax M2.7', kind: 'chat' },
         { id: 'minimax-m2.5', label: 'Minimax M2.5', kind: 'chat' },
+        { id: 'minimax-m2.1', label: 'Minimax M2.1', kind: 'chat' },
+        { id: 'minimax-m2', label: 'Minimax M2', kind: 'chat' },
+        { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', kind: 'chat' },
+        { id: 'cogito-2.1:671b', label: 'Cogito 2.1 671B', kind: 'chat' },
         { id: 'rnj-1:8b', label: 'Rnj-1 8B', kind: 'chat' }
       ]
     },
     anthropic: {
       label: 'Anthropic',
       models: [
-        { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', kind: 'chat' },
-        { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', kind: 'chat' },
-        { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', kind: 'chat' },
-        { id: 'claude-opus-4-5', label: 'Claude Opus 4.5', kind: 'chat' }
+        { id: 'claude-sonnet-4-7', label: 'Claude Sonnet 4.7', kind: 'chat' },
+        { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', kind: 'chat' },
+        { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', kind: 'chat' }
       ]
     },
     minimax: {
@@ -63,21 +82,21 @@ const BUILTIN_MODEL_CATALOG = {
     xai: {
       label: 'xAI',
       models: [
+        { id: 'grok-4.3', label: 'Grok 4.3', kind: 'chat' },
         { id: 'grok-4.20-0309-reasoning', label: 'Grok 4.20 Reasoning', kind: 'chat' },
         { id: 'grok-4.20-0309-non-reasoning', label: 'Grok 4.20 Non-Reasoning', kind: 'chat' },
-        { id: 'grok-4.20-multi-agent', label: 'Grok 4.20 Multi-Agent', kind: 'responses' },
-        { id: 'grok-4-1-fast-reasoning', label: 'Grok 4.1 Fast Reasoning', kind: 'chat' },
-        { id: 'grok-4-1-fast-non-reasoning', label: 'Grok 4.1 Fast Non-Reasoning', kind: 'chat' },
-        { id: 'grok-code-fast-1', label: 'Grok Code Fast 1', kind: 'chat' },
-        { id: 'grok-2', label: 'Grok 2', kind: 'chat' }
+        { id: 'grok-4.20-multi-agent-0309', label: 'Grok 4.20 Multi-Agent', kind: 'responses' }
       ]
     },
     'openai-codex': {
       label: 'OpenAI Codex',
       models: [
-        { id: 'gpt-5.2', label: 'GPT-5.2', kind: 'chat' },
+        { id: 'gpt-5.5', label: 'GPT-5.5', kind: 'chat' },
+        { id: 'gpt-5.5-pro', label: 'GPT-5.5 Pro', kind: 'chat' },
         { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', kind: 'chat' },
-        { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark', kind: 'chat' }
+        { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark', kind: 'chat' },
+        { id: 'gpt-5.4', label: 'GPT-5.4', kind: 'chat' },
+        { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', kind: 'chat' }
       ]
     }
   },
@@ -85,9 +104,9 @@ const BUILTIN_MODEL_CATALOG = {
     queryModel: 'MiniMax-M2.7',
     pgsSweepModel: 'MiniMax-M2.7',
     launch: {
-      primary: 'MiniMax-M2.7',
+      primary: 'gpt-5.5',
       fast: 'nemotron-3-nano:30b',
-      strategic: 'kimi-k2.6'
+      strategic: 'gpt-5.5-pro'
     },
     embeddings: {
       provider: 'openai',
@@ -358,8 +377,17 @@ function inferProviderFromModel(modelId, catalog = null) {
     lowered.startsWith('cogito') ||
     lowered.startsWith('minimax') ||
     lowered.startsWith('devstral') ||
+    lowered.startsWith('deepseek-v4') ||
     lowered.startsWith('gpt-oss') ||
-    lowered.startsWith('glm-')
+    lowered.startsWith('glm-') ||
+    lowered.startsWith('gemma4') ||
+    lowered.startsWith('mistral-large') ||
+    lowered.startsWith('ministral') ||
+    lowered.startsWith('qwen3.5') ||
+    lowered.startsWith('qwen3-coder') ||
+    lowered.startsWith('qwen3-next') ||
+    lowered.startsWith('qwen3-vl') ||
+    lowered.startsWith('rnj-')
   ) {
     return 'ollama-cloud';
   }

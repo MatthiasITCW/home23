@@ -28,7 +28,7 @@ class ConsistencyAgent extends BaseAgent {
     const analysisPrompt = this.buildPrompt();
 
     const response = await this.gpt5.generateFast({
-      model: 'gpt-5-mini',
+      model: 'gpt-5.4-mini',
       instructions: 'Assess agreement among branch hypotheses and highlight conflicts. Provide concise recommendations.',
       messages: [{ role: 'user', content: analysisPrompt }],
       maxTokens: 2000, // Increased from 800 - consistency checks need space for thorough analysis

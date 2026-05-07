@@ -1144,7 +1144,7 @@ function appendToolCard(name, args, status, containerId) {
   if (args) {
     try {
       argsPreview = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
-      if (argsPreview.length > 200) argsPreview = argsPreview.slice(0, 200) + '...';
+      if (argsPreview.length > 1200) argsPreview = argsPreview.slice(0, 1200) + '\n... [input truncated]';
     } catch { argsPreview = String(args); }
   }
 
@@ -1175,7 +1175,7 @@ function updateToolCard(name, result, success) {
     const resultEl = card.querySelector('.h23-chat-tool-result');
     if (resultEl) {
       let text = typeof result === 'string' ? result : JSON.stringify(result);
-      if (text.length > 300) text = text.slice(0, 300) + '...';
+      if (text.length > 4000) text = text.slice(0, 4000) + '\n... [result truncated]';
       resultEl.textContent = text;
     }
   }

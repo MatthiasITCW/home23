@@ -633,7 +633,7 @@ IMPORTANT: Ensure your document has a proper conclusion. Do not stop mid-section
             content: prompt
           }
         ],
-        temperature: 0.8,  // Note: Ignored by GPT-5.2 Responses API (model controls sampling)
+        temperature: 0.8,  // Note: Ignored by GPT-5.5 Responses API (model controls sampling)
         max_tokens: 12000  // Maps to max_output_tokens in API payload
       });
       
@@ -650,7 +650,7 @@ IMPORTANT: Ensure your document has a proper conclusion. Do not stop mid-section
       
       // Validate response
       if (!response || !response.content || typeof response.content !== 'string') {
-        throw new Error('Invalid GPT-5.2 response - no content generated');
+        throw new Error('Invalid GPT-5.5 response - no content generated');
       }
       
       // CRITICAL: Check if response was incomplete/truncated
@@ -666,7 +666,7 @@ IMPORTANT: Ensure your document has a proper conclusion. Do not stop mid-section
       }
       
       if (response.content.length < 200) {
-        this.logger.warn('⚠️  GPT-5.2 generated very short content', {
+        this.logger.warn('⚠️  GPT-5.5 generated very short content', {
           contentLength: response.content.length,
           memoryNodes: allContext.length
         });
@@ -683,15 +683,15 @@ IMPORTANT: Ensure your document has a proper conclusion. Do not stop mid-section
         }
       };
     } catch (error) {
-      this.logger.warn('GPT-5.2 generation failed, using fallback compilation', {
+      this.logger.warn('GPT-5.5 generation failed, using fallback compilation', {
         error: error.message,
         memoryNodes: allContext.length
       });
       
-      // FALLBACK: When GPT-5.2 fails, compile memory content directly
+      // FALLBACK: When GPT-5.5 fails, compile memory content directly
       // This prevents saving error messages as documents
       let fallbackContent = `# ${spec.title}\n\n`;
-      fallbackContent += `*Auto-compiled from COSMO memory (GPT-5.2 unavailable)*\n\n`;
+      fallbackContent += `*Auto-compiled from COSMO memory (GPT-5.5 unavailable)*\n\n`;
       fallbackContent += `## Summary\n\n`;
       fallbackContent += `Based on ${allContext.length} memory nodes about ${spec.missionDescription?.substring(0, 80) || spec.title}:\n\n`;
       
@@ -875,7 +875,7 @@ IMPORTANT: Ensure your document has a proper conclusion. Do not stop mid-section
           }
         ],
         temperature: 0.7,
-        max_tokens: 12000 // Leave headroom so GPT-5.2 completes naturally, not truncates
+        max_tokens: 12000 // Leave headroom so GPT-5.5 completes naturally, not truncates
       });
 
       // Check for incomplete response
@@ -1205,7 +1205,7 @@ Be brilliant, surprising, and multi-dimensional.`;
             }
           ],
           temperature: 1.0,  // Maximum creativity
-          max_tokens: 12000  // Leave headroom so GPT-5.2 completes naturally, not truncates
+          max_tokens: 12000  // Leave headroom so GPT-5.5 completes naturally, not truncates
         });
         
         branches.push({
@@ -1235,7 +1235,7 @@ Be brilliant, surprising, and multi-dimensional.`;
 
   /**
    * Select best creative branch or synthesize from multiple branches
-   * Uses GPT-5.2 to evaluate quality and potentially combine best elements
+   * Uses GPT-5.5 to evaluate quality and potentially combine best elements
    */
   async selectBestCreativeBranch(branches, spec) {
     if (branches.length === 1) {
@@ -1274,7 +1274,7 @@ Your response:`
           }
         ],
         temperature: 0.8,  // Slightly lower for evaluation, still creative
-        max_tokens: 12000  // Leave headroom so GPT-5.2 completes naturally, not truncates
+        max_tokens: 12000  // Leave headroom so GPT-5.5 completes naturally, not truncates
       });
       
       // Parse response - either selected branch or synthesis
@@ -1959,7 +1959,7 @@ Your response:`
           }
         ],
         temperature: 0.7,
-        max_tokens: 12000 // Leave headroom so GPT-5.2 completes naturally, not truncates
+        max_tokens: 12000 // Leave headroom so GPT-5.5 completes naturally, not truncates
       });
 
       return {
@@ -2135,7 +2135,7 @@ Generate the section content now:`;
           }
         ],
         temperature: 0.7,
-        max_tokens: 12000 // Leave headroom so GPT-5.2 completes naturally, not truncates
+        max_tokens: 12000 // Leave headroom so GPT-5.5 completes naturally, not truncates
       });
 
       return {

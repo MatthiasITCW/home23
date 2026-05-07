@@ -93,8 +93,8 @@ class QueryEngine {
     this.embeddingsCache = path.join(runtimeDir, 'embeddings-cache.json');
     this.exportsDir = path.join(runtimeDir, 'exports');
     this.modelDefaults = {
-      queryModel: process.env.COSMO_QUERY_MODEL || 'gpt-5.2',
-      pgsSweepModel: process.env.COSMO_PGS_SWEEP_MODEL || process.env.PGS_SWEEP_MODEL || 'claude-sonnet-4-6'
+      queryModel: process.env.COSMO_QUERY_MODEL || 'claude-sonnet-4-7',
+      pgsSweepModel: process.env.COSMO_PGS_SWEEP_MODEL || process.env.PGS_SWEEP_MODEL || 'claude-sonnet-4-7'
     };
     
     // OpenAI is optional - only needed for semantic search embeddings
@@ -362,7 +362,7 @@ class QueryEngine {
 
     // Minimal technical metadata
     summaryInputParts.push('# TECHNICAL METADATA\n');
-    summaryInputParts.push(`Model: ${safeMetadata.model || 'gpt-5.2'}\n`);
+    summaryInputParts.push(`Model: ${safeMetadata.model || 'unknown'}\n`);
     summaryInputParts.push(`Mode: ${safeMetadata.mode || 'unknown'}\n`);
     if (safeMetadata.sources) {
       summaryInputParts.push(
@@ -419,7 +419,7 @@ STYLE:
 `.trim();
 
     const response = await this.gpt5Client.generate({
-      model: 'gpt-5.2',
+      model: process.env.COSMO_EXECUTIVE_MODEL || 'gpt-5.4-mini',
       instructions,
       input,
       reasoningEffort: 'medium',
@@ -432,9 +432,9 @@ STYLE:
     return {
       style: 'executive',
       text: executiveText,
-      model: response.model || 'gpt-5.2',
+      model: response.model || process.env.COSMO_EXECUTIVE_MODEL || 'gpt-5.4-mini',
       base: {
-        model: safeMetadata.model || 'gpt-5.2',
+        model: safeMetadata.model || 'unknown',
         mode: safeMetadata.mode || null,
         timestamp: safeMetadata.timestamp || null
       }
@@ -1258,27 +1258,33 @@ STYLE:
    * Used to safely increase node coverage without exceeding token limits.
    */
   static MODEL_CONTEXT_WINDOWS = {
-    'gpt-5.2': 128000,
+    'gpt-5.5': 128000,
+    'gpt-5.5-pro': 128000,
+    'gpt-5.4': 128000,
+    'gpt-5.4-mini': 128000,
+    'gpt-5.4-nano': 128000,
+    'gpt-5.3-codex': 128000,
+    'gpt-5.3-codex-spark': 128000,
     'gpt-5': 128000,
-    'gpt-5.1': 128000,
-    'gpt-5-mini': 128000,
-    'gpt-5.1-codex-max': 128000,
-    'claude-opus-4-5': 200000,  // Conservative estimate for Opus 4.5
+    'claude-opus-4-7': 200000,
     'claude-opus': 200000,
-    'claude-sonnet-4-5': 128000,
+    'claude-sonnet-4-7': 128000,
     'claude-sonnet': 128000,
     'default': 128000
   };
 
   static MODEL_MAX_NODES = {
-    'gpt-5.2': 3000,       // 128K context, proven model
+    'gpt-5.5': 3400,
+    'gpt-5.5-pro': 3600,
+    'gpt-5.4': 3200,
+    'gpt-5.4-mini': 2600,
+    'gpt-5.4-nano': 2200,
+    'gpt-5.3-codex': 3000,
+    'gpt-5.3-codex-spark': 2600,
     'gpt-5': 3000,         // 128K context, max reasoning
-    'gpt-5.1': 3000,       // 128K context
-    'gpt-5-mini': 2500,    // 128K but smaller model, more conservative
-    'gpt-5.1-codex-max': 3000,
-    'claude-opus-4-5': 4000,  // ~200K context, excellent for large brains
+    'claude-opus-4-7': 4200,
     'claude-opus': 4000,
-    'claude-sonnet-4-5': 2800,  // 128K context
+    'claude-sonnet-4-7': 3000,
     'claude-sonnet': 2800,
     'default': 2500
   };
@@ -1301,7 +1307,7 @@ STYLE:
     const startTime = Date.now(); // Performance tracking
 
     const {
-      model: requestedModel = 'gpt-5.2',  // Default to gpt-5.2
+      model: requestedModel = this.modelDefaults?.queryModel || 'claude-sonnet-4-7',
       mode = 'normal',
       exportFormat = null,
       // NEW: Enhancement options (all opt-in)
@@ -1314,12 +1320,12 @@ STYLE:
       priorContext = null, // NEW: For follow-up queries - includes prior query and answer
       onChunk = null // NEW (2026-01-21): Optional streaming callback
     } = options;
-    const model = getModelId(requestedModel) || 'gpt-5.2';
+    const model = getModelId(requestedModel) || this.modelDefaults?.queryModel || 'claude-sonnet-4-7';
     
     // Validate model - GPT-5 and Claude models supported
     const isClaudeModel = model.startsWith('claude');
     if (!model.includes('gpt-5') && !isClaudeModel) {
-      throw new Error(`Model ${model} not supported. Supported models: GPT-5 family (gpt-5.2, gpt-5-mini) and Claude (claude-opus-4-5, claude-sonnet-4-5).`);
+      throw new Error(`Model ${model} not supported. Supported models: GPT-5.5/GPT-5.4 family and Claude 4.7.`);
     }
     
     // EXECUTIVE MODE SPECIAL CASE: Compress existing answer, don't re-query brain
@@ -1605,11 +1611,16 @@ STYLE:
     }
     
     const answer = response.content || response.message?.content || '';
+    if (response?.hadError || /^\[Error:/i.test(String(answer || '').trim())) {
+      const providerLabel = isClaudeModel ? 'Anthropic' : 'GPT-5';
+      const reason = response?.errorType || String(answer || '').slice(0, 200) || 'empty error response';
+      throw new Error(`${providerLabel} returned unusable query content from ${model}: ${reason}`);
+    }
     
     if (!answer) {
-      console.error('[QUERY ENGINE] No content received from GPT-5.2');
+      console.error(`[QUERY ENGINE] No content received from ${model}`);
       console.error('[QUERY ENGINE] Response:', JSON.stringify(response, null, 2));
-      throw new Error('No content received from GPT-5.2 (response was empty)');
+      throw new Error(`No content received from ${model} (response was empty)`);
     }
     
     // Build result
@@ -1848,7 +1859,7 @@ STYLE:
     return result;
   }
 
-  buildContext(state, relevantMemory, relevantThoughts, metrics, report, mode, outputFiles = null, model = 'gpt-5.2') {
+  buildContext(state, relevantMemory, relevantThoughts, metrics, report, mode, outputFiles = null, model = 'claude-sonnet-4-7') {
     let context = `# COSMO Research State\n\n`;
     const isGrounded = mode === 'grounded';
     
@@ -2666,7 +2677,7 @@ SECTION E: Prioritize immediate next actions (design partners, pilots, validatio
    * This ensures executives get compressed views that are 100% faithful to the original answer
    */
   async executeExecutiveCompression(query, baseAnswer, options = {}) {
-    const { model = 'gpt-5.2', baseMetadata = {} } = options;
+    const { model = this.modelDefaults?.queryModel || 'claude-sonnet-4-7', baseMetadata = {} } = options;
     
     // SMART DETECTION: Determine query type to add contextual emphasis
     const queryType = this.detectQueryType(query, baseAnswer);
@@ -3047,7 +3058,20 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
     let md = `# 🧠 COSMO Query Result\n\n`;
     md += `**Query:** ${query}\n\n`;
     md += `**Timestamp:** ${metadata.timestamp || new Date().toISOString()}\n\n`;
-    md += `**Model:** ${metadata.model || 'gpt-5.2'} (${metadata.mode || 'normal'} mode)\n\n`;
+    md += `**Model:** ${metadata.model || 'unknown'} (${metadata.mode || 'normal'} mode)\n\n`;
+    if (metadata.mode === 'pgs' && metadata.pgs) {
+      const pgs = metadata.pgs;
+      md += `**PGS:** ${pgs.successfulSweeps || 0}/${pgs.sweptPartitions || 0} sweeps successful`;
+      if (pgs.failedSweeps) md += `, ${pgs.failedSweeps} failed`;
+      md += ` across ${pgs.totalPartitions || '?'} partitions`;
+      if (pgs.sweepModel || pgs.synthesisModel) {
+        md += ` (${pgs.sweepModel || '?'} sweep → ${pgs.synthesisModel || metadata.model || '?'} synthesis)`;
+      }
+      md += `\n\n`;
+    }
+    if (!metadata.sources) {
+      md += `> ⚠️ Export metadata did not include source counts. Treat provenance in this file as incomplete.\n\n`;
+    }
     md += `---\n\n`;
 
     // Evidence Quality Section
@@ -3243,7 +3267,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
       <div class="meta">
         <strong>Query:</strong> ${this.escapeHtml(query)}<br>
         <strong>Timestamp:</strong> ${metadata.timestamp || new Date().toISOString()}<br>
-        <strong>Model:</strong> ${metadata.model || 'gpt-5.2'} (${metadata.mode || 'normal'} mode)
+        <strong>Model:</strong> ${metadata.model || 'unknown'} (${metadata.mode || 'normal'} mode)
       </div>
     </header>`;
 
@@ -3843,7 +3867,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
    */
   async executeEnhancedQuery(query, options = {}) {
     const {
-      model: requestedModel = this.modelDefaults?.queryModel || 'gpt-5.2',
+      model: requestedModel = this.modelDefaults?.queryModel || 'claude-sonnet-4-7',
       mode = 'normal',
       exportFormat = null,
       includeFiles = true,
@@ -3863,7 +3887,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
       priorContext = null, // For follow-up queries
       onChunk = null // NEW (2026-01-21): Optional streaming callback
     } = options;
-    const model = getModelId(requestedModel) || 'gpt-5.2';
+    const model = getModelId(requestedModel) || this.modelDefaults?.queryModel || 'claude-sonnet-4-7';
     
     // PGS: Partitioned Graph Synthesis for full-coverage queries
     if (enablePGS) {

@@ -404,7 +404,7 @@ Respond in JSON format:
   }
 
   /**
-   * Get fallback structure when GPT-5.2 fails
+   * Get fallback structure when GPT-5.5 fails
    */
   getFallbackStructure() {
     return {
@@ -476,7 +476,7 @@ Write in a clear, informative style. Be substantive and specific.`;
       const response = await this.gpt5.generate({
         component: 'agents',
         purpose: 'synthesis',
-        model: this.config.models?.strategicModel || 'gpt-5.2', // Use strategic model for synthesis writing
+        model: this.config.models?.strategicModel || 'gpt-5.5', // Use strategic model for synthesis writing
         instructions: prompt,
         messages: [{ role: 'user', content: `Write section: ${section.title}` }],
         maxTokens: 16000, // Increased from 12000 to prevent truncation
@@ -687,9 +687,9 @@ Respond with JSON array:
     // Read artifact files
     const artifactContents = await this.readArtifactFiles(artifacts);
     
-    await this.reportProgress(50, 'Assembling final deliverable with GPT-5.2');
+    await this.reportProgress(50, 'Assembling final deliverable with GPT-5.5');
     
-    // Use GPT-5.2 to intelligently combine artifacts into final format
+    // Use GPT-5.5 to intelligently combine artifacts into final format
     const assembled = await this.assembleDeliverable(artifactContents, deliverableSpec);
     
     await this.reportProgress(75, 'Writing final deliverable');
@@ -857,7 +857,7 @@ Generate the complete final deliverable now:`;
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.models?.strategicModel || 'gpt-5.2',
+        model: this.config.models?.strategicModel || 'gpt-5.5',
         instructions: prompt,
         messages: [{ role: 'user', content: 'Assemble the final deliverable.' }],
         maxTokens: 16000, // Allow large output for comprehensive documents
@@ -866,13 +866,13 @@ Generate the complete final deliverable now:`;
       
       return response.content;
     } catch (error) {
-      this.logger.error('Failed to assemble deliverable with GPT-5.2', {
+      this.logger.error('Failed to assemble deliverable with GPT-5.5', {
         error: error.message
       }, 3);
       
       // Fallback: Simple concatenation with headers
       let fallback = `# ${deliverableSpec.filename}\n\n`;
-      fallback += `*Automated assembly (GPT-5.2 unavailable)*\n\n`;
+      fallback += `*Automated assembly (GPT-5.5 unavailable)*\n\n`;
       
       for (const artifact of artifactContents) {
         fallback += `\n\n## ${artifact.title}\n\n`;

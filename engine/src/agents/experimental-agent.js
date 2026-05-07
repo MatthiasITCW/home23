@@ -9,7 +9,7 @@ const crypto = require('crypto');
 /**
  * ExperimentalAgent - Local OS autonomy agent
  * 
- * Uses GPT-5.2 for planning and COSMO's LocalExecutor for actual execution
+ * Uses GPT-5.5 for planning and COSMO's LocalExecutor for actual execution
  * Enables real autonomous experimentation on the local OS
  * 
  * Safety:
@@ -114,7 +114,7 @@ class ExperimentalAgent extends BaseAgent {
         `Autonomy iteration ${iterations}`
       );
       
-      // Call GPT-5.2 with tools
+      // Call GPT-5.5 with tools
       const response = await this.gpt5.generate({
         instructions: systemPrompt,
         messages: messages,
@@ -133,7 +133,7 @@ class ExperimentalAgent extends BaseAgent {
         content: textContent
       });
       
-      this.logger.info('GPT-5.2 response received', {
+      this.logger.info('GPT-5.5 response received', {
         iteration: iterations,
         contentLength: textContent.length,
         responseId: response.responseId
@@ -141,7 +141,7 @@ class ExperimentalAgent extends BaseAgent {
       
       // Check for completion signal
       if (textContent.toLowerCase().includes('experiment complete')) {
-        this.logger.info('✅ GPT-5.2 signaled experiment completion');
+        this.logger.info('✅ GPT-5.5 signaled experiment completion');
         break;
       }
       
@@ -154,7 +154,7 @@ class ExperimentalAgent extends BaseAgent {
           hasContent: textContent.length > 0
         });
         
-        // If GPT-5.2 responded with text but no tools, continue conversation
+        // If GPT-5.5 responded with text but no tools, continue conversation
         // It might be explaining its plan before acting
         if (textContent.length > 0) {
           continue;
@@ -224,7 +224,7 @@ class ExperimentalAgent extends BaseAgent {
   }
   
   /**
-   * Extract tool calls from GPT-5.2 response
+   * Extract tool calls from GPT-5.5 response
    * Response format: response.output contains tool_use or function_call items
    */
   extractToolCalls(response) {
@@ -412,7 +412,7 @@ class ExperimentalAgent extends BaseAgent {
    */
   async storeCapabilityProvenance() {
     const capability = {
-      model: 'gpt-5.2',
+      model: 'gpt-5.5',
       limits: {
         time_sec: this.maxTime,
         actions: this.maxActions
@@ -431,7 +431,7 @@ class ExperimentalAgent extends BaseAgent {
     
     await this.addInsight(
       `Experimental execution environment initialized:\n` +
-        `Model: gpt-5.2\n` +
+        `Model: gpt-5.5\n` +
         `Time limit: ${this.maxTime}s\n` +
         `Action limit: ${this.maxActions}\n` +
         `Allowed dirs: ${this.allowedDirs.join(', ')}\n` +

@@ -733,7 +733,7 @@ Focus on business value and actionable insights FOR THE USER'S RESEARCH DOMAIN.`
         this.logger.warn('Executive summary generation failed, trying fallback', { error: error.message });
       }
       
-      // Fallback: Try with gpt-5-mini and low reasoning
+      // Fallback: Try with gpt-5.4-mini and low reasoning
       try {
         const fallbackResponse = await this.gpt5.generate({
           model: this.config.models?.curatorModel || this.config.models?.fast,
@@ -885,7 +885,7 @@ Focus on DOMAIN goal advancement and actionable next steps FOR THE USER'S RESEAR
         this.logger.warn('Goal alignment analysis failed, trying fallback', { error: error.message });
       }
       
-      // Fallback: Use gpt-5-mini
+      // Fallback: Use gpt-5.4-mini
       try {
         const fallbackResponse = await this.gpt5.generate({
           model: this.config.models?.curatorModel || this.config.models?.fast,

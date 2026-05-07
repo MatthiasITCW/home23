@@ -1,7 +1,7 @@
 /**
- * System Prompt Builder for GPT-5.2 Local Autonomy
+ * System Prompt Builder for GPT-5.5 Local Autonomy
  * 
- * Teaches GPT-5.2 how to behave as COSMO's local execution controller
+ * Teaches GPT-5.5 how to behave as COSMO's local execution controller
  */
 
 function buildAutonomySystemPrompt({ missionDescription, maxActions, maxTimeSec, allowedDirs, allowedDomains }) {

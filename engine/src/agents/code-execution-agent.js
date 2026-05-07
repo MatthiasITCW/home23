@@ -296,7 +296,7 @@ class CodeExecutionAgent extends BaseAgent {
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.models?.strategicModel || 'gpt-5.2',
+        model: this.config.models?.strategicModel || 'gpt-5.5',
         instructions: `You are planning a computational experiment to address this goal:
 
 GOAL: ${this.mission.description}
@@ -452,7 +452,7 @@ Execute the code and provide the results.`,
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.models?.strategicModel || 'gpt-5.2',
+        model: this.config.models?.strategicModel || 'gpt-5.5',
         instructions: `Analyze these code execution results and extract key insights:
 
 ORIGINAL GOAL: ${this.mission.description}
@@ -1217,7 +1217,7 @@ Execute the code and provide comprehensive test results with:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.models?.strategicModel || 'gpt-5.2',
+        model: this.config.models?.strategicModel || 'gpt-5.5',
         instructions: `You are planning a data analysis based on available memory data.
 
 MISSION: ${this.mission.description}
@@ -1392,7 +1392,7 @@ Generate Python code to analyze this data and produce results that address the m
   
   /**
    * Process and store analysis results (shared by both analysis paths)
-   * @param {Object} response - GPT-5.2 execution response
+   * @param {Object} response - GPT-5.5 execution response
    * @param {Object} dataContext - Context about what was analyzed
    * @param {string} analysisType - 'source_code' or 'generic'
    */

@@ -260,6 +260,44 @@ function getStealthHeaders() {
   };
 }
 
+function getEnvCredentials() {
+  // HOME23 PATCH: Home23 injects the current Anthropic OAuth token through PM2
+  // as ANTHROPIC_AUTH_TOKEN. Engine subprocesses inherit process.env from the
+  // cosmo23 server, so check env before falling back to cosmo23's standalone
+  // Prisma OAuth store.
+  const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  if (authToken && isOAuthToken(authToken)) {
+    return {
+      authToken,
+      defaultHeaders: getStealthHeaders(),
+      dangerouslyAllowBrowser: true,
+      isOAuth: true,
+      source: 'env'
+    };
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey && isOAuthToken(apiKey)) {
+    return {
+      authToken: apiKey,
+      defaultHeaders: getStealthHeaders(),
+      dangerouslyAllowBrowser: true,
+      isOAuth: true,
+      source: 'env'
+    };
+  }
+
+  if (apiKey && process.env.ANTHROPIC_OAUTH_ONLY !== 'true' && process.env.FORCE_ANTHROPIC_OAUTH !== 'true') {
+    return {
+      apiKey,
+      isOAuth: false,
+      source: 'env'
+    };
+  }
+
+  return null;
+}
+
 /**
  * Import token from Claude CLI (~/.claude/auth.json)
  * This is the recommended way to get OAuth tokens
@@ -439,6 +477,12 @@ async function clearToken() {
  */
 async function getAnthropicApiKey() {
   try {
+    const envCredentials = getEnvCredentials();
+    if (envCredentials) {
+      console.log(`[OAuth-Engine] Using ${envCredentials.isOAuth ? 'OAuth token' : 'API key'} from env`);
+      return envCredentials;
+    }
+
     // Try stored token first
     let stored = await getStoredToken();
 
@@ -528,6 +572,16 @@ function prepareSystemPrompt(systemPrompt, isOAuth) {
  * Check OAuth status
  */
 async function getOAuthStatus() {
+  const envCredentials = getEnvCredentials();
+  if (envCredentials) {
+    return {
+      configured: true,
+      source: envCredentials.source,
+      valid: true,
+      expiresAt: null
+    };
+  }
+
   const stored = await getStoredToken();
 
   if (!stored) {

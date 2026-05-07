@@ -34,7 +34,7 @@ function isAnthropicSamplingDeprecatedModel(model) {
  * 2. Only routes to alternatives if modelAssignments configured
  * 3. All GPT5Client methods inherited and working
  * 4. Config-driven routing - no hard-coded logic
- * 5. Safe fallback to GPT-5.2 on any error
+ * 5. Safe fallback to GPT-5.5 on any error
  * 6. MCP tools available when configured
  * 
  * Usage:
@@ -263,9 +263,9 @@ class UnifiedClient extends GPT5Client {
   }
 
   /**
-   * Get MCP servers in GPT-5.2 Responses API tool format
+   * Get MCP servers in GPT-5.5 Responses API tool format
    * Per OpenAI docs: Pass MCP servers as tools directly to GPT-5
-   * Then GPT-5.2 automatically calls tools when needed
+   * Then GPT-5.5 automatically calls tools when needed
    * 
    * @returns {Array} Array of MCP tool definitions for GPT-5
    */
@@ -281,7 +281,7 @@ class UnifiedClient extends GPT5Client {
     for (const server of servers) {
       if (!server.enabled) continue;
       
-      // Build MCP tool in GPT-5.2 Responses API format
+      // Build MCP tool in GPT-5.5 Responses API format
       const mcpTool = {
         type: 'mcp',
         server_label: server.label,
@@ -551,7 +551,7 @@ class UnifiedClient extends GPT5Client {
         options = { ...options, model: assignment.model };
       }
 
-      // Use parent implementation - exact current GPT-5.2 behavior
+      // Use parent implementation - exact current GPT-5.5 behavior
       return await super.generate(options);
     }
     
@@ -677,10 +677,9 @@ class UnifiedClient extends GPT5Client {
       throw new Error('Either input, messages, or query must be provided');
     }
     
-    // xAI reasoning effort support varies by model
-    // grok-4: Does NOT support reasoning_effort (automatic)
-    // grok-3-mini, grok-3-mini-fast: Support low/high
-    const supportsReasoningEffort = assignment.model.includes('grok-3');
+    // xAI reasoning effort support varies by model. Keep it on explicit
+    // reasoning lanes instead of sending it to every Grok 4.x model.
+    const supportsReasoningEffort = /grok-4\.20.*(?:reasoning|multi-agent)/.test(assignment.model);
     if (supportsReasoningEffort && reasoningEffort && reasoningEffort !== 'none') {
       payload.reasoning = { effort: reasoningEffort };
     }
@@ -1116,7 +1115,7 @@ class UnifiedClient extends GPT5Client {
   async generateWithWebSearch(options = {}) {
     const assignment = this.getModelAssignment(options.component, options.purpose);
     
-    // If OpenAI or no assignment -> use parent (GPT-5.2) with model override
+    // If OpenAI or no assignment -> use parent (GPT-5.5) with model override
     if (!assignment || assignment.provider === 'openai' || assignment.provider === 'openai-codex') {
       // CRITICAL: Apply model override if assignment specifies a different model
       if (assignment && assignment.model) {
@@ -1124,7 +1123,7 @@ class UnifiedClient extends GPT5Client {
         this.logger?.info('🔄 Model override applied', {
           component: options.component,
           purpose: options.purpose,
-          from: 'gpt-5-mini',
+          from: 'gpt-5.4-mini',
           to: assignment.model
         });
       }
@@ -1155,7 +1154,7 @@ class UnifiedClient extends GPT5Client {
     }
 
     // Anthropic or other -> fallback to GPT-5
-    this.logger?.warn('Web search not supported by provider, using GPT-5.2 fallback', {
+    this.logger?.warn('Web search not supported by provider, using GPT-5.5 fallback', {
       provider: assignment.provider
     });
     return await super.generateWithWebSearch(options);
@@ -1168,7 +1167,7 @@ class UnifiedClient extends GPT5Client {
   async generateWithReasoning(options = {}) {
     const assignment = this.getModelAssignment(options.component, options.purpose);
     
-    // If OpenAI or no assignment -> use parent (GPT-5.2) with model override
+    // If OpenAI or no assignment -> use parent (GPT-5.5) with model override
     if (!assignment || assignment.provider === 'openai' || assignment.provider === 'openai-codex') {
       // CRITICAL: Apply model override if assignment specifies a different model
       if (assignment && assignment.model) {

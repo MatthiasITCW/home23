@@ -315,7 +315,7 @@ class DocumentAnalysisAgent extends BaseAgent {
       alreadyProcessed: this.processedFiles.length
     });
 
-    // NOTE: GPT-5.2-with-tools approach doesn't work for local MCP servers
+    // NOTE: GPT-5.5-with-tools approach doesn't work for local MCP servers
     // OpenAI can't reach localhost from their servers (424 Failed Dependency)
     // Agent code must call MCP tools and pass results to GPT-5
     
@@ -2217,7 +2217,7 @@ class DocumentAnalysisAgent extends BaseAgent {
     const content = doc.content;
     const maxChunkSize = 3000; // ~750 tokens per chunk (safe for embedding)
     
-    // Use GPT-5.2 to extract key concepts and important sections
+    // Use GPT-5.5 to extract key concepts and important sections
     const prompt = `Extract key concepts and important content from this document.
 
 DOCUMENT: ${doc.filename}

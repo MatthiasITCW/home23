@@ -115,3 +115,36 @@ test('MemoryIngest preserves cross-agent origin on memory object and receipt', a
   assert.equal(receipt.origin.agent, 'forrest');
   assert.equal(receipt.origin.protocol, 'home23-neighbor-state');
 });
+
+test('MemoryIngest serializes concurrent bus writes through one process', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mi-concurrent-'));
+  const warnings = [];
+  const ingest = new MemoryIngest({
+    brainDir: dir,
+    logger: {
+      warn: (...args) => warnings.push(args.map(String).join(' ')),
+      error() {},
+      info() {},
+      debug() {},
+    },
+  });
+  const draft = { method: 'build_event', type: 'observation', topic: 'test', tags: ['test'] };
+  const obs = (i) => ({
+    channelId: 'test.concurrent',
+    sourceRef: `ref-${i}`,
+    receivedAt: '2026-05-04T00:00:00Z',
+    producedAt: '2026-05-04T00:00:00Z',
+    flag: 'COLLECTED',
+    confidence: 0.9,
+    payload: { i },
+  });
+
+  const results = await Promise.allSettled(
+    Array.from({ length: 80 }, (_, i) => ingest.writeFromObservation(obs(i), draft))
+  );
+
+  assert.equal(results.filter(r => r.status === 'rejected').length, 0);
+  assert.equal(warnings.filter(w => w.includes('Lock file is already being held')).length, 0);
+  const raw = JSON.parse(readFileSync(join(dir, 'memory-objects.json'), 'utf8'));
+  assert.equal(raw.objects.length, 80);
+});

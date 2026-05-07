@@ -100,7 +100,7 @@ class PathResolver {
       return logicalPath;
     }
     
-    // Strip leading 'runtime/' if present (GPT-5.2 sometimes generates "runtime/outputs/" instead of "@outputs/")
+    // Strip leading 'runtime/' if present (GPT-5.5 sometimes generates "runtime/outputs/" instead of "@outputs/")
     // This prevents double-pathing when runtimeRoot already includes runtime
     let cleanPath = logicalPath;
     if (cleanPath.startsWith('runtime/')) {

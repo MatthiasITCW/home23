@@ -44,9 +44,9 @@ function initFilesTab() {
         <div class="ai-quick-actions">
           <div class="ai-quick-actions-title">🤖 Model</div>
           <select id="filesAIModel" class="ai-quick-action-btn" style="cursor: pointer; padding: 6px 12px; width: 100%;">
-            <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Default - Fast)</option>
-            <option value="claude-opus-4-5">Claude Opus 4.5 (Most Capable)</option>
-            <option value="gpt-5.2">GPT-5.2</option>
+            <option value="claude-sonnet-4-7">Claude Sonnet 4.5 (Default - Fast)</option>
+            <option value="claude-opus-4-7">Claude Opus 4.5 (Most Capable)</option>
+            <option value="gpt-5.5">GPT-5.2</option>
           </select>
         </div>
         
@@ -211,7 +211,7 @@ async function sendFileMessage() {
     aiConversationHistory.push({ role: 'user', content: message });
     
     // Get selected model (COSMO IDE pattern - Claude Sonnet 4.5 default)
-    const selectedModel = document.getElementById('filesAIModel')?.value || 'claude-sonnet-4-5';
+    const selectedModel = document.getElementById('filesAIModel')?.value || 'claude-sonnet-4-7';
     
     const response = await fetch('/api/chat', {
       method: 'POST',

@@ -5,17 +5,32 @@
 LOG_PATH="$HOME/.pressure_log.jsonl"
 PI="jtr@jtrpi"
 SENSOR_FILE="/home/jtr/.openclaw/workspace/state/sensor-latest.json"
+API_URL="${PI_PRESSURE_API_URL:-http://jtrpi.local:8765/api/latest}"
 
-DATA=$(ssh -o ConnectTimeout=5 -o BatchMode=yes "$PI" "cat $SENSOR_FILE" 2>/dev/null)
+DATA=$(curl -s --max-time 10 "$API_URL" 2>/dev/null | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    latest=d.get('latest') or d
+    if latest.get('pressure_hpa') and not latest.get('pressure_pa'):
+        latest['pressure_pa'] = float(latest['pressure_hpa']) * 100
+    print(json.dumps(latest))
+except Exception:
+    pass
+" 2>/dev/null)
 
 if [ -z "$DATA" ]; then
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] pressure SSH read failed" >> /tmp/pressure_err.log
+  DATA=$(ssh -o ConnectTimeout=5 -o BatchMode=yes "$PI" "cat $SENSOR_FILE" 2>/dev/null)
+fi
+
+if [ -z "$DATA" ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] pressure HTTP+SSH read failed" >> /tmp/pressure_err.log
   exit 1
 fi
 
 TS=$(echo "$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ts',''))" 2>/dev/null)
 PA=$(echo "$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pressure_pa',''))" 2>/dev/null)
-INHG=$(echo "$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pressure_inhg',''))" 2>/dev/null)
+INHG=$(echo "$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pressure_inhg') or '')" 2>/dev/null)
 TEMP_C=$(echo "$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('temp_c',''))" 2>/dev/null)
 TEMP_F=$(echo "$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('temp_f',''))" 2>/dev/null)
 

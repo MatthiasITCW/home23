@@ -335,10 +335,10 @@ export const launchTool: ToolDefinition = {
       maxConcurrent: { type: 'number', description: 'Max parallel agents (default 6)' },
       primaryModel: {
         type: 'string',
-        description: 'Model for research/analysis agents (e.g., gpt-5.2)',
+        description: 'Model for research/analysis agents (e.g., gpt-5.5)',
       },
       primaryProvider: { type: 'string', description: 'openai, anthropic, xai, ollama-cloud' },
-      fastModel: { type: 'string', description: 'Model for coordinator/planner (e.g., gpt-5-mini)' },
+      fastModel: { type: 'string', description: 'Model for coordinator/planner (e.g., gpt-5.4-mini)' },
       fastProvider: { type: 'string' },
       strategicModel: { type: 'string', description: 'Model for synthesis/QA' },
       strategicProvider: { type: 'string' },

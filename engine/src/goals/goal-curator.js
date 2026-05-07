@@ -593,7 +593,7 @@ Create 2-4 meaningful campaigns. Skip goals that don't fit well.
           criteria: [{
             type: 'judged',
             criterion: `An output file exists in outputs/ that synthesizes the theme "${themeLabel.slice(0, 200)}" and contains at least 3 distinct findings drawn from the parent goals.`,
-            judgeModel: 'gpt-5-mini',
+            judgeModel: 'gpt-5.4-mini',
             judgedAt: null, judgedVerdict: null
           }]
         }

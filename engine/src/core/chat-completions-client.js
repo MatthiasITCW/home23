@@ -14,7 +14,7 @@
  * 2. Transforms Responses API format → Chat Completions format
  * 3. Transforms responses back to GPT5Client expected format
  * 4. Supports streaming for responsive output
- * 5. Model name mapping via config (gpt-5.2 → llama3.1:70b)
+ * 5. Model name mapping via config (gpt-5.5 → llama3.1:70b)
  * 6. Graceful degradation for unsupported features
  */
 
@@ -115,13 +115,13 @@ class ChatCompletionsClient {
       baseURL
     });
 
-    // Model name mapping: GPT-5.2 names → local model names
+    // Model name mapping: GPT-5.5 names → local model names
     // Can be overridden via config
     this.modelMapping = config.modelMapping || {
-      'gpt-5.2': 'llama3.1:70b',
+      'gpt-5.5': 'llama3.1:70b',
       'gpt-5': 'llama3.1:70b',
-      'gpt-5-mini': 'llama3.1:8b',
-      'gpt-5-nano': 'llama3.1:8b',
+      'gpt-5.4-mini': 'llama3.1:8b',
+      'gpt-5.4-nano': 'llama3.1:8b',
       'gpt-4o': 'llama3.1:70b',
       'gpt-4o-mini': 'llama3.1:8b'
     };
@@ -302,7 +302,7 @@ class ChatCompletionsClient {
    */
   async generate(options = {}) {
     const {
-      model = 'gpt-5.2',
+      model = this.defaultModel,
       max_output_tokens,
       maxOutputTokens,
       maxTokens,
@@ -605,7 +605,7 @@ class ChatCompletionsClient {
    * Fast generation (matches GPT5Client interface)
    */
   async generateFast(options = {}) {
-    const model = options.model || 'gpt-5-mini';
+    const model = options.model || 'gpt-5.4-mini';
     return this.generateWithRetry({
       ...options,
       model,

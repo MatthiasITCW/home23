@@ -256,7 +256,7 @@ class NoveltyValidator {
         try {
           const response = await this.withTimeout(
             this.gpt5.generate({
-              model: 'gpt-5-mini',
+              model: 'gpt-5.4-mini',
               instructions: testPrompt,
               messages: [{ role: 'user', content: 'Restate this concept briefly (2-3 sentences)' }],
               maxTokens: 1500, // Increased from 300 - novelty validation needs analysis space

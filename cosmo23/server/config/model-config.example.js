@@ -26,16 +26,16 @@ module.exports = {
   modelAssignments: {
     default: {
       provider: 'anthropic',
-      model: 'claude-sonnet-4-5'
+      model: 'claude-sonnet-4-7'
     },
     fast: {
       provider: 'ollama',
       model: 'qwen2.5-coder:7b',
-      fallback: 'anthropic/claude-sonnet-4-5'  // Use cloud if Ollama down
+      fallback: 'anthropic/claude-sonnet-4-7'  // Use cloud if Ollama down
     },
     reasoning: {
       provider: 'anthropic',
-      model: 'claude-opus-4-6'
+      model: 'claude-opus-4-7'
     }
   },
 

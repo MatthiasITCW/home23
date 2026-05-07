@@ -610,7 +610,7 @@ class GuidedModePlanner {
 
     try {
       const response = await this.client.generate({
-        model: this.config.coordinator?.model || this.config.models?.plannerModel || this.config.models?.primary || 'gpt-5-mini',
+        model: this.config.coordinator?.model || this.config.models?.plannerModel || this.config.models?.primary || 'gpt-5.4-mini',
         reasoningEffort: isLocal ? 'low' : 'medium',
         maxTokens: isLocal ? 2000 : 8000,
         messages: [

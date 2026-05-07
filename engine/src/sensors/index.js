@@ -19,6 +19,7 @@ const STOCK_MODULES = [
   require('./stock/memory'),
   require('./stock/cpu'),
   require('./stock/process'),
+  require('./stock/pm2-process'),
 ];
 
 const timers = new Map();

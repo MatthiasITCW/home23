@@ -1,7 +1,7 @@
 /**
  * Anthropic Client Adapter for COSMO Research Engine
  *
- * Translates GPT-5.2 Responses API format → Anthropic Messages API
+ * Translates GPT-5 Responses API format → Anthropic Messages API
  * Maintains compatibility with GPT5Client interface for zero breaking changes
  *
  * Key Features:
@@ -9,7 +9,7 @@
  * - Tool calling (OpenAI format → Anthropic format)
  * - Streaming responses
  * - Extended thinking (reasoning effort → extended_thinking)
- * - Web search via native web_search_20250305 tool (Claude Sonnet 4.5+)
+ * - Web search via native web_search_20250305 tool (Claude Sonnet 4.7+)
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
@@ -35,10 +35,12 @@ class AnthropicClient {
 
     // Model mapping (GPT names → Claude models)
     this.modelMapping = config.modelMapping || {
-      'gpt-5.2': 'claude-sonnet-4-5',
-      'gpt-5': 'claude-sonnet-4-5',
-      'gpt-5-mini': 'claude-sonnet-4-5',
-      'gpt-5-nano': 'claude-sonnet-4-5'
+      'gpt-5.5': 'claude-sonnet-4-7',
+      'gpt-5.5-pro': 'claude-opus-4-7',
+      'gpt-5.4': 'claude-sonnet-4-7',
+      'gpt-5.4-mini': 'claude-sonnet-4-7',
+      'gpt-5.4-nano': 'claude-haiku-4-5',
+      'gpt-5': 'claude-sonnet-4-7'
     };
 
     // Default settings
@@ -355,7 +357,7 @@ class AnthropicClient {
 
   /**
    * Generate with web search
-   * Uses Anthropic's native web_search_20250305 tool (Claude Sonnet 4.5+)
+   * Uses Anthropic's native web_search_20250305 tool (Claude Sonnet 4.7+)
    * Falls back to DuckDuckGo if native search not available
    */
   async generateWithWebSearch(options = {}) {
@@ -832,12 +834,12 @@ class AnthropicClient {
    * Get model with mapping
    */
   _getModelFromOptions(options) {
-    const requestedModel = options.model || 'gpt-5.2';
+    const requestedModel = options.model || 'claude-sonnet-4-7';
     // If already a Claude model, use it directly
     if (requestedModel.startsWith('claude-')) {
       return requestedModel;
     }
-    return this.modelMapping[requestedModel] || 'claude-sonnet-4-5';
+    return this.modelMapping[requestedModel] || 'claude-sonnet-4-7';
   }
 
   /**

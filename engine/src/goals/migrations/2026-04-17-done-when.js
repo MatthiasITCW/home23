@@ -62,7 +62,7 @@ function crdtDoneWhen() {
       {
         type: 'judged',
         criterion: 'The file outputs/crdt-unification-sketch.md contains sections on protocol predicates, version history, and belief revision, with at least one worked example linking them.',
-        judgeModel: 'gpt-5-mini',
+        judgeModel: 'gpt-5.4-mini',
         judgedAt: null, judgedVerdict: null
       }
     ]
@@ -111,7 +111,7 @@ async function askLlmForDoneWhen(description, llmClient) {
   try {
     if (typeof llmClient.generate === 'function') {
       const resp = await llmClient.generate({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
         max_completion_tokens: 400,
@@ -120,7 +120,7 @@ async function askLlmForDoneWhen(description, llmClient) {
       content = resp.content;
     } else if (typeof llmClient.chat === 'function') {
       const resp = await llmClient.chat({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },

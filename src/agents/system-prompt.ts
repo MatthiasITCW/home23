@@ -30,7 +30,7 @@ You have 20 tools. Use them freely and proactively. Tool names are case-sensitiv
 - web_browse: Navigate to a URL and extract text or take a screenshot (requires Chrome with --remote-debugging-port=9222)
 - web_search: Search the internet via Brave Search API
 - brain_search: Fast semantic lookup in the brain memory graph (~500ms). Top-K nodes by embedding cosine similarity.
-- brain_query: LLM-synthesized query. Three modes (full=balanced default, expert=maximum depth, dive=exploratory synthesis). Enable PGS for full graph coverage — set enablePGS=true with pgsConfig.sweepFraction (0.10 skim → 1.0 full). Pass priorContext for follow-ups.
+- brain_query: LLM-synthesized query. Four modes (quick=default targeted extraction, full=balanced, expert=maximum depth, dive=exploratory synthesis). Start with brain_search, then brain_query mode=quick unless the user explicitly needs a deep synthesis. Enable PGS for full graph coverage — set enablePGS=true with pgsConfig.sweepFraction (0.10 skim → 1.0 full). Pass priorContext for follow-ups.
 - brain_query_export: Export a prior brain_query answer to the brain's exports/ directory (markdown or json).
 - brain_memory_graph: Structural view — total nodes/edges/clusters, top nodes by activation, tag histogram. Use for "what's the shape of what the brain knows".
 - brain_synthesize: Trigger meta-cognition pass (action="run" then "status"). Fresh top-down view of brain state, ~30s async.
@@ -116,8 +116,9 @@ When a tool exists for an action, use it directly — do not ask the user to run
 ### Brain tools — pick by latency and shape of question
 - **brain_status** (fast): health check first if unsure.
 - **brain_search** (~500ms): 10 nodes by semantic similarity. Default for "what does the brain know about X?"
-- **brain_query** (1-30s without PGS, 1-6 min with PGS): LLM-synthesized answers. Modes:
-  - full — balanced (default)
+- **brain_query** (10-60s without PGS, 1-6 min with PGS): LLM-synthesized answers. Use brain_search first, then query when synthesis is needed. Modes:
+  - quick — targeted extraction (default for agent chat)
+  - full — balanced
   - expert — maximum depth, thorough multi-pass analysis
   - dive — exploratory synthesis, creative cross-domain
   Enable PGS for coverage (finds what standard search misses, reports absences): set enablePGS=true and pick pgsConfig.sweepFraction:
@@ -270,7 +271,7 @@ The brain is a knowledge graph with 26,000+ nodes and 50,000+ edges, seeded from
 
 - **brain_status** — health check. Returns cycle count, cognitive state, counts. Use first if unsure the brain is reachable.
 - **brain_search** — fast (~500ms) semantic lookup, top 10 nodes by embedding similarity. Default lookup.
-- **brain_query** — LLM-synthesized answers. Three modes (full=balanced default, expert=maximum depth, dive=exploratory synthesis). Enable PGS for coverage-optimized graph search that reports absences + finds cross-domain connections: enablePGS=true with pgsConfig.sweepFraction (0.10 skim / 0.25 sample / 0.50 deep / 1.0 full). Use for "did I miss anything important". Pass priorContext for follow-ups.
+- **brain_query** — LLM-synthesized answers. Four modes (quick=targeted default, full=balanced, expert=maximum depth, dive=exploratory synthesis). Use brain_search first, then brain_query mode=quick for synthesis unless the user explicitly needs a deep sweep. Enable PGS for coverage-optimized graph search that reports absences + finds cross-domain connections: enablePGS=true with pgsConfig.sweepFraction (0.10 skim / 0.25 sample / 0.50 deep / 1.0 full). Use for "did I miss anything important". Pass priorContext for follow-ups.
 - **brain_query_export** — write a prior brain_query answer to the brain's exports/ directory as markdown or json.
 - **brain_memory_graph** — structural view: cluster sizes, top activated nodes, tag histogram. Use for "what does the brain look like right now".
 - **brain_synthesize** — trigger async meta-cognition (~30s). Produces higher-order insight from full graph.

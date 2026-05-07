@@ -53,3 +53,35 @@ test('jsonl_metric_date_fresh passes for a current metric date', async () => {
 
   assert.equal(result.ok, true);
 });
+
+test('jsonpath_http retries one transient fetch failure before marking problem open', async () => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) throw new Error('socket hang up');
+    return new Response(JSON.stringify({ sensors: [{ id: 'tile.sauna-control', ts: new Date().toISOString() }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  try {
+    const result = await runVerifier({
+      type: 'jsonpath_http',
+      args: {
+        url: 'http://127.0.0.1:5012/api/sensors',
+        path: 'sensors[id=tile.sauna-control].ts',
+        op: '>',
+        value: '{{iso:now-10min}}',
+        timeoutMs: 4000,
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(calls, 2);
+    assert.match(result.detail, /after 2 attempts/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

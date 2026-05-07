@@ -146,10 +146,10 @@ class ConfigValidator {
     // Model OUTPUT token limits (all GPT-5.2 family share same output cap)
     // Note: These are OUTPUT limits only. Input context is ~128K for GPT-5.2
     const modelOutputLimits = {
-      'gpt-5.2': 16384,
-      'gpt-5-mini': 16384,
-      'gpt-5-nano': 16384,
-      'gpt-5.1-codex-max': 16384
+      'gpt-5.5': 16384,
+      'gpt-5.4-mini': 16384,
+      'gpt-5.4-nano': 16384,
+      'gpt-5.3-codex': 16384
     };
 
     if (modelOutputLimits[primary] && maxTokens > modelOutputLimits[primary]) {

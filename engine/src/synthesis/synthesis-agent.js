@@ -74,12 +74,14 @@ class SynthesisAgent {
   /**
    * Start scheduled synthesis runs.
    */
-  startSchedule() {
+  startSchedule({ runOnStart = true } = {}) {
     const intervalMs = this.intervalHours * 60 * 60 * 1000;
     this.logger?.info?.(`[synthesis] Scheduled every ${this.intervalHours}h`);
 
-    // Run once on start (after a short delay to let brain load)
-    setTimeout(() => this.run('startup'), 30_000);
+    if (runOnStart) {
+      // Run once on start (after a short delay to let brain load)
+      setTimeout(() => this.run('startup'), 30_000);
+    }
 
     // Then on interval
     this._timer = setInterval(() => this.run('scheduled'), intervalMs);
@@ -221,12 +223,16 @@ class SynthesisAgent {
       });
       if (!res.ok) return null;
       const data = await res.json();
-      const nodeCount = data.memory?.nodes
-        ? (Array.isArray(data.memory.nodes) ? data.memory.nodes.length : Object.keys(data.memory.nodes).length)
-        : 0;
-      const edgeCount = data.memory?.edges
-        ? (Array.isArray(data.memory.edges) ? data.memory.edges.length : Object.keys(data.memory.edges).length)
-        : 0;
+      const nodeCount = Number.isFinite(data.memory?.nodes)
+        ? data.memory.nodes
+        : data.memory?.nodes
+          ? (Array.isArray(data.memory.nodes) ? data.memory.nodes.length : Object.keys(data.memory.nodes).length)
+          : 0;
+      const edgeCount = Number.isFinite(data.memory?.edges)
+        ? data.memory.edges
+        : data.memory?.edges
+          ? (Array.isArray(data.memory.edges) ? data.memory.edges.length : Object.keys(data.memory.edges).length)
+          : 0;
       return {
         nodes: nodeCount,
         edges: edgeCount,

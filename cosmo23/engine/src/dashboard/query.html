@@ -434,9 +434,9 @@
             <div class="input-group">
               <label for="model-select">Model:</label>
               <select id="model-select">
-                <option value="gpt-5.1" selected>GPT-5.1 (Default - Fast with 24h Caching)</option>
+                <option value="gpt-5.5" selected>GPT-5.1 (Default - Fast with 24h Caching)</option>
                 <option value="gpt-5">GPT-5 (Maximum Reasoning Depth)</option>
-                <option value="gpt-5-mini">GPT-5 Mini (Ultra Fast & Economical)</option>
+                <option value="gpt-5.4-mini">GPT-5 Mini (Ultra Fast & Economical)</option>
               </select>
             </div>
 
@@ -846,7 +846,7 @@
       let metadataHTML = `
         <div class="metadata-item">
           <div class="metadata-label">Model</div>
-          <div class="metadata-value">${metadata.model || 'gpt-5-mini'}</div>
+          <div class="metadata-value">${metadata.model || 'gpt-5.4-mini'}</div>
         </div>
         <div class="metadata-item">
           <div class="metadata-label">Mode</div>
@@ -1099,7 +1099,7 @@
     loadAvailableRuns();
     
     // Force correct defaults on page load (clear any cached invalid models)
-    document.getElementById('model-select').value = 'gpt-5.1';
+    document.getElementById('model-select').value = 'gpt-5.5';
     if (!document.getElementById('mode-select').value) {
       document.getElementById('mode-select').value = 'normal';
     }

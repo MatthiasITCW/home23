@@ -321,6 +321,14 @@ class AgentExecutor {
           goal.lastPursued = Date.now();
           goal.pursuitCount = (goal.pursuitCount || 0) + 1;
 
+          if (this.evaluation) {
+            this.evaluation.trackGoalPursued(
+              goal.id,
+              missionSpec.agentType,
+              agent.agentId
+            );
+          }
+
           this.logger.debug('Goal pursuit tracked', {
             goalId: goal.id,
             pursuitCount: goal.pursuitCount,

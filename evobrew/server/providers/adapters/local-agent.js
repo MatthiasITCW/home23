@@ -107,7 +107,9 @@ class LocalAgentAdapter extends ProviderAdapter {
       model: request.model || this._id,
       maxTokens: request.maxTokens || 64000,
       temperature: request.temperature ?? 0.1,
-      systemPrompt: request.systemPrompt || ''
+      systemPrompt: request.systemPrompt || '',
+      chatId: request.chatId || null,
+      context: request.context || null
     });
 
     let response;

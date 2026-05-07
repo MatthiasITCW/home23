@@ -86,7 +86,7 @@ class DocumentCompilerAgent extends BaseAgent {
       systemId: this.systemId,
       runDir: path.basename(this.runDir),
       strategy: 'dual-substrate',
-      model: 'gpt-5.2',
+      model: 'gpt-5.5',
       maxTokens: 16384
     });
 
@@ -127,8 +127,8 @@ class DocumentCompilerAgent extends BaseAgent {
     });
 
     // STEP 4: INTELLIGENT SYNTHESIS (not templates)
-    // Use GPT-5.2 to synthesize complete package like Claude would
-    await this.reportProgress(50, 'Intelligent synthesis from query answers (GPT-5.2, max tokens, high reasoning)');
+    // Use GPT-5.5 to synthesize complete package like Claude would
+    await this.reportProgress(50, 'Intelligent synthesis from query answers (GPT-5.5, max tokens, high reasoning)');
     await this.writeProgressFile(50, 'Performing intelligent synthesis of query exploration');
     
     if (sourceQueries && sourceQueries.length > 0) {
@@ -137,20 +137,20 @@ class DocumentCompilerAgent extends BaseAgent {
       this.documentsGenerated.push(...synthesizedDocs);
     } else {
       // FALLBACK: Original 3-doc template mode (for non-query compilations)
-      await this.reportProgress(50, 'Compiling executive overview (GPT-5.2, 16K tokens)');
-      await this.writeProgressFile(50, 'Compiling executive overview (GPT-5.2, high reasoning)');
+      await this.reportProgress(50, 'Compiling executive overview (GPT-5.5, 16K tokens)');
+      await this.writeProgressFile(50, 'Compiling executive overview (GPT-5.5, high reasoning)');
       
       const execDoc = await this.compileExecutiveOverview(bundle, sourceQueries, artifactContents);
       this.documentsGenerated.push(execDoc);
       
-      await this.reportProgress(65, 'Compiling system architecture (GPT-5.2, 16K tokens)');
-      await this.writeProgressFile(65, 'Compiling system architecture (GPT-5.2, high reasoning)');
+      await this.reportProgress(65, 'Compiling system architecture (GPT-5.5, 16K tokens)');
+      await this.writeProgressFile(65, 'Compiling system architecture (GPT-5.5, high reasoning)');
       
       const archDoc = await this.compileArchitecture(bundle, sourceQueries, artifactContents);
       this.documentsGenerated.push(archDoc);
 
-      await this.reportProgress(80, 'Compiling implementation guide (GPT-5.2, 16K tokens)');
-      await this.writeProgressFile(80, 'Compiling implementation guide (GPT-5.2, high reasoning)');
+      await this.reportProgress(80, 'Compiling implementation guide (GPT-5.5, 16K tokens)');
+      await this.writeProgressFile(80, 'Compiling implementation guide (GPT-5.5, high reasoning)');
       
       const implDoc = await this.compileImplementationGuide(bundle, sourceQueries, artifactContents);
       this.documentsGenerated.push(implDoc);
@@ -441,7 +441,7 @@ TARGET: 1000-1500 words, professional tone, actionable insights.
 Generate the complete executive overview in markdown format:`;
 
     const response = await this.callGPT5({
-      model: 'gpt-5.2',  // GPT-5.2 for best quality
+      model: 'gpt-5.5',  // GPT-5.5 for best quality
       instructions: prompt,
       messages: [{ role: 'user', content: 'Generate executive overview' }],
       maxTokens: 16384,  // Maximum output tokens for comprehensive docs
@@ -550,7 +550,7 @@ TARGET: Comprehensive technical documentation, grounded in reality.
 Generate in markdown with mermaid diagrams where appropriate:`;
 
     const response = await this.callGPT5({
-      model: 'gpt-5.2',  // GPT-5.2 for best quality
+      model: 'gpt-5.5',  // GPT-5.5 for best quality
       instructions: prompt,
       messages: [{ role: 'user', content: 'Generate system architecture document' }],
       maxTokens: 16384,  // Maximum output tokens for comprehensive technical docs
@@ -666,7 +666,7 @@ TARGET: Practical, accurate guide grounded in actual implementation.
 Generate in markdown with code examples:`;
 
     const response = await this.callGPT5({
-      model: 'gpt-5.2',  // GPT-5.2 for best quality
+      model: 'gpt-5.5',  // GPT-5.5 for best quality
       instructions: prompt,
       messages: [{ role: 'user', content: 'Generate implementation guide' }],
       maxTokens: 16384,  // Maximum output tokens for detailed implementation examples
@@ -777,7 +777,7 @@ Generate in markdown with code examples:`;
   /**
    * INTELLIGENT SYNTHESIS MODE
    * Synthesize complete enterprise package from query answers (like Claude would)
-   * Not templated - GPT-5.2 decides what to create based on content
+   * Not templated - GPT-5.5 decides what to create based on content
    */
   async synthesizeEnterprisePackage(bundle, sourceQueries, artifactContents) {
     this.logger.info('🧠 Intelligent synthesis mode - enterprise-grade deliverable generation');
@@ -873,7 +873,7 @@ CRITICAL RULES:
 Generate the complete package manifest:`;
 
     const response = await this.callGPT5({
-      model: 'gpt-5.2',
+      model: 'gpt-5.5',
       instructions: prompt,
       messages: [{ role: 'user', content: context }],
       maxTokens: 32000,  // Large output for complete synthesis

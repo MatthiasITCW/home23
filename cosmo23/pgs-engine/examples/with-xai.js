@@ -87,7 +87,7 @@ console.log(`Nodes: ${graph.nodes.length}, Edges: ${graph.edges.length}`);
 const provider = createChatProvider({
   apiKey: XAI_API_KEY,
   baseURL: 'https://api.x.ai/v1',
-  model: 'grok-3-mini',
+  model: 'grok-4.20-0309-reasoning',
 });
 
 const engine = new PGSEngine({

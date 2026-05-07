@@ -2,47 +2,58 @@
   const STORAGE_KEY = 'evobrew.ui.runtime-prefs.v1';
   const DEFAULTS = {
     favorites: [
-      'anthropic/latest-sonnet',
-      'anthropic/latest-opus',
-      'openai-codex/latest-codex',
-      'openai-codex/latest-mini',
-      'openai-codex/latest-nano',
-      'xai/latest-4-20',
-      'xai/latest-4-20-moe',
-      'ollama-cloud/latest-kimi',
-      'ollama-cloud/latest-minimax',
-      'ollama-cloud/latest-nemotron',
+      'openai-codex/gpt-5.5',
+      'anthropic/claude-opus-4-7',
+      'anthropic/claude-sonnet-4-7',
+      'openai/gpt-5.5',
+      'openai/gpt-5.5-pro',
+      'minimax/MiniMax-M2.7',
+      'xai/grok-4.3',
+      'xai/grok-4.20-0309-reasoning',
+      'ollama-cloud/kimi-k2.6',
+      'ollama-cloud/deepseek-v4-pro',
+      'ollama-cloud/nemotron-3-super',
       'openclaw/openclaw:coz'
     ],
     recent: [],
     defaults: {
-      chat: 'anthropic/latest-sonnet',
-      query: 'anthropic/latest-sonnet',
-      pgsSweep: 'anthropic/latest-sonnet',
-      pgsSynth: 'anthropic/latest-sonnet'
+      chat: 'openai-codex/gpt-5.5',
+      query: 'openai-codex/gpt-5.5',
+      pgsSweep: 'minimax/MiniMax-M2.7',
+      pgsSynth: 'anthropic/claude-opus-4-7'
     }
   };
 
   const RECOMMENDED_SECTIONS = [
     {
       title: 'Anthropic',
-      note: 'Use stable Claude channels instead of dated model IDs.',
-      values: ['anthropic/latest-sonnet', 'anthropic/latest-opus', 'anthropic/latest-haiku']
+      note: 'Home23 Claude models from the shared provider catalog.',
+      values: ['anthropic/claude-opus-4-7', 'anthropic/claude-sonnet-4-7', 'anthropic/claude-haiku-4-5']
     },
     {
       title: 'OpenAI Codex',
-      note: 'OAuth-backed Codex channels. Keep these separate from the OpenAI API catalog.',
-      values: ['openai-codex/latest-codex', 'openai-codex/latest-mini', 'openai-codex/latest-nano']
+      note: 'OAuth-backed Codex models from Home23.',
+      values: ['openai-codex/gpt-5.5', 'openai-codex/gpt-5.3-codex', 'openai-codex/gpt-5.3-codex-spark', 'openai-codex/gpt-5.4', 'openai-codex/gpt-5.4-mini']
+    },
+    {
+      title: 'OpenAI API',
+      note: 'Platform API models from the same Home23 catalog.',
+      values: ['openai/gpt-5.5', 'openai/gpt-5.5-pro', 'openai/gpt-5.4', 'openai/gpt-5.4-pro', 'openai/gpt-5.4-mini', 'openai/gpt-5.4-nano']
+    },
+    {
+      title: 'MiniMax',
+      note: 'MiniMax models exposed by Home23.',
+      values: ['minimax/MiniMax-M2.7', 'minimax/MiniMax-M2.7-highspeed']
     },
     {
       title: 'xAI',
-      note: 'Curated Grok channels for fast, reasoning, and current 4.20 variants when available.',
-      values: ['xai/latest-4-20', 'xai/latest-4-20-moe', 'xai/latest-reasoning', 'xai/latest-fast']
+      note: 'Grok models from the shared Home23 catalog.',
+      values: ['xai/grok-4.3', 'xai/grok-4.20-0309-reasoning', 'xai/grok-4.20-0309-non-reasoning', 'xai/grok-4.20-multi-agent-0309']
     },
     {
       title: 'Ollama Cloud',
-      note: 'Low-cost cloud models worth rotating through.',
-      values: ['ollama-cloud/latest-kimi', 'ollama-cloud/latest-minimax', 'ollama-cloud/latest-nemotron', 'ollama-cloud/latest-coder']
+      note: 'Ollama Cloud models from Home23.',
+      values: ['ollama-cloud/kimi-k2.6', 'ollama-cloud/deepseek-v4-pro', 'ollama-cloud/deepseek-v4-flash', 'ollama-cloud/qwen3.5:397b', 'ollama-cloud/minimax-m2.7', 'ollama-cloud/nemotron-3-super']
     },
     {
       title: 'Agents',
@@ -426,13 +437,14 @@
     if (provider === 'openai-codex') return 'OpenAI Codex';
     if (provider === 'openai') return 'OpenAI API';
     if (provider === 'ollama-cloud') return 'Ollama Cloud';
+    if (provider === 'ollama-local') return 'Ollama Local';
     if (provider === 'xai') return 'xAI';
     if (provider === 'openclaw') return 'Agents';
     return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
 
   function compareProviderOrder(left, right) {
-    const order = ['anthropic', 'minimax', 'openai-codex', 'xai', 'ollama-cloud', 'openclaw', 'openai', 'ollama', 'lmstudio'];
+    const order = ['openai-codex', 'anthropic', 'openai', 'minimax', 'xai', 'ollama-cloud', 'ollama-local', 'openclaw', 'ollama', 'lmstudio'];
     const leftIndex = order.indexOf(left);
     const rightIndex = order.indexOf(right);
     if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
@@ -525,6 +537,10 @@
     const legacyGrouped = new Map();
 
     function isCurrentCatalogModel(model) {
+      if (data?.curated || data?.source === 'home23-allowedModels') {
+        return true;
+      }
+
       const id = String(model.id || '').trim();
       const provider = String(model.provider || '').trim();
       const isAlias = Boolean(model.isAlias);

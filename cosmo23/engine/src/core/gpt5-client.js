@@ -30,7 +30,7 @@ class GPT5Client {
   async generate(options = {}) {
     await this._getClient();
     const {
-      model = 'gpt-5.2',
+      model = 'gpt-5.5',
       instructions = '',
       messages = [],
       input = null,
@@ -560,7 +560,7 @@ class GPT5Client {
   async generateFast(options = {}) {
     return this.generateWithRetry({
       ...options,
-      model: options.model || 'gpt-5-mini', // Use mini by default, nano is broken
+      model: options.model || 'gpt-5.4-mini', // Use mini by default, nano is broken
       reasoningEffort: 'low',
       max_output_tokens: options.max_output_tokens || options.maxOutputTokens || options.maxTokens || 1000
     }, 3);

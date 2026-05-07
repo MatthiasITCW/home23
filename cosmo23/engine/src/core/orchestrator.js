@@ -606,7 +606,7 @@ class Orchestrator {
     this.logger.info('GPT-5.2 Features Active:');
     this.logger.info('  • Extended Reasoning (see AI thinking process)');
     this.logger.info('  • Web Search (curiosity role + quantum branches)');
-    this.logger.info('  • Optimized Models (gpt-5, gpt-5-mini, gpt-5-nano)');
+    this.logger.info('  • Optimized Models (gpt-5, gpt-5.4-mini, gpt-5.4-nano)');
     this.logger.info('  • Responses API (modern format)');
     this.logger.info('');
     this.logger.info('Components:', {

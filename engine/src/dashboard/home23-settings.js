@@ -1195,12 +1195,12 @@ function populateWizardModels() {
     }
   } else {
     const fallback = {
-      'ollama-cloud': ['kimi-k2.6', 'minimax-m2.7'],
+      'ollama-cloud': ['gpt-oss:120b', 'kimi-k2.6', 'qwen3.5:397b', 'deepseek-v4-pro', 'glm-5.1', 'minimax-m2.7'],
       'minimax': ['MiniMax-M2.7'],
-      'anthropic': ['claude-sonnet-4-6', 'claude-opus-4-7'],
-      'openai': ['gpt-5.4'],
-      'openai-codex': ['gpt-5.5'],
-      'xai': ['grok-4-0709'],
+      'anthropic': ['claude-sonnet-4-7', 'claude-opus-4-7'],
+      'openai': ['gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4-mini'],
+      'openai-codex': ['gpt-5.5', 'gpt-5.5-pro', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'],
+      'xai': ['grok-4.3', 'grok-4.20-0309-reasoning', 'grok-4.20-0309-non-reasoning', 'grok-4.20-multi-agent-0309'],
     };
     for (const m of (fallback[provider] || ['default'])) {
       const opt = document.createElement('option');
@@ -1418,17 +1418,28 @@ async function saveModels() {
 
 async function loadQuerySettings() {
   try {
-    const [qRes, cosmoModels] = await Promise.all([
+    const [qRes, modelRes] = await Promise.all([
       fetch(settingsApiUrl('/query', { agentScoped: true })),
-      // Model list comes from cosmo23 (same source the Query tab uses), so
-      // the sweep/synth dropdowns show every model the engine can actually route.
-      fetch(`http://${window.location.hostname}:43210/api/providers/models`).catch(() => null),
+      fetch('/home23/api/settings/models').catch(() => null),
     ]);
     const settings = qRes.ok ? await qRes.json() : {};
     let models = [];
-    if (cosmoModels && cosmoModels.ok) {
-      const mj = await cosmoModels.json();
-      models = Array.isArray(mj) ? mj : (mj.models || []);
+    if (modelRes && modelRes.ok) {
+      const mj = await modelRes.json();
+      const providerLabels = {
+        'ollama-cloud': 'Ollama Cloud',
+        'ollama-local': 'Ollama Local',
+        anthropic: 'Anthropic',
+        openai: 'OpenAI',
+        'openai-codex': 'OpenAI Codex',
+        minimax: 'MiniMax',
+        xai: 'xAI',
+      };
+      for (const [provider, cfg] of Object.entries(mj.providers || {})) {
+        for (const id of (cfg.defaultModels || [])) {
+          models.push({ id, provider, name: id, providerLabel: providerLabels[provider] || provider });
+        }
+      }
     }
 
     const fill = (id, selected) => {
@@ -1437,7 +1448,7 @@ async function loadQuerySettings() {
       sel.innerHTML = '';
       const byProvider = new Map();
       for (const m of models) {
-        const p = m.provider || 'other';
+        const p = m.providerLabel || m.provider || 'other';
         if (!byProvider.has(p)) byProvider.set(p, []);
         byProvider.get(p).push(m);
       }
@@ -3774,17 +3785,17 @@ const SLOT_META = {
   'quantumReasoner.singleReasoning': {
     label: 'Dreams + single-shot fallback',
     desc: 'Deep-reasoning path used for dreams and when all parallel branches fail. Lower volume, longer outputs.',
-    pick: 'Favor QUALITY over speed. A strong reasoning model (Opus, GPT-5.4, MiniMax-M2.7) makes dreams worth reading.',
+    pick: 'Favor QUALITY over speed. A strong reasoning model (Opus, GPT-5.5, MiniMax-M2.7) makes dreams worth reading.',
   },
   'agents.research': {
     label: 'Research agent — primary',
     desc: 'Research sub-agents launched via the research_* tools. Initial investigation pass that produces findings.',
-    pick: 'Favor accuracy + grounding. Models with web search or strong knowledge (grok-4, claude-opus, gpt-5.5).',
+    pick: 'Favor accuracy + grounding. Models with web search or strong knowledge (grok-4.3, claude-opus, gpt-5.5).',
   },
   'agents.research-synthesis': {
     label: 'Research synthesis',
     desc: 'Final synthesis step that turns raw research findings into a coherent brief.',
-    pick: 'Favor long context + writing quality. Claude-opus or GPT-5.4 shine here.',
+    pick: 'Favor long context + writing quality. Claude-opus or GPT-5.5 shine here.',
   },
   'agents.research-fallback': {
     label: 'Research agent — fallback',

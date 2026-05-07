@@ -602,7 +602,7 @@ function formatToolResultContent(result, isClaudeFormat = false) {
 
 async function handleFunctionCalling(openai, anthropic, xai, indexer, params, eventEmitter) {
   const { 
-    message, currentFolder, model = 'gpt-5.2', context = [],
+    message, currentFolder, model = 'gpt-5.5', context = [],
     documentContent, selectedText, fileName, language, 
     fileTreeContext, conversationHistory 
   } = params;
@@ -747,11 +747,11 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
         const sanitizedClaudeMessages = sanitizeClaudeMessages(claudeMessages);
 
         // Use exact model names from COSMO (tested and working)
-        const claudeModel = model === 'claude-opus-4-6'
-          ? 'claude-opus-4-6'  // Opus 4.6 - latest
-          : model === 'claude-opus-4-5'
-          ? 'claude-opus-4-5'  // Opus 4.5
-          : 'claude-sonnet-4-5';  // Sonnet 4.5 - default
+        const claudeModel = model === 'claude-opus-4-7'
+          ? 'claude-opus-4-7'  // Opus 4.6 - latest
+          : model === 'claude-opus-4-7'
+          ? 'claude-opus-4-7'  // Opus 4.5
+          : 'claude-sonnet-4-7';  // Sonnet 4.5 - default
 
         // Check if using OAuth mode - requires Claude Code identity injection
         let oauthStatus = { source: 'unknown' };
@@ -904,8 +904,8 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
           parallel_tool_calls: true,
           truncation: 'auto',
           max_output_tokens: 16000,
-          reasoning: String(openaiModel).startsWith('gpt-5.2') ? { effort: 'none' } : undefined,
-          text: String(openaiModel).startsWith('gpt-5.2') ? { verbosity: 'medium' } : undefined,
+          reasoning: String(openaiModel).startsWith('gpt-5.5') ? { effort: 'none' } : undefined,
+          text: String(openaiModel).startsWith('gpt-5.5') ? { verbosity: 'medium' } : undefined,
           temperature: 0.1,
           stream: true
         };

@@ -28,6 +28,8 @@ import { newTurnId, type TurnEvent } from '../chat/turn-types.js';
 
 const MAX_ITERATIONS = 500;
 const TYPING_INTERVAL_MS = 4000;
+const MODEL_TOOL_RESULT_LIMIT_CHARS = 4000;
+const TOOL_EVENT_RESULT_LIMIT_CHARS = 4000;
 
 function hashText(text: string): string {
   return createHash('sha256').update(text).digest('hex').slice(0, 16);
@@ -1171,8 +1173,8 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
                     allMedia.push(...result.media);
                     if (onEvent) for (const m of result.media) onEvent({ type: 'media', mediaType: m.type || 'image', path: m.path, caption: m.caption });
                   }
-                  apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: result.content.slice(0, 4000) });
-                  if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: result.content.slice(0, 300), success: true });
+                  apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: result.content.slice(0, MODEL_TOOL_RESULT_LIMIT_CHARS) });
+                  if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: result.content.slice(0, TOOL_EVENT_RESULT_LIMIT_CHARS), success: true });
                 } catch (toolErr) {
                   console.error(`[agent] Tool ${tc.function.name} threw:`, toolErr);
                   const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
@@ -1362,8 +1364,8 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
                 try {
                   const result = await this.registry.get(tc.function.name)!.execute(input, runContext);
                   if (result.media?.length) { allMedia.push(...result.media); if (onEvent) for (const m of result.media) onEvent({ type: 'media', mediaType: m.type || 'image', path: m.path, caption: m.caption }); }
-                  nextInputItems.push({ type: 'function_call_output', call_id: tc.id, output: result.content.slice(0, 50_000) });
-                  if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: result.content.slice(0, 300), success: true });
+                  nextInputItems.push({ type: 'function_call_output', call_id: tc.id, output: result.content.slice(0, MODEL_TOOL_RESULT_LIMIT_CHARS) });
+                  if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: result.content.slice(0, TOOL_EVENT_RESULT_LIMIT_CHARS), success: true });
                 } catch (toolErr) {
                   const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
                   nextInputItems.push({ type: 'function_call_output', call_id: tc.id, output: `Error: ${errMsg}` });
@@ -1584,8 +1586,8 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
                   allMedia.push(...result.media);
                   if (onEvent) for (const m of result.media) onEvent({ type: 'media', mediaType: m.type || 'image', path: m.path, caption: m.caption });
                 }
-                apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: result.content.slice(0, 4000) });
-                if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: result.content.slice(0, 300), success: true });
+                apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: result.content.slice(0, MODEL_TOOL_RESULT_LIMIT_CHARS) });
+                if (onEvent) onEvent({ type: 'tool_result', tool: tc.function.name, result: result.content.slice(0, TOOL_EVENT_RESULT_LIMIT_CHARS), success: true });
               } catch (toolErr) {
                 console.error(`[agent] Tool ${tc.function.name} threw:`, toolErr);
                 const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
@@ -1740,14 +1742,14 @@ Use research_watch_run to check progress. Use research_stop to cancel. You can s
                 }
               }
 
-              const resultContent = result.content.slice(0, 4000);
+              const resultContent = result.content.slice(0, MODEL_TOOL_RESULT_LIMIT_CHARS);
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: toolCall.id,
                 content: resultContent,
                 ...(result.is_error ? { is_error: true } : {}),
               });
-              if (onEvent) onEvent({ type: 'tool_result', tool: toolCall.name, result: resultContent.slice(0, 300), success: !result.is_error });
+              if (onEvent) onEvent({ type: 'tool_result', tool: toolCall.name, result: resultContent.slice(0, TOOL_EVENT_RESULT_LIMIT_CHARS), success: !result.is_error });
             } catch (toolErr) {
               console.error(`[agent] Tool ${toolCall.name} threw:`, toolErr);
               const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);

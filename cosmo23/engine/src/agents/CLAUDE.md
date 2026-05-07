@@ -117,7 +117,7 @@ Writes to `outputs/research/<agentId>/`: `research_findings.json`, `sources.json
 3. **Agentic loop:** LLM call → tool calls → track progress → stuck detection (3 no-write iterations)
 4. **Finalization:** `summary.md`, `operations.jsonl`, `.complete` marker
 
-Model: `config.ide.model || 'gpt-4.1'` (NOT `gpt-5.2`).
+Model: `config.ide.model || 'gpt-4.1'` (NOT `gpt-5.5`).
 
 Pre-planned actions shortcut: `mission.metadata.prePlannedActions` bypasses the agentic loop.
 
@@ -274,4 +274,4 @@ const logger = { info: ()=>{}, warn: ()=>{}, error: ()=>{}, debug: ()=>{} };
 | `ide.maxWriteSize` | IDEAgent | 1MB |
 | `ide.maxFilesModified` | IDEAgent | 50 |
 | `models.enableWebSearch` | ResearchAgent | — |
-| `models.strategicModel` | SynthesisAgent, PlanningAgent | `gpt-5.2` |
+| `models.strategicModel` | SynthesisAgent, PlanningAgent | `gpt-5.5` |

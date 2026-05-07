@@ -19,7 +19,7 @@ dashboard:
     sourcePaths:
       - /Volumes/Casey Jones/_cosmoImages/images
     dreams:
-      enabled: true
+      enabled: false
       lookback: 3
       extraction: llm
   tiles:
@@ -196,41 +196,59 @@ providers:
   ollama-cloud:
     baseUrl: https://ollama.com/v1
     defaultModels:
+      - gpt-oss:120b
+      - gpt-oss:20b
       - kimi-k2.6
       - gemma4:31b
       - glm-5.1
       - qwen3.5:397b
-      - deepseek-v4-flash:cloud
-      - deepseek-v3.2
+      - qwen3-coder:480b
+      - qwen3-coder-next
+      - qwen3-next:80b
+      - qwen3-vl:235b
+      - deepseek-v4-pro
+      - deepseek-v4-flash
       - nemotron-3-super
+      - nemotron-3-nano:30b
+      - minimax-m2.7
+      - minimax-m2.5
+      - minimax-m2.1
+      - minimax-m2
+      - cogito-2.1:671b
   ollama-local:
     baseUrl: http://127.0.0.1:11434
   anthropic:
     defaultModels:
-      - claude-sonnet-4-6
+      - claude-sonnet-4-7
       - claude-opus-4-7
-      - claude-opus-4-6
+      - claude-haiku-4-5
   openai:
     defaultModels:
+      - gpt-5.5
+      - gpt-5.5-pro
+      - gpt-5.4
+      - gpt-5.4-pro
       - gpt-5.4-mini
+      - gpt-5.4-nano
   openai-codex:
     defaultModels:
       - gpt-5.5
+      - gpt-5.3-codex
+      - gpt-5.3-codex-spark
       - gpt-5.4
+      - gpt-5.4-mini
   minimax:
     baseUrl: https://api.minimax.io/anthropic
     defaultModels:
       - MiniMax-M2.7
       - MiniMax-M2.7-highspeed
-      - MiniMax-M2.5
-      - MiniMax-M2.5-highspeed
   xai:
     baseUrl: https://api.x.ai/v1
     defaultModels:
-      - grok-4-0709
-      - grok-4.20-reasoning-latest
-      - grok-4.20-non-reasoning-latest
-      - grok-4.20-multi-agent-latest
+      - grok-4.3
+      - grok-4.20-0309-reasoning
+      - grok-4.20-0309-non-reasoning
+      - grok-4.20-multi-agent-0309
 embeddings:
   providers:
     - provider: ollama-local
@@ -336,13 +354,13 @@ osEngine:
       dashboard: 15m
 media:
   imageGeneration:
-    provider: openai
-    model: gpt-image-2
+    provider: xai
+    model: grok-imagine-image
 models:
   aliases:
     sonnet:
       provider: anthropic
-      model: claude-sonnet-4-6
+      model: claude-sonnet-4-7
     opus:
       provider: anthropic
       model: claude-opus-4-7
@@ -350,20 +368,26 @@ models:
       provider: anthropic
       model: claude-haiku-4-5
     gpt:
-      provider: openai
-      model: gpt-5.4
+      provider: openai-codex
+      model: gpt-5.5
     gpt5:
-      provider: openai
-      model: gpt-5.4
+      provider: openai-codex
+      model: gpt-5.5
+    gpt-pro:
+      provider: openai-codex
+      model: gpt-5.5-pro
     mini:
       provider: openai
       model: gpt-5.4-mini
     grok:
       provider: xai
-      model: grok-4-0709
+      model: grok-4.3
     grok4:
       provider: xai
-      model: grok-4-0709
+      model: grok-4.3
+    grok420:
+      provider: xai
+      model: grok-4.20-0309-reasoning
     kimi:
       provider: ollama-cloud
       model: kimi-k2.6
@@ -375,13 +399,13 @@ models:
       model: qwen3.5:397b
     deepseek:
       provider: ollama-cloud
-      model: deepseek-v4-flash:cloud
+      model: deepseek-v4-pro
     deepseek-v4:
       provider: ollama-cloud
-      model: deepseek-v4-flash:cloud
+      model: deepseek-v4-pro
     deepseek-v4-flash:
       provider: ollama-cloud
-      model: deepseek-v4-flash:cloud
+      model: deepseek-v4-flash
     minimax:
       provider: minimax
       model: MiniMax-M2.7
@@ -418,9 +442,9 @@ skills:
       quick: true
       saveMarkdown: true
 query:
-  defaultModel: claude-sonnet-4-6
+  defaultModel: claude-opus-4-7
   defaultMode: full
   enablePGSByDefault: false
-  pgsSweepModel: gpt-5-mini
-  pgsSynthModel: claude-sonnet-4-6
+  pgsSweepModel: MiniMax-M2.7
+  pgsSynthModel: claude-opus-4-7
   pgsDepth: 0.25

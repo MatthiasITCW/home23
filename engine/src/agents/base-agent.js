@@ -391,11 +391,11 @@ class BaseAgent extends EventEmitter {
   }
 
   /**
-   * Helper: Call GPT-5.2 with automatic retry on connection errors
+   * Helper: Call GPT-5.5 with automatic retry on connection errors
    * Wraps gpt5.generateWithRetry for convenience
-   * @param {Object} options - GPT-5.2 options
+   * @param {Object} options - GPT-5.5 options
    * @param {number} maxRetries - Max retry attempts (default 3)
-   * @returns {Promise<Object>} GPT-5.2 response
+   * @returns {Promise<Object>} GPT-5.5 response
    */
   async callGPT5(options, maxRetries = 3) {
     // Check if in pure mode and adapt prompting
@@ -1513,7 +1513,7 @@ class BaseAgent extends EventEmitter {
   /**
    * Read a file from repository via MCP
    * Uses local MCP server (callMCPTool), not passed to GPT-5
-   * (GPT-5.2 Responses API can't reach localhost servers)
+   * (GPT-5.5 Responses API can't reach localhost servers)
    * 
    * @param {string} filePath - Relative path from repo root
    * @param {number} maxSizeBytes - Maximum file size in bytes (default: 100MB)

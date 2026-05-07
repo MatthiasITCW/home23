@@ -402,7 +402,7 @@ class CodebaseExplorationAgent extends BaseAgent {
       }
     }
 
-    // Analyze with GPT-5.2
+    // Analyze with GPT-5.5
     const analysisPrompt = `You are analyzing a codebase structure for a comprehensive audit.
 
 FILE INVENTORY:
@@ -436,7 +436,7 @@ Respond in JSON format:
 
     try {
       const response = await this.callGPT5({
-        model: 'gpt-5.2',
+        model: 'gpt-5.5',
         instructions: analysisPrompt,
         messages: [{ role: 'user', content: 'Analyze this codebase architecture.' }],
         maxTokens: 4000,
@@ -660,7 +660,7 @@ Respond in JSON format:
       return ['No code samples available for pattern analysis'];
     }
 
-    // Analyze patterns with GPT-5.2
+    // Analyze patterns with GPT-5.5
     const patternPrompt = `Analyze these code samples for common patterns and conventions.
 
 CODE SAMPLES:
@@ -680,7 +680,7 @@ Respond with JSON array:
 
     try {
       const response = await this.callGPT5({
-        model: 'gpt-5.2',
+        model: 'gpt-5.5',
         instructions: patternPrompt,
         messages: [{ role: 'user', content: 'Identify code patterns.' }],
         maxTokens: 3000,
@@ -740,7 +740,7 @@ Keep it concise and actionable. Format as markdown.`;
 
     try {
       const response = await this.callGPT5({
-        model: 'gpt-5.2',
+        model: 'gpt-5.5',
         instructions: reportPrompt,
         messages: [{ role: 'user', content: 'Generate audit report.' }],
         maxTokens: 6000,

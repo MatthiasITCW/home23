@@ -342,7 +342,7 @@ class QueryEngine {
 
     // Minimal technical metadata
     summaryInputParts.push('# TECHNICAL METADATA\n');
-    summaryInputParts.push(`Model: ${safeMetadata.model || 'gpt-5.2'}\n`);
+    summaryInputParts.push(`Model: ${safeMetadata.model || 'unknown'}\n`);
     summaryInputParts.push(`Mode: ${safeMetadata.mode || 'unknown'}\n`);
     if (safeMetadata.sources) {
       summaryInputParts.push(
@@ -399,7 +399,7 @@ STYLE:
 `.trim();
 
     const response = await this.gpt5Client.generate({
-      model: 'gpt-5.2',
+      model: 'gpt-5.5',
       instructions,
       input,
       reasoningEffort: 'medium',
@@ -412,9 +412,9 @@ STYLE:
     return {
       style: 'executive',
       text: executiveText,
-      model: response.model || 'gpt-5.2',
+      model: response.model || this.config?.models?.primary || 'MiniMax-M2.7',
       base: {
-        model: safeMetadata.model || 'gpt-5.2',
+        model: safeMetadata.model || 'unknown',
         mode: safeMetadata.mode || null,
         timestamp: safeMetadata.timestamp || null
       }
@@ -1123,19 +1123,19 @@ STYLE:
   }
 
   /**
-   * Execute query using GPT-5.2 Responses API
+   * Execute query using GPT-5.5 Responses API
    * 
    * CONTEXT OPTIMIZATION (2025-12-11):
    * - Increased memory node limit from 50 to 200 (6.8% → 27.4% coverage)
    * - Increased connected concepts from 30 to 100 (full coverage in most cases)
-   * - Total context usage: ~40% of GPT-5.2's 128K token limit (safe headroom)
+   * - Total context usage: ~40% of GPT-5.5's 128K token limit (safe headroom)
    * - Rationale: Query engine is only interface to COSMO's brain - comprehensive access critical
    */
   async executeQuery(query, options = {}) {
     const startTime = Date.now(); // Performance tracking
 
     const {
-      model = 'gpt-5.2',  // Default to gpt-5.2
+      model = this.config?.models?.primary || 'MiniMax-M2.7',
       mode = 'normal',
       exportFormat = null,
       // NEW: Enhancement options (all opt-in)
@@ -1252,7 +1252,7 @@ STYLE:
       }
     }
     
-    // Map mode to GPT-5.2 reasoning parameters
+    // Map mode to GPT-5.5 reasoning parameters
     const reasoningConfig = {
       fast: { 
         reasoningEffort: 'low', 
@@ -1336,7 +1336,7 @@ STYLE:
       instructions = followUpPrefix + instructions;
     }
     
-    // Generate answer using GPT-5.2 Responses API
+    // Generate answer using GPT-5.5 Responses API
     let response;
     try {
       response = await this.gpt5Client.generate({
@@ -1348,18 +1348,22 @@ STYLE:
         verbosity: config.verbosity
       });
     } catch (error) {
-      console.error('[QUERY ENGINE] GPT-5.2 API call failed:', error);
+      console.error(`[QUERY ENGINE] ${model} API call failed:`, error);
       console.error('[QUERY ENGINE] Context length:', context.length, 'chars');
       console.error('[QUERY ENGINE] Instructions length:', instructions.length, 'chars');
-      throw new Error(`GPT-5.2 API error: ${error.message || 'Unknown error'}`);
+      throw new Error(`${model} API error: ${error.message || 'Unknown error'}`);
     }
     
     const answer = response.content || response.message?.content || '';
+    if (response?.hadError || /^\[Error:/i.test(String(answer || '').trim())) {
+      const reason = response?.errorType || String(answer || '').slice(0, 200) || 'empty error response';
+      throw new Error(`${model} returned unusable query content: ${reason}`);
+    }
     
     if (!answer) {
-      console.error('[QUERY ENGINE] No content received from GPT-5.2');
+      console.error(`[QUERY ENGINE] No content received from ${model}`);
       console.error('[QUERY ENGINE] Response:', JSON.stringify(response, null, 2));
-      throw new Error('No content received from GPT-5.2 (response was empty)');
+      throw new Error(`No content received from ${model} (response was empty)`);
     }
     
     // Build result
@@ -2173,7 +2177,7 @@ SECTION E: Prioritize immediate next actions (design partners, pilots, validatio
    * This ensures executives get compressed views that are 100% faithful to the original answer
    */
   async executeExecutiveCompression(query, baseAnswer, options = {}) {
-    const { model = 'gpt-5.2', baseMetadata = {} } = options;
+    const { model = this.config?.models?.primary || 'MiniMax-M2.7', baseMetadata = {} } = options;
     
     // SMART DETECTION: Determine query type to add contextual emphasis
     const queryType = this.detectQueryType(query, baseAnswer);
@@ -2552,7 +2556,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
     let md = `# 🧠 COSMO Query Result\n\n`;
     md += `**Query:** ${query}\n\n`;
     md += `**Timestamp:** ${metadata.timestamp || new Date().toISOString()}\n\n`;
-    md += `**Model:** ${metadata.model || 'gpt-5.2'} (${metadata.mode || 'normal'} mode)\n\n`;
+    md += `**Model:** ${metadata.model || 'unknown'} (${metadata.mode || 'normal'} mode)\n\n`;
     md += `---\n\n`;
 
     // Evidence Quality Section
@@ -2748,7 +2752,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
       <div class="meta">
         <strong>Query:</strong> ${this.escapeHtml(query)}<br>
         <strong>Timestamp:</strong> ${metadata.timestamp || new Date().toISOString()}<br>
-        <strong>Model:</strong> ${metadata.model || 'gpt-5.2'} (${metadata.mode || 'normal'} mode)
+        <strong>Model:</strong> ${metadata.model || 'unknown'} (${metadata.mode || 'normal'} mode)
       </div>
     </header>`;
 
@@ -3347,7 +3351,7 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
    */
   async executeEnhancedQuery(query, options = {}) {
     const {
-      model = 'gpt-5.2',
+      model = this.config?.models?.primary || 'MiniMax-M2.7',
       mode = 'normal',
       exportFormat = null,
       includeFiles = true,

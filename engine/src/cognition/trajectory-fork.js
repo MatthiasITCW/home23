@@ -379,7 +379,7 @@ class TrajectoryForkSystem {
         .join('\n\n');
 
       const response = await this.gpt5.generate({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: 'Consolidate these exploration thoughts into a single coherent insight or conclusion.',
         messages: [{
           role: 'user',

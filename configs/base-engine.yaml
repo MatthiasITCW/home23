@@ -5,7 +5,7 @@ architecture:
   # thinking_machine = new 4-phase pipeline (discover → deep-dive → connect → critique).
   # Default stays legacy_roles until Phase 8 cutover. Flag exists now so subsequent
   # phases can branch on it without disrupting the running engine.
-  cognitionMode: thinking_machine
+  cognitionMode: legacy_roles
   roleSystem:
     type: dynamic
     explorationMode: guided
@@ -284,7 +284,7 @@ architecture:
       # updated to supply their own concrete criteria.
       autoSynthesizeLegacy: true
       minCriterionLength: 40
-      judgeModel: gpt-5-mini
+      judgeModel: gpt-5.5
       judgeTTLMs: 86400000
       vaguenessAnchors:
         - file
@@ -334,16 +334,16 @@ architecture:
   reflection:
     enabled: true
 models:
-  primary: gpt-5.2
-  fast: gpt-5-mini
-  nano: gpt-5-mini
+  primary: MiniMax-M2.7
+  fast: nemotron-3-nano:30b
+  nano: nemotron-3-nano:30b
   embeddings: nomic-embed-text
-  strategicModel: gpt-5.2
-  coordinatorStrategic: gpt-5.2
-  coordinatorStandard: gpt-5-mini
-  plannerModel: gpt-5-mini
-  curatorModel: gpt-5-mini
-  curatorStrategic: gpt-5.2
+  strategicModel: MiniMax-M2.7
+  coordinatorStrategic: MiniMax-M2.7
+  coordinatorStandard: nemotron-3-nano:30b
+  plannerModel: nemotron-3-nano:30b
+  curatorModel: nemotron-3-nano:30b
+  curatorStrategic: MiniMax-M2.7
   compiler: minimax-m2.7
   defaultReasoningEffort: low
   defaultMaxTokens: 4000
@@ -360,10 +360,12 @@ providers:
     enabled: false
     defaultModel: qwen3.5:4b
     modelMapping:
-      gpt-5.2: qwen3.5:4b
+      gpt-5.5: qwen3.5:4b
+      gpt-5.5-pro: qwen3.5:4b
+      gpt-5.4: qwen3.5:4b
+      gpt-5.4-mini: qwen3.5:4b
+      gpt-5.4-nano: qwen3.5:4b
       gpt-5: qwen3.5:4b
-      gpt-5-mini: qwen3.5:4b
-      gpt-5-nano: qwen3.5:4b
     supportsTools: true
     supportsStreaming: true
   ollama-cloud:
@@ -475,7 +477,7 @@ modelAssignments:
 coordinator:
   enabled: true
   reviewCyclePeriod: 50
-  model: gpt-5-mini
+  model: gpt-5.5
   reasoningEffort: low
   maxTokens: 3000
   maxConcurrent: 2

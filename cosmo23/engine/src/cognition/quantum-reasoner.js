@@ -338,7 +338,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
         purpose: 'collapse',
         instructions: 'You are an expert at evaluating reasoning quality and selecting the best hypothesis.',
         messages: [{ role: 'user', content: evaluationPrompt }],
-        max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 50 - too low!)
+        max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 50 - too low!)
         reasoningEffort: 'low'
       });
 
@@ -403,7 +403,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
         purpose: 'scoring',
         instructions: 'Rate this hypothesis from 1-10 based on quality, depth, and coherence. Respond with ONLY a number.',
         messages: [{ role: 'user', content: hypothesis.hypothesis.substring(0, 500) }],
-        max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 50 - too low!)
+        max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 50 - too low!)
         reasoningEffort: 'low'
       });
 

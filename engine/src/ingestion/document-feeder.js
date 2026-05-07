@@ -488,12 +488,25 @@ class DocumentFeeder {
     const basename = path.basename(candidatePath);
     if (basename.startsWith('.')) return true;
     if (basename === 'ingestion-manifest.json' || basename === 'ingestion-pending.json') return true;
+    if (this._isVolatileOperationalArtifact(candidatePath)) return true;
 
     const normalized = String(candidatePath).replace(/\\/g, '/');
     const patterns = Array.isArray(this.config.excludePatterns)
       ? this.config.excludePatterns.filter(p => typeof p === 'string' && p.trim())
       : [];
     return patterns.some(pattern => this._matchesGlob(normalized, pattern));
+  }
+
+  _isVolatileOperationalArtifact(candidatePath) {
+    const normalized = String(candidatePath).replace(/\\/g, '/');
+    const basename = path.basename(normalized);
+    if (!normalized.includes('/workspace/cron/')) return false;
+    return new Set([
+      'catalog.json',
+      'status.md',
+      'monitor-perf.jsonl',
+      'cron-list.txt',
+    ]).has(basename);
   }
 
   _matchesGlob(normalizedPath, pattern) {

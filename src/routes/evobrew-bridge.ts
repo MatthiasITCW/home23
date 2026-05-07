@@ -22,37 +22,122 @@ function writeSse(res: Response, data: Record<string, unknown>): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function cleanString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function clip(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n[...truncated...]`;
+}
+
+function extractPromptLine(systemPrompt: string, labels: string[]): string {
+  for (const label of labels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = systemPrompt.match(new RegExp(`\\*\\*${escaped}\\*\\*:\\s*([^\\n]+)`));
+    if (match?.[1]) return match[1].trim();
+  }
+  return '';
+}
+
+function extractPromptSection(systemPrompt: string, heading: string, limit: number): string {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = systemPrompt.match(new RegExp(`## ${escaped}\\s*\\n([\\s\\S]*?)(?:\\n## |\\n════════|$)`));
+  return match?.[1] ? clip(match[1].trim(), limit) : '';
+}
+
+function buildStructuredContextParts(context: Record<string, unknown>): string[] {
+  const parts: string[] = [];
+
+  const currentFolder = cleanString(context.currentFolder);
+  const fileName = cleanString(context.fileName);
+  const language = cleanString(context.language);
+  const selectedText = cleanString(context.selectedText);
+  const documentContent = cleanString(context.documentContent);
+  const fileTreeContext = cleanString(context.fileTreeContext);
+  const conversationSummary = cleanString(context.conversationSummary);
+  const brain = asRecord(context.brain);
+
+  if (currentFolder) parts.push(`Working directory: ${currentFolder}`);
+  if (fileName) parts.push(`Open file: ${fileName}`);
+  if (language) parts.push(`Language: ${language}`);
+
+  if (brain) {
+    const brainEnabled = brain.enabled !== false;
+    const brainName = cleanString(brain.name);
+    const brainPath = cleanString(brain.path);
+    const brainNodes = typeof brain.nodes === 'number' ? ` (${brain.nodes} nodes${brainPath ? `, path: ${brainPath}` : ''})` : brainPath ? ` (path: ${brainPath})` : '';
+    if (brainEnabled && (brainName || brainPath)) {
+      parts.push(`Connected brain: ${brainName || brainPath}${brainNodes}`);
+    }
+  }
+
+  if (conversationSummary) {
+    parts.push(`Conversation summary:\n${clip(conversationSummary, 1200)}`);
+  }
+
+  const recentMessages = Array.isArray(context.recentMessages) ? context.recentMessages : [];
+  if (recentMessages.length > 0) {
+    const rendered = recentMessages
+      .map((msg) => {
+        const record = asRecord(msg);
+        const role = cleanString(record?.role);
+        const content = cleanString(record?.content);
+        return role && content ? `${role}: ${clip(content, 600)}` : '';
+      })
+      .filter(Boolean)
+      .join('\n');
+    if (rendered) parts.push(`Recent Evobrew conversation:\n${clip(rendered, 1800)}`);
+  }
+
+  if (selectedText) {
+    parts.push(`Selected text:\n${clip(selectedText, 2000)}`);
+  } else if (documentContent) {
+    parts.push(`Current document:\n${clip(documentContent, 2000)}`);
+  }
+
+  if (fileTreeContext) {
+    parts.push(`File tree:\n${clip(fileTreeContext, 1200)}`);
+  }
+
+  return parts;
+}
+
+function buildPromptFallbackParts(systemPrompt: string): string[] {
+  const parts: string[] = [];
+
+  const folder = extractPromptLine(systemPrompt, ['Folder']);
+  const file = extractPromptLine(systemPrompt, ['Open File', 'File']);
+  const language = extractPromptLine(systemPrompt, ['Language']);
+  const brain = extractPromptLine(systemPrompt, ['Brain']);
+  const projectStructure = extractPromptSection(systemPrompt, 'Project Structure', 1200);
+
+  if (folder) parts.push(`Working directory: ${folder}`);
+  if (file && file !== 'untitled') parts.push(`Open file: ${file}`);
+  if (language && language !== 'text') parts.push(`Language: ${language}`);
+  if (brain) parts.push(`Connected brain: ${brain}`);
+  if (projectStructure) parts.push(`Project structure:\n${projectStructure}`);
+
+  return parts;
+}
+
 /**
  * Build IDE context block from evobrew's system prompt and request metadata.
  * Gives the agent awareness of what the user is looking at in the IDE.
  */
 function buildIdeContext(body: Record<string, unknown>): string {
-  const parts: string[] = [];
-
-  // Extract structured fields if present
+  const structured = asRecord(body.context);
+  const parts = structured ? buildStructuredContextParts(structured) : [];
   const systemPrompt = body.systemPrompt as string || '';
 
-  // Parse key context from evobrew's system prompt
-  const folderMatch = systemPrompt.match(/\*\*Folder\*\*:\s*(.+)/);
-  const fileMatch = systemPrompt.match(/\*\*Open File\*\*:\s*(.+)/);
-  const brainMatch = systemPrompt.match(/\*\*Brain\*\*:\s*(.+)/);
-
-  if (folderMatch?.[1]) parts.push(`Working directory: ${folderMatch[1].trim()}`);
-  if (fileMatch?.[1]) parts.push(`Open file: ${fileMatch[1].trim()}`);
-  if (brainMatch?.[1]) parts.push(`Connected brain: ${brainMatch[1].trim()}`);
-
-  // Extract document content if embedded in the system prompt
-  const docStart = systemPrompt.indexOf('**Document Content');
-  if (docStart > -1) {
-    const docSection = systemPrompt.slice(docStart, docStart + 2000);
-    parts.push(docSection);
-  }
-
-  // Extract file tree context if present
-  const treeStart = systemPrompt.indexOf('**File Tree');
-  if (treeStart > -1) {
-    const treeSection = systemPrompt.slice(treeStart, treeStart + 1000);
-    parts.push(treeSection);
+  if (parts.length === 0 && systemPrompt) {
+    parts.push(...buildPromptFallbackParts(systemPrompt));
   }
 
   if (parts.length === 0) return '';

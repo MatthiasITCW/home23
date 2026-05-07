@@ -1,7 +1,7 @@
 /**
  * Anthropic Client Adapter for COSMO Research Engine
  *
- * Translates GPT-5.2 Responses API format → Anthropic Messages API
+ * Translates GPT-5.5 Responses API format → Anthropic Messages API
  * Maintains compatibility with GPT5Client interface for zero breaking changes
  *
  * Key Features:
@@ -32,10 +32,14 @@ class AnthropicClient {
 
     // Model mapping (GPT names → Claude models)
     this.modelMapping = config.modelMapping || {
-      'gpt-5.2': 'claude-sonnet-4-5',
-      'gpt-5': 'claude-sonnet-4-5',
-      'gpt-5-mini': 'claude-sonnet-4-5',
-      'gpt-5-nano': 'claude-sonnet-4-5'
+      'gpt-5.5': 'claude-sonnet-4-7',
+      'gpt-5.5-pro': 'claude-opus-4-7',
+      'gpt-5.4': 'claude-sonnet-4-7',
+      'gpt-5.4-mini': 'claude-sonnet-4-7',
+      'gpt-5.4-nano': 'claude-sonnet-4-7',
+      'gpt-5.3-codex': 'claude-sonnet-4-7',
+      'gpt-5.3-codex-spark': 'claude-sonnet-4-7',
+      'gpt-5': 'claude-sonnet-4-7'
     };
 
     // Default settings
@@ -805,12 +809,12 @@ class AnthropicClient {
    * Get model with mapping
    */
   _getModelFromOptions(options) {
-    const requestedModel = getModelId(options.model || 'gpt-5.2') || 'gpt-5.2';
+    const requestedModel = getModelId(options.model || 'gpt-5.5') || 'gpt-5.5';
     // If already a Claude model, use it directly
     if (requestedModel.startsWith('claude-')) {
       return requestedModel;
     }
-    return this.modelMapping[requestedModel] || 'claude-sonnet-4-5';
+    return this.modelMapping[requestedModel] || 'claude-sonnet-4-7';
   }
 
   /**

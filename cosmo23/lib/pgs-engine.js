@@ -21,10 +21,19 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 
+function readIntEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // ─── Configurable defaults (override via options.pgsConfig or env vars) ──────
 const PGS_DEFAULTS = {
   maxConcurrentSweeps: parseInt(process.env.PGS_MAX_CONCURRENT_SWEEPS) || 5,
   minNodesForPgs: parseInt(process.env.PGS_MIN_NODES) || 0,
+  directQueryMaxNodes: readIntEnv('PGS_DIRECT_QUERY_MAX_NODES', 200),
+  skipSynthesisForSinglePartition: process.env.PGS_SKIP_SINGLE_PARTITION_SYNTHESIS !== '0',
   targetPartitionMin: parseInt(process.env.PGS_TARGET_PARTITION_MIN) || 200,
   targetPartitionMax: parseInt(process.env.PGS_TARGET_PARTITION_MAX) || 1800,
   minCommunitySize: parseInt(process.env.PGS_MIN_COMMUNITY_SIZE) || 30,
@@ -82,7 +91,7 @@ class PGSEngine {
    */
   async execute(query, options = {}) {
     const {
-      model = 'claude-opus-4-5',
+      model = 'claude-opus-4-7',
       mode: legacyMode = 'full',
       pgsMode,
       pgsSessionId = DEFAULT_SESSION_ID,
@@ -107,10 +116,26 @@ class PGSEngine {
     emit({ type: 'pgs_init', totalNodes: nodes.length, totalEdges: edges.length });
     emit({ type: 'progress', message: `Brain loaded: ${nodes.length.toLocaleString()} nodes, ${edges.length.toLocaleString()} edges` });
 
+    // PGS is a large-graph coverage tool. For small COSMO runs, the direct
+    // Query path is both faster and more complete because it includes run
+    // outputs/deliverables in addition to memory nodes.
+    if (config.directQueryMaxNodes > 0 && nodes.length > 0 && nodes.length <= config.directQueryMaxNodes) {
+      return await this.executeDirectQueryFallback(
+        query,
+        options,
+        emit,
+        `Brain has ${nodes.length} nodes (<= ${config.directQueryMaxNodes})`
+      );
+    }
+
     // Guard: too small for PGS - fall back to standard query (with enablePGS: false to prevent loop)
     if (config.minNodesForPgs > 0 && nodes.length < config.minNodesForPgs) {
-      emit({ type: 'progress', message: `Brain has ${nodes.length} nodes (< ${config.minNodesForPgs}). Using standard query instead of PGS.` });
-      return await this.qe.executeQuery(query, { ...options, enablePGS: false });
+      return await this.executeDirectQueryFallback(
+        query,
+        options,
+        emit,
+        `Brain has ${nodes.length} nodes (< ${config.minNodesForPgs})`
+      );
     }
 
     // Phase 0: Partition (cached)
@@ -216,7 +241,8 @@ class PGSEngine {
     const sweepResults = await this.sweepPartitions(query, partitionsToSweep, nodeMap, edges, partitions, onChunk, sweepModel, config);
 
     const successfulSweeps = sweepResults.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
-    emit({ type: 'progress', message: `${successfulSweeps.length}/${partitionsToSweep.length} sweeps completed` });
+    const failedSweeps = partitionsToSweep.length - successfulSweeps.length;
+    emit({ type: 'progress', message: `${successfulSweeps.length}/${partitionsToSweep.length} sweeps completed (${failedSweeps} failed or empty)` });
 
     // Persist session: merge newly swept partition IDs
     const newSearchedIds = new Set([...searchedIds, ...partitionsToSweep.map(p => p.id)]);
@@ -230,18 +256,60 @@ class PGSEngine {
       });
     }
 
+    const updatedSearched = mode === 'full' ? partitionsToSweep.length : newSearchedIds.size;
+    const updatedRemaining = mode === 'full'
+      ? Math.max(partitions.length - partitionsToSweep.length, 0)
+      : partitions.length - newSearchedIds.size;
+
     // Emit updated session counts
     emit({
       type: 'pgs_session_updated',
       sessionId: pgsSessionId,
-      searched: mode === 'full' ? 0 : newSearchedIds.size,
-      remaining: mode === 'full' ? partitions.length : partitions.length - newSearchedIds.size,
+      searched: updatedSearched,
+      remaining: updatedRemaining,
       total: partitions.length
     });
 
     if (successfulSweeps.length === 0) {
       emit({ type: 'progress', message: 'All sweeps failed, falling back to standard query' });
       return await this.qe.executeQuery(query, { ...options, enablePGS: false });
+    }
+
+    if (partitions.length <= 1 && config.skipSynthesisForSinglePartition) {
+      emit({ type: 'progress', message: 'PGS: Single partition covered; skipping cross-partition synthesis.' });
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      emit({ type: 'pgs_phase', phase: 'done', phaseIndex: 4, totalPhases: 4, message: `Complete in ${elapsed}s` });
+      return {
+        answer: successfulSweeps[0].sweepOutput,
+        metadata: {
+          model: sweepModel,
+          mode: 'pgs',
+          pgs: {
+            totalNodes: nodes.length,
+            totalEdges: edges.length,
+            totalPartitions: partitions.length,
+            sweptPartitions: partitionsToSweep.length,
+            successfulSweeps: successfulSweeps.length,
+            failedSweeps,
+            sweepModel,
+            synthesisModel: null,
+            synthesisSkipped: true,
+            singlePartition: true,
+            elapsed: `${elapsed}s`,
+            sessionMode: mode,
+            sessionId: pgsSessionId,
+            searched: updatedSearched,
+            remaining: updatedRemaining
+          },
+          sources: {
+            memoryNodes: nodes.length,
+            thoughts: 0,
+            edges: edges.length,
+            liveJournalNodes: 0
+          },
+          timestamp: new Date().toISOString()
+        }
+      };
     }
 
     // Phase 3: Synthesize
@@ -271,13 +339,14 @@ class PGSEngine {
           totalPartitions: partitions.length,
           sweptPartitions: partitionsToSweep.length,
           successfulSweeps: successfulSweeps.length,
+          failedSweeps,
           sweepModel: sweepModel,
           synthesisModel: model,
           elapsed: `${elapsed}s`,
           sessionMode: mode,
           sessionId: pgsSessionId,
-          searched: newSearchedIds.size,
-          remaining: partitions.length - newSearchedIds.size
+          searched: updatedSearched,
+          remaining: updatedRemaining
         },
         sources: {
           memoryNodes: nodes.length,
@@ -288,6 +357,11 @@ class PGSEngine {
         timestamp: new Date().toISOString()
       }
     };
+  }
+
+  async executeDirectQueryFallback(query, options, emit, reason) {
+    emit({ type: 'progress', message: `PGS: ${reason}. Using direct query path for complete small-run context.` });
+    return await this.qe.executeEnhancedQuery(query, { ...options, enablePGS: false });
   }
 
   // ─── Phase 1: Partition (cached) ─────────────────────────────────────
@@ -1021,10 +1095,12 @@ class PGSEngine {
             partitionIndex: idx,
             total,
             partitionId: partition.id,
-            status: 'complete',
+            status: result ? 'complete' : 'failed',
             summary,
             completed: completedCount,
-            message: `Complete (${completedCount}/${total}): ${summary}`
+            message: result
+              ? `Complete (${completedCount}/${total}): ${summary}`
+              : `Failed (${completedCount}/${total}): ${summary}`
           });
 
           return result;
@@ -1130,6 +1206,12 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
     });
 
     const content = response.content || response.message?.content || '';
+    const trimmedContent = String(content || '').trim();
+    const modelHadError = response.hadError || /^\[Error:/i.test(trimmedContent);
+    if (modelHadError || trimmedContent.length === 0) {
+      const reason = response.errorType || trimmedContent.slice(0, 160) || 'empty sweep output';
+      throw new Error(`partition sweep produced no usable content: ${reason}`);
+    }
 
     return {
       partitionId: partition.id,
@@ -1138,7 +1220,7 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
       nodesIncluded: partitionNodes.length,
       keywords: partition.keywords?.slice(0, 10) || [],
       adjacentPartitions: partition.adjacentPartitions || [],
-      sweepOutput: content
+      sweepOutput: trimmedContent
     };
   }
 
@@ -1148,7 +1230,7 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
    * Synthesize all sweep outputs into a unified answer
    */
   async synthesize(query, sweepResults, options = {}) {
-    const { model = 'claude-opus-4-5', onChunk, totalNodes, totalEdges, totalPartitions, selectedPartitions, config: cfg } = options;
+    const { model = 'claude-opus-4-7', onChunk, totalNodes, totalEdges, totalPartitions, selectedPartitions, config: cfg } = options;
     const synthesisMaxTokens = cfg?.synthesisMaxTokens || PGS_DEFAULTS.synthesisMaxTokens;
 
     // Build synthesis context from sweep outputs
@@ -1164,9 +1246,11 @@ Explicitly state what was searched for and NOT found in this partition. "This pa
       synthesisContext += `\n\n`;
     }
 
-    const synthesisPrompt = `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepResults.length} partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
+    const synthesisPrompt = `You are the SYNTHESIS phase of Partitioned Graph Synthesis (PGS). You have received pre-analyzed outputs from ${sweepResults.length} successful partitions of a knowledge graph, where each partition was examined at full fidelity by a specialized sweep pass.
 
 Your unique advantage: you see findings from ALL partitions simultaneously. No single sweep pass had this cross-domain view.
+
+Reliability rule: only the partition outputs in the context below are evidence. Do not infer anything from failed, missing, empty, or unreachable partitions; those partitions are not included here. Do not describe model/API failures as graph findings.
 
 Your tasks:
 1. **Cross-Domain Connection Discovery**: Chase the outbound flags from each partition. When Partition A flags a connection to Partition B's domain, evaluate whether the connection is genuine and substantive.

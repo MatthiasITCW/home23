@@ -33,6 +33,52 @@ const CLUSTER_SNAPSHOT_DEFAULT_TTL = Number.parseInt(
   10
 );
 
+function readJsonFileIfExists(filePath) {
+  if (!filePath) return null;
+  try {
+    if (!fsSync.existsSync(filePath)) return null;
+    return JSON.parse(fsSync.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function getCosmoConfigCandidates() {
+  return [
+    process.env.COSMO23_CONFIG_PATH,
+    path.join(__dirname, '..', '.cosmo23-config', 'config.json'),
+    path.join(require('os').homedir(), '.cosmo2.3', 'config.json')
+  ].filter(Boolean);
+}
+
+function getPlainProviderSecret(providerId, envName) {
+  const envValue = process.env[envName];
+  if (envValue && String(envValue).trim()) return String(envValue).trim();
+
+  for (const configPath of getCosmoConfigCandidates()) {
+    const config = readJsonFileIfExists(configPath);
+    const value = config?.providers?.[providerId]?.api_key;
+    if (typeof value === 'string' && value.trim() && !value.startsWith('encrypted:')) {
+      return value.trim();
+    }
+  }
+
+  return '';
+}
+
+function getProviderBaseUrl(providerId, envName, fallback) {
+  const envValue = process.env[envName];
+  if (envValue && String(envValue).trim()) return String(envValue).trim();
+
+  for (const configPath of getCosmoConfigCandidates()) {
+    const config = readJsonFileIfExists(configPath);
+    const value = config?.providers?.[providerId]?.base_url || config?.providers?.[providerId]?.baseUrl;
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+
+  return fallback;
+}
+
 function isTruthyFlag(value) {
   if (!value) return false;
   const normalized = value.toString().trim().toLowerCase();
@@ -116,6 +162,21 @@ class QueryEngine {
     }
     this.gpt5Client = new GPT5Client(console); // Use GPT5Client for queries
     this.anthropicClient = new AnthropicClient({}, console); // Anthropic client (lazy init, OAuth-aware)
+    // HOME23 PATCH — Query defaults can be MiniMax. MiniMax speaks Anthropic's
+    // Messages API shape, but must use its own endpoint and API key.
+    const minimaxKey = getPlainProviderSecret('minimax', 'MINIMAX_API_KEY');
+    this.minimaxQueryClient = minimaxKey
+      ? new AnthropicClient(
+          {
+            providerId: 'minimax',
+            useOAuthService: false,
+            apiKey: minimaxKey,
+            baseURL: getProviderBaseUrl('minimax', 'MINIMAX_BASE_URL', 'https://api.minimax.io/anthropic'),
+            modelMapping: {}
+          },
+          console
+        )
+      : null;
 
     // Codex OAuth client (lazy — initialized on first use)
     this._codexQueryClient = null;
@@ -1375,12 +1436,15 @@ STYLE:
     'gpt-5.1': 128000,
     'gpt-5-mini': 128000,
     'gpt-5.1-codex-max': 128000,
+    'claude-opus-4-7': 200000,
     'claude-opus-4-6': 200000,
     'claude-opus-4-5': 200000,  // Conservative estimate for Opus 4.5
     'claude-opus': 200000,
+    'claude-sonnet-4-7': 200000,
     'claude-sonnet-4-6': 128000,
     'claude-sonnet-4-5': 128000,
     'claude-sonnet': 128000,
+    'claude-haiku-4-5': 200000,
     'grok-4-1-fast-reasoning': 128000,
     'grok-4-1-fast-non-reasoning': 128000,
     'grok-code-fast-1': 128000,
@@ -1395,18 +1459,57 @@ STYLE:
     'gpt-5.1': 3000,       // 128K context
     'gpt-5-mini': 2500,    // 128K but smaller model, more conservative
     'gpt-5.1-codex-max': 3000,
+    'claude-opus-4-7': 900,
     'claude-opus-4-6': 4200,
     'claude-opus-4-5': 4000,  // ~200K context, excellent for large brains
     'claude-opus': 4000,
+    'claude-sonnet-4-7': 800,
     'claude-sonnet-4-6': 3000,
     'claude-sonnet-4-5': 2800,  // 128K context
     'claude-sonnet': 2800,
+    'claude-haiku-4-5': 500,
     'grok-4-1-fast-reasoning': 2800,
     'grok-4-1-fast-non-reasoning': 2600,
     'grok-code-fast-1': 2400,
     'grok-2': 2200,
     'default': 2500
   };
+
+  // HOME23 PATCH 17 — keep quick agent brain_query calls bounded on large brains.
+  // Adaptive coverage is useful for full/expert/dive, but it turns "quick" into
+  // hundreds of nodes once Jerry's brain crosses 50k nodes.
+  static calculateMemoryNodeLimit({ mode = 'normal', totalNodes = 0, isMergedBrain = false, model = 'gpt-5.2' } = {}) {
+    const baseLimits = {
+      quick: 50, full: 400, expert: 800, dive: 1000,
+      fast: 100, normal: 200, deep: 400, raw: 150,
+      grounded: 300, report: 600, innovation: 300, consulting: 300, executive: 0
+    };
+
+    const targetCoverage = {
+      quick: 0.10, full: 0.20, expert: 0.30, dive: 0.35,
+      fast: 0.10, normal: 0.15, deep: 0.25, raw: 0.10,
+      grounded: 0.20, report: 0.35, innovation: 0.20, consulting: 0.20, executive: 0
+    };
+
+    const baseLimit = baseLimits[mode] || 200;
+    const MAX_NODES = QueryEngine.MODEL_MAX_NODES[model] || QueryEngine.MODEL_MAX_NODES['default'];
+    const nodeCount = Number.isFinite(totalNodes) ? Math.max(0, totalNodes) : 0;
+
+    if (mode === 'quick' || mode === 'fast') {
+      return Math.min(nodeCount || baseLimit, baseLimit, MAX_NODES);
+    }
+
+    const MIN_NODES = 100;
+    const coverage = targetCoverage[mode] || 0.15;
+    let adaptiveLimit = Math.max(baseLimit, Math.ceil(nodeCount * coverage));
+    adaptiveLimit = Math.max(MIN_NODES, Math.min(adaptiveLimit, MAX_NODES));
+
+    if (isMergedBrain && adaptiveLimit < MAX_NODES) {
+      adaptiveLimit = Math.min(Math.ceil(adaptiveLimit * 1.3), MAX_NODES);
+    }
+
+    return adaptiveLimit;
+  }
 
   async _getCodexCredentials() {
     const codexOAuthEngine = require('../engine/src/services/codex-oauth-engine');
@@ -1431,6 +1534,7 @@ STYLE:
     }
 
     const isClaudeModel = providerId === 'anthropic';
+    const isMiniMaxModel = providerId === 'minimax';
     const isLocalModel = providerId === 'ollama' || providerId === 'lmstudio' || providerId === 'local';
     const isXaiModel = providerId === 'xai';
     const isOllamaCloud = providerId === 'ollama-cloud';
@@ -1441,10 +1545,12 @@ STYLE:
       ? null // resolved async via _ensureCodexQueryClient()
       : (isClaudeModel
         ? this.anthropicClient
-        : isOllamaCloud
-          ? this.ollamaCloudClient
-          : (isXaiResponsesModel ? (this.xaiResponsesClient || this.xaiQueryClient)
-            : (isXaiModel ? this.xaiQueryClient : (isLocalModel ? this.localQueryClient : this.gpt5Client))));
+        : isMiniMaxModel
+          ? this.minimaxQueryClient
+          : isOllamaCloud
+            ? this.ollamaCloudClient
+            : (isXaiResponsesModel ? (this.xaiResponsesClient || this.xaiQueryClient)
+              : (isXaiModel ? this.xaiQueryClient : (isLocalModel ? this.localQueryClient : this.gpt5Client))));
 
     if (!isCodex && !client) {
       throw new Error(`Model ${effectiveModel} is not available because ${providerId} is not configured.`);
@@ -1454,9 +1560,11 @@ STYLE:
       ? 'OpenAI Codex'
       : (isClaudeModel
         ? 'Anthropic'
-        : isOllamaCloud
-          ? 'Ollama Cloud'
-          : (isXaiModel ? 'xAI' : (isLocalModel ? 'Local LLM' : 'OpenAI')));
+        : isMiniMaxModel
+          ? 'MiniMax'
+          : isOllamaCloud
+            ? 'Ollama Cloud'
+            : (isXaiModel ? 'xAI' : (isLocalModel ? 'Local LLM' : 'OpenAI')));
 
     return {
       client,
@@ -1464,6 +1572,7 @@ STYLE:
       providerLabel,
       effectiveModel,
       isClaudeModel,
+      isMiniMaxModel,
       isLocalModel,
       isXaiModel,
       isCodex,
@@ -1599,7 +1708,7 @@ STYLE:
     const memoryNodesFound = relevantMemory.filter(n => !n.connected).length;
     const modeLimits = {
       // UI modes
-      quick: 150, full: 400, expert: 800, dive: 1000,
+      quick: 50, full: 400, expert: 800, dive: 1000,
       // Legacy modes
       fast: 100, normal: 200, deep: 400, raw: 150, report: 600, innovation: 300, consulting: 300, executive: 0
     };
@@ -1673,7 +1782,7 @@ STYLE:
       // UI MODES (what users actually select in the interface)
       quick: { 
         reasoningEffort: 'low', 
-        maxTokens: 10000, 
+        maxTokens: 2500,
         verbosity: 'low' 
       },
       full: { 
@@ -2113,6 +2222,7 @@ STYLE:
   buildContext(state, relevantMemory, relevantThoughts, metrics, report, mode, outputFiles = null, model = 'gpt-5.2') {
     let context = `# COSMO Research State\n\n`;
     const isGrounded = mode === 'grounded';
+    const isQuickMode = mode === 'quick' || mode === 'fast';
     
     // Run metadata
     if (state.runMetadata) {
@@ -2123,7 +2233,7 @@ STYLE:
     }
 
     // Skip ops/meta-heavy sections when using grounded mode
-    const allowOpsContext = mode !== 'grounded';
+    const allowOpsContext = mode !== 'grounded' && !isQuickMode;
 
     if (allowOpsContext && state.isCluster && state.cluster) {
       const cluster = state.cluster;
@@ -2216,47 +2326,22 @@ STYLE:
     const totalNodes = directMatches.length;
     const isMergedBrain = state.mergeV2 || state.runMetadata?.mergedFrom?.length > 0;
     
-    // Base limits by mode (minimum thresholds)
-    const baseLimits = {
-      // UI MODES
-      quick: 150, full: 400, expert: 800, dive: 1000,
-      // LEGACY MODES
-      fast: 100, normal: 200, deep: 400, raw: 150,
-      grounded: 300, report: 600, innovation: 300, consulting: 300, executive: 0
-    };
-    
-    // Target coverage percentages by mode
-    const targetCoverage = {
-      // UI MODES
-      quick: 0.10, full: 0.20, expert: 0.30, dive: 0.35,
-      // LEGACY MODES  
-      fast: 0.10, normal: 0.15, deep: 0.25, raw: 0.10,
-      grounded: 0.20, report: 0.35, innovation: 0.20, consulting: 0.20, executive: 0
-    };
-    
-    // Calculate adaptive limit
-    const baseLimit = baseLimits[mode] || 200;
-    const coverage = targetCoverage[mode] || 0.15;
-    let adaptiveLimit = Math.max(baseLimit, Math.ceil(totalNodes * coverage));
-
-    // Apply floor and MODEL-AWARE ceiling (2026-01-23)
-    const MIN_NODES = 100;
     const MAX_NODES = QueryEngine.MODEL_MAX_NODES[model] || QueryEngine.MODEL_MAX_NODES['default'];
+    const memoryNodeLimit = QueryEngine.calculateMemoryNodeLimit({
+      mode,
+      totalNodes,
+      isMergedBrain,
+      model
+    });
 
     console.log(`[QUERY ENGINE] Model: ${model}, MAX_NODES: ${MAX_NODES}, Brain size: ${totalNodes}`);
-    adaptiveLimit = Math.max(MIN_NODES, Math.min(adaptiveLimit, MAX_NODES));
-
-    // Boost for merged brains (more diversity needed)
-    if (isMergedBrain && adaptiveLimit < MAX_NODES) {
-      adaptiveLimit = Math.min(Math.ceil(adaptiveLimit * 1.3), MAX_NODES);
-    }
 
     // Token budget estimation for monitoring (2026-01-23)
     const estimatedNodeTokens = (
-      Math.min(adaptiveLimit, 20) * 500 +      // Top 20: 2000 chars = 500 tokens each
-      Math.min(Math.max(adaptiveLimit - 20, 0), 80) * 250 +   // Next 80: 1000 chars = 250 tokens
-      Math.min(Math.max(adaptiveLimit - 100, 0), 200) * 175 + // Next 200: 700 chars = 175 tokens
-      Math.max(adaptiveLimit - 300, 0) * 125  // Rest: 500 chars = 125 tokens
+      Math.min(memoryNodeLimit, 20) * 500 +      // Top 20: 2000 chars = 500 tokens each
+      Math.min(Math.max(memoryNodeLimit - 20, 0), 80) * 250 +   // Next 80: 1000 chars = 250 tokens
+      Math.min(Math.max(memoryNodeLimit - 100, 0), 200) * 175 + // Next 200: 700 chars = 175 tokens
+      Math.max(memoryNodeLimit - 300, 0) * 125  // Rest: 500 chars = 125 tokens
     );
 
     const contextWindow = QueryEngine.MODEL_CONTEXT_WINDOWS[model] || QueryEngine.MODEL_CONTEXT_WINDOWS['default'];
@@ -2264,9 +2349,7 @@ STYLE:
     const utilizationPercent = ((estimatedTotalTokens / contextWindow) * 100).toFixed(1);
 
     console.log(`[QUERY ENGINE] Token budget: ~${estimatedTotalTokens.toLocaleString()} / ${(contextWindow/1000).toFixed(0)}K (${utilizationPercent}%)`);
-    console.log(`[QUERY ENGINE] Memory node limit: ${adaptiveLimit} (${((adaptiveLimit/totalNodes)*100).toFixed(1)}% coverage)`);
-
-    const memoryNodeLimit = adaptiveLimit;
+    console.log(`[QUERY ENGINE] Memory node limit: ${memoryNodeLimit} (${totalNodes > 0 ? ((memoryNodeLimit/totalNodes)*100).toFixed(1) : '0.0'}% coverage)`);
     
     // PHASE 4 (2026-01-21): Source diversity for merged brains
     // Ensure we get representation from all merged sources, not just the highest-scoring ones
@@ -2311,7 +2394,7 @@ STYLE:
       // Increased from 30 to ALL connected concepts (typically 50-100)
       // Connected concepts are crucial for understanding relationships and context
       // Since count is usually modest, showing all is safe and important
-      const connectedLimit = Math.min(connectedMatches.length, isGrounded ? 90 : 100); // Keep breadth in grounded while avoiding bloat
+      const connectedLimit = Math.min(connectedMatches.length, isQuickMode ? 20 : (isGrounded ? 90 : 100)); // Keep quick mode bounded.
       connectedMatches.slice(0, connectedLimit).forEach((node, i) => {
         const conceptText = node.concept.length > 300 ? node.concept.substring(0, 300) + '...' : node.concept;
         const instanceLabel = node.instanceId ? ` [${node.instanceId}]` : '';
@@ -2321,7 +2404,7 @@ STYLE:
       context += `\n`;
     }
 
-    if (state.goals?.active && state.goals.active.length > 0) {
+    if (!isQuickMode && state.goals?.active && state.goals.active.length > 0) {
       context += `## Active Goals (${state.goals.active.length})\n\n`;
       state.goals.active.slice(0, 40).forEach((item, i) => {
         // Handle both [id, goal] tuple format (from export) and plain goal objects
@@ -2347,7 +2430,7 @@ STYLE:
     }
     
     // Thoughts - include all relevant (top 40 for reasonable context)
-    const thoughtLimit = isGrounded ? 25 : 40;
+    const thoughtLimit = isQuickMode ? 8 : (isGrounded ? 25 : 40);
     if (relevantThoughts.length > 0) {
       context += `## Relevant Thought Stream (${relevantThoughts.length} thoughts)\n\n`;
       relevantThoughts.slice(0, thoughtLimit).forEach((t, i) => {
@@ -2370,7 +2453,7 @@ STYLE:
     }
     
     // Coordinator review - include for comprehensive analysis
-    if (!isGrounded && report) {
+    if (!isGrounded && !isQuickMode && report) {
       const reviewLimit = 15000; // Consistent limit
       context += `## Meta-Coordinator Review\n\n${report.content.substring(0, reviewLimit)}\n\n`;
       if (report.content.length > reviewLimit) {
@@ -4132,7 +4215,27 @@ This is STRATEGIC BRAINSTORMING informed by research insights. Be bold, creative
       if (!this.pgsEngine) {
         this.pgsEngine = new PGSEngine(this);
       }
-      return await this.pgsEngine.execute(query, { model, mode, pgsMode, pgsSessionId, pgsFullSweep, pgsConfig, pgsSweepModel, onChunk, enableSynthesis, includeCoordinatorInsights });
+      return await this.pgsEngine.execute(query, {
+        model,
+        mode,
+        exportFormat,
+        includeFiles,
+        allowActions,
+        includeEvidenceMetrics,
+        enableSynthesis,
+        followUpContext,
+        includeCoordinatorInsights,
+        baseAnswer,
+        baseMetadata,
+        priorContext,
+        pgsMode,
+        pgsSessionId,
+        pgsFullSweep,
+        pgsConfig,
+        pgsSweepModel,
+        onChunk,
+        explicitProvider
+      });
     }
     
     // Emit initial progress

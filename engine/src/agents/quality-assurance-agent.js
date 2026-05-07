@@ -457,7 +457,7 @@ class QualityAssuranceAgent extends BaseAgent {
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.models?.strategicModel || 'gpt-5.2',
+        model: this.config.models?.strategicModel || 'gpt-5.5',
         instructions: `You are a quality assurance agent checking for logical consistency.
 
 Review these findings and identify any contradictions or inconsistencies:

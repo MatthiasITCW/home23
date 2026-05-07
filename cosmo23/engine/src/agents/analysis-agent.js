@@ -268,7 +268,7 @@ Respond in JSON format:
         purpose: 'framing',
         instructions: this.buildCOSMOSystemPrompt(this.getAgentBehavioralPrompt()) + '\n\n' + prompt,
         messages: [{ role: 'user', content: 'Frame the analysis problem.' }],
-        maxTokens: 1200, // Above gpt-5-mini minimum of 1024
+        maxTokens: 1200, // Above gpt-5.4-mini minimum of 1024
         reasoningEffort: 'low' // Simple framing task
       }, 3);
 

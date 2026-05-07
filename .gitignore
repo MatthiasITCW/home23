@@ -64,6 +64,7 @@ evobrew/prisma/dev.db
 evobrew/.env
 evobrew/.codex-evobrew.*
 evobrew/model-catalog-cache.json
+evobrew/runtime-state.json
 evobrew/REFERENCE-v1.html
 evobrew/.superpowers/
 

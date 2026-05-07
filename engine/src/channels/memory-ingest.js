@@ -41,6 +41,12 @@ class MemoryIngest {
     this.logger = logger || console;
     this.objectsPath = path.join(brainDir, 'memory-objects.json');
     this.receiptsPath = path.join(brainDir, 'crystallization-receipts.jsonl');
+    this._opChain = Promise.resolve();
+    this._lockOptions = {
+      stale: 30_000,
+      update: 5_000,
+      retries: { retries: 60, minTimeout: 50, maxTimeout: 500 },
+    };
     try { fs.mkdirSync(brainDir, { recursive: true }); } catch {}
   }
 
@@ -120,45 +126,47 @@ class MemoryIngest {
    * Returns the list of updated MemoryObjects.
    */
   async applyDecay({ now = Date.now(), rules = {} } = {}) {
-    if (!Object.keys(rules).length) return [];
-    if (!fs.existsSync(this.objectsPath)) return [];
+    return this._withSerial(async () => {
+      if (!Object.keys(rules).length) return [];
+      if (!fs.existsSync(this.objectsPath)) return [];
 
-    const updated = [];
-    await lockfile.lock(this.objectsPath, { retries: { retries: 10, minTimeout: 20, maxTimeout: 200 } })
-      .then(async (release) => {
-        try {
-          const store = this._loadSafe();
-          for (const mo of store.objects) {
-            const tags = Array.isArray(mo.scope?.applies_to) ? mo.scope.applies_to : [];
-            let matchedRule = null;
-            for (const tag of tags) {
-              if (rules[tag]) { matchedRule = rules[tag]; break; }
+      const updated = [];
+      await lockfile.lock(this.objectsPath, this._lockOptions)
+        .then(async (release) => {
+          try {
+            const store = this._loadSafe();
+            for (const mo of store.objects) {
+              const tags = Array.isArray(mo.scope?.applies_to) ? mo.scope.applies_to : [];
+              let matchedRule = null;
+              for (const tag of tags) {
+                if (rules[tag]) { matchedRule = rules[tag]; break; }
+              }
+              if (!matchedRule) continue;
+              const createdMs = Date.parse(mo.created_at);
+              if (!Number.isFinite(createdMs)) continue;
+              const age = now - createdMs;
+              if (age <= 0) continue;
+              const halfLives = age / matchedRule.halfLifeMs;
+              const factor = Math.pow(0.5, halfLives);
+              const prev = mo.confidence?.score ?? 0;
+              const decayed = prev * factor;
+              // Only record a change if it's meaningful (>= 0.01 delta).
+              if (decayed < prev - 0.01) {
+                mo.confidence = { ...mo.confidence, score: decayed, basis: `${mo.confidence?.basis || ''} + decay(${(1 - factor).toFixed(2)})` };
+                mo.updated_at = new Date(now).toISOString();
+                mo.last_decayed_at = mo.updated_at;
+                updated.push(mo);
+              }
             }
-            if (!matchedRule) continue;
-            const createdMs = Date.parse(mo.created_at);
-            if (!Number.isFinite(createdMs)) continue;
-            const age = now - createdMs;
-            if (age <= 0) continue;
-            const halfLives = age / matchedRule.halfLifeMs;
-            const factor = Math.pow(0.5, halfLives);
-            const prev = mo.confidence?.score ?? 0;
-            const decayed = prev * factor;
-            // Only record a change if it's meaningful (>= 0.01 delta).
-            if (decayed < prev - 0.01) {
-              mo.confidence = { ...mo.confidence, score: decayed, basis: `${mo.confidence?.basis || ''} + decay(${(1 - factor).toFixed(2)})` };
-              mo.updated_at = new Date(now).toISOString();
-              mo.last_decayed_at = mo.updated_at;
-              updated.push(mo);
-            }
+            if (updated.length) fs.writeFileSync(this.objectsPath, JSON.stringify(store));
+          } finally {
+            await release();
           }
-          if (updated.length) fs.writeFileSync(this.objectsPath, JSON.stringify(store));
-        } finally {
-          await release();
-        }
-      })
-      .catch((err) => { this.logger.warn?.('[memory-ingest] applyDecay failed:', err?.message || err); });
+        })
+        .catch((err) => { this.logger.warn?.('[memory-ingest] applyDecay failed:', err?.message || err); });
 
-    return updated;
+      return updated;
+    });
   }
 
   async writeFromObservation(obs, draft) {
@@ -166,13 +174,17 @@ class MemoryIngest {
     obs = ensureTraceId(obs);
     if (!draft) draft = { method: 'build_event', type: 'observation', topic: obs.channelId, tags: [] };
 
+    return this._withSerial(() => this._writeFromObservationLocked(obs, draft));
+  }
+
+  async _writeFromObservationLocked(obs, draft) {
     // Ensure the file exists before acquiring a lock
     if (!fs.existsSync(this.objectsPath)) {
       fs.writeFileSync(this.objectsPath, JSON.stringify({ objects: [] }));
     }
 
     let written = null;
-    await lockfile.lock(this.objectsPath, { retries: { retries: 10, minTimeout: 20, maxTimeout: 200 } })
+    await lockfile.lock(this.objectsPath, this._lockOptions)
       .then(async (release) => {
         try {
           const store = this._loadSafe();
@@ -216,6 +228,12 @@ class MemoryIngest {
     }
 
     return written;
+  }
+
+  _withSerial(task) {
+    const run = this._opChain.then(task, task);
+    this._opChain = run.catch(() => {});
+    return run;
   }
 }
 

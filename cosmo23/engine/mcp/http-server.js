@@ -1011,7 +1011,7 @@ function createMCPServer() {
                 progress: goal.progress || 0,
                 pursuitCount: goal.pursuitCount || 0,
                 source: goal.source,
-                model: goal.source === 'dream_gpt5' ? 'gpt-5.2' : 'gpt-5.2'
+                model: goal.source === 'dream_gpt5' ? 'gpt-5.5' : 'gpt-5.5'
               });
             }
           });

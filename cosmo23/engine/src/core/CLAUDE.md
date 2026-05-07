@@ -115,7 +115,7 @@ OpenAI (default), xAI (`providers.xai.enabled`), Anthropic via OAuth (`providers
 Provider routing by assignment: `openai-codex` provider tag routes to `generateCodex()` which uses a dedicated Codex SDK client with OAuth JWT auth (standard OpenAI API, no custom base URL). `openai-codex` and `openai` are independent clients — both can be active simultaneously with different model sets.
 
 ### xAI Notes
-- `grok-4` does NOT accept `reasoning_effort` (always automatic). Only `grok-3-mini*` accepts it.
+- `grok-4` does NOT accept `reasoning_effort` (always automatic). Only `grok-4.20-0309-reasoning*` accepts it.
 - Web search uses `search_parameters: { mode: 'auto' }`.
 - If `aggregatedText` is empty but `reasoningSummary` exists, reasoning content is returned as the response.
 
@@ -136,7 +136,7 @@ Provider routing by assignment: `openai-codex` provider tag routes to `generateC
 | `architecture.roleSystem.explorationMode` | `'guided'` or `'autonomous'` — determines entire execution mode |
 | `architecture.roleSystem.guidedFocus.domain` | Topic label for guided runs |
 | `architecture.roleSystem.guidedFocus.context` | Task phases or free-form instructions |
-| `models.primary` | e.g., `'gpt-5.2'` |
+| `models.primary` | e.g., `'gpt-5.5'` |
 | `execution.maxCycles` | Loop termination limit |
 | `execution.maxRuntimeMinutes` | Wall-clock termination |
 | `execution.consolidationMode` | Perpetual sleep/consolidation |

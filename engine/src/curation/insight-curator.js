@@ -401,7 +401,7 @@ Return ONLY a JSON array: [{"index": 1, "actionability": X, "specificity": X, "n
 
         try {
           const response = await this.gpt5.generate({
-            model: this.config.models?.curatorModel || 'gpt-5-mini',
+            model: this.config.models?.curatorModel || 'gpt-5.4-mini',
             input: scoringPrompt,
             maxTokens: 6000, // Increased from 2000 - novelty evaluation needs thorough analysis
             reasoningEffort: 'low'
@@ -527,7 +527,7 @@ Return as JSON array: [{"index": 1, "category": "TECHNICAL", "title": "Brief spe
 
     try {
       const response = await this.gpt5.generate({
-        model: this.config.models?.curatorModel || 'gpt-5-mini', // Use mini for faster categorization
+        model: this.config.models?.curatorModel || 'gpt-5.4-mini', // Use mini for faster categorization
         input: categorizationPrompt,
         maxTokens: 6000, // Increased from 2000 - novelty evaluation needs thorough analysis
         reasoningEffort: 'low',
@@ -697,7 +697,7 @@ Focus on business value and actionable insights.`;
 
     try {
       const response = await this.gpt5.generate({
-        model: this.config.models?.curatorStrategic || 'gpt-5.2',
+        model: this.config.models?.curatorStrategic || 'gpt-5.5',
         input: summaryPrompt,
         maxTokens: 16000, // API maximum output limit (128K input + 16K output)
         reasoningEffort: 'high', // Executive synthesis for business decisions deserves deep reasoning
@@ -716,10 +716,10 @@ Focus on business value and actionable insights.`;
         this.logger.warn('Executive summary generation failed, trying fallback', { error: error.message });
       }
       
-      // Fallback: Try with gpt-5-mini and low reasoning
+      // Fallback: Try with gpt-5.4-mini and low reasoning
       try {
         const fallbackResponse = await this.gpt5.generate({
-          model: this.config.models?.curatorModel || 'gpt-5-mini',
+          model: this.config.models?.curatorModel || 'gpt-5.4-mini',
           input: summaryPrompt,
           maxTokens: 15000, // Still need buffer for mini's reasoning tokens
           reasoningEffort: 'low',
@@ -808,7 +808,7 @@ Focus on goal advancement and actionable next steps.`;
 
     try {
       const response = await this.gpt5.generate({
-        model: this.config.models?.curatorStrategic || 'gpt-5.2',
+        model: this.config.models?.curatorStrategic || 'gpt-5.5',
         input: analysisPrompt,
         maxTokens: 16000, // API maximum output limit
         reasoningEffort: 'high',
@@ -860,10 +860,10 @@ Focus on goal advancement and actionable next steps.`;
         this.logger.warn('Goal alignment analysis failed, trying fallback', { error: error.message });
       }
       
-      // Fallback: Use gpt-5-mini
+      // Fallback: Use gpt-5.4-mini
       try {
         const fallbackResponse = await this.gpt5.generate({
-          model: this.config.models?.curatorModel || 'gpt-5-mini',
+          model: this.config.models?.curatorModel || 'gpt-5.4-mini',
           input: analysisPrompt,
           maxTokens: 20000,
           reasoningEffort: 'low',
@@ -955,7 +955,7 @@ Return as JSON array:
 
     try {
       const response = await this.gpt5.generate({
-        model: this.config.models?.curatorStrategic || 'gpt-5.2',
+        model: this.config.models?.curatorStrategic || 'gpt-5.5',
         input: analysisPrompt,
         maxTokens: 16000, // API maximum output limit
         reasoningEffort: 'high',
@@ -1011,7 +1011,7 @@ Return your analysis as a JSON array:
 
     try {
       const response = await this.gpt5.generate({
-        model: this.config.models?.curatorStrategic || 'gpt-5.2',
+        model: this.config.models?.curatorStrategic || 'gpt-5.5',
         input: analysisPrompt,
         maxTokens: 16000, // API maximum output limit
         reasoningEffort: 'high',
@@ -1153,7 +1153,7 @@ ${this.generateStrategicValueSection(curationResults, mode)}
 
 **Curation Duration:** ${curationResults.metadata.curationDuration.toFixed(1)}s
 
-**Quality Control:** Automated scoring using GPT-5.2 for consistency
+**Quality Control:** Automated scoring using GPT-5.5 for consistency
 
 ---
 

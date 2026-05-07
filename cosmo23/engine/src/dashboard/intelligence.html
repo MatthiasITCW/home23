@@ -358,9 +358,9 @@
                     <div class="form-group">
                         <label class="form-label">Model:</label>
                         <select id="query-model" class="form-select">
-                            <option value="gpt-5.1" selected>GPT-5.1 (Default - Fast with 24h Caching)</option>
+                            <option value="gpt-5.5" selected>GPT-5.1 (Default - Fast with 24h Caching)</option>
                             <option value="gpt-5">GPT-5 (Maximum Reasoning Depth)</option>
-                            <option value="gpt-5-mini">GPT-5 Mini (Ultra Fast & Economical)</option>
+                            <option value="gpt-5.4-mini">GPT-5 Mini (Ultra Fast & Economical)</option>
                         </select>
                     </div>
 
@@ -572,9 +572,9 @@
                                 style="width: 100%; padding: 6px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; font-size: 13px; cursor: pointer;"
                                 onchange="updateAIReviewEstimate()"
                             >
-                                <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Default - Fast)</option>
-                                <option value="claude-opus-4-5">Claude Opus 4.5 (Most Capable)</option>
-                                <option value="gpt-5.2">GPT-5.2</option>
+                                <option value="claude-sonnet-4-7">Claude Sonnet 4.5 (Default - Fast)</option>
+                                <option value="claude-opus-4-7">Claude Opus 4.5 (Most Capable)</option>
+                                <option value="gpt-5.5">GPT-5.2</option>
                             </select>
                         </div>
                         
@@ -3363,7 +3363,7 @@
         function loadFromHistory(idx) {
             const item = queryHistory[idx];
             document.getElementById('query-input').value = item.query;
-            document.getElementById('query-model').value = item.model || 'gpt-5.1';
+            document.getElementById('query-model').value = item.model || 'gpt-5.5';
             document.getElementById('query-mode').value = item.mode || 'normal';
 
             if (item.result) {
@@ -8117,9 +8117,9 @@
             
             // Estimate based on model (approximate)
             const estimates = {
-                'claude-sonnet-4-5': '~15s/query',
-                'claude-opus-4-5': '~25s/query',
-                'gpt-5.2': '~20s/query'
+                'claude-sonnet-4-7': '~15s/query',
+                'claude-opus-4-7': '~25s/query',
+                'gpt-5.5': '~20s/query'
             };
             
             estimateEl.textContent = `Est: ${estimates[model] || '~20s/query'}`;
@@ -8157,14 +8157,14 @@
             }
             
             // Calculate estimate
-            const timePerQuery = model === 'claude-opus-4-5' ? 25 : model === 'claude-sonnet-4-5' ? 15 : 20;
+            const timePerQuery = model === 'claude-opus-4-7' ? 25 : model === 'claude-sonnet-4-7' ? 15 : 20;
             const totalTime = Math.ceil(queryTimestamps.length * timePerQuery / 60);
             
             // Model names for display
             const modelNames = {
-                'claude-sonnet-4-5': 'Claude Sonnet 4.5',
-                'claude-opus-4-5': 'Claude Opus 4.5',
-                'gpt-5.2': 'GPT-5.2'
+                'claude-sonnet-4-7': 'Claude Sonnet 4.5',
+                'claude-opus-4-7': 'Claude Opus 4.5',
+                'gpt-5.5': 'GPT-5.2'
             };
             
             const typeNames = {

@@ -227,7 +227,7 @@ Respond in JSON format:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2', // Creative exploration benefits from reasoning
+        model: 'gpt-5.5', // Creative exploration benefits from reasoning
         instructions: prompt,
         messages: [{ role: 'user', content: 'Generate exploration vectors.' }],
         maxTokens: 10000, // Creative ideation needs space
@@ -329,7 +329,7 @@ Be imaginative and speculative while maintaining coherence.`;
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2', // Use GPT-5.2 for exploration
+        model: 'gpt-5.5', // Use GPT-5.5 for exploration
         instructions: prompt,
         messages: [{ role: 'user', content: `Explore: ${vector.direction}` }],
         maxTokens: 20000, // Creative exploration is core reasoning task
@@ -368,7 +368,7 @@ Respond with JSON array:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2', // Use GPT-5.2 for connection discovery
+        model: 'gpt-5.5', // Use GPT-5.5 for connection discovery
         instructions: prompt,
         messages: [{ role: 'user', content: 'Discover cross-vector connections.' }],
         maxTokens: 12000, // Pattern finding needs space
@@ -414,7 +414,7 @@ Respond with JSON array:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: 'gpt-5.2', // Use GPT-5.2 for hypothesis generation
+        model: 'gpt-5.5', // Use GPT-5.5 for hypothesis generation
         instructions: prompt,
         messages: [{ role: 'user', content: 'Generate speculative hypotheses.' }],
         maxTokens: 2500, // Above gpt-5 minimum of 2048

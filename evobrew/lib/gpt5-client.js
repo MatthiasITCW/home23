@@ -34,7 +34,7 @@ class GPT5Client {
     }
 
     const {
-      model = 'gpt-5.2',
+      model = process.env.OPENAI_DEFAULT_MODEL || 'gpt-5.4-mini',
       instructions = '',
       messages = [],
       input = null,
@@ -227,7 +227,7 @@ class GPT5Client {
 
       // If we STILL have no content after all fallbacks, that's a real problem
       if (!aggregatedText || aggregatedText.length === 0) {
-        const errorMsg = `No content received from GPT-5.2 (${errorType || 'unknown reason'})`;
+        const errorMsg = `No content received from ${model} (${errorType || 'unknown reason'})`;
         this.logger?.error?.(errorMsg, {
           model,
           hadError,
@@ -550,7 +550,7 @@ class GPT5Client {
   async generateFast(options = {}) {
     return this.generateWithRetry({
       ...options,
-      model: options.model || 'gpt-5-mini', // Use mini by default, nano is broken
+      model: options.model || 'gpt-5.4-mini',
       reasoningEffort: 'low',
       max_output_tokens: options.max_output_tokens || options.maxOutputTokens || options.maxTokens || 1000
     }, 3);
@@ -898,5 +898,3 @@ class GPT5Client {
 }
 
 module.exports = { GPT5Client };
-
-

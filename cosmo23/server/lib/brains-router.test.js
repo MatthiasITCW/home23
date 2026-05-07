@@ -40,11 +40,11 @@ async function writeRunMetadata(runPath, overrides = {}) {
     maxConcurrent: 4,
     enableWebSearch: true,
     primaryProvider: 'openai',
-    primaryModel: 'gpt-5.2',
+    primaryModel: 'gpt-5.5',
     fastProvider: 'openai',
-    fastModel: 'gpt-5-mini',
+    fastModel: 'gpt-5.4-mini',
     strategicProvider: 'openai',
-    strategicModel: 'gpt-5.2',
+    strategicModel: 'gpt-5.5',
     ...overrides
   }, null, 2));
 
@@ -56,11 +56,11 @@ async function writeRunMetadata(runPath, overrides = {}) {
     maxConcurrent: 4,
     enableExperimental: false,
     primaryProvider: 'openai',
-    primaryModel: 'gpt-5.2',
+    primaryModel: 'gpt-5.5',
     fastProvider: 'openai',
-    fastModel: 'gpt-5-mini',
+    fastModel: 'gpt-5.4-mini',
     strategicProvider: 'openai',
-    strategicModel: 'gpt-5.2'
+    strategicModel: 'gpt-5.5'
   }, null, 2));
 }
 

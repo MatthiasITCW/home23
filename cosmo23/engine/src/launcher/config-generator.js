@@ -62,8 +62,8 @@ class ConfigGenerator {
       searxng_url = '',
       // Anthropic Claude settings (OAuth primary, API key fallback)
       enable_anthropic = false,
-      anthropic_default_model = 'claude-sonnet-4-5',
-      anthropic_strategic_model = 'claude-opus-4-6'
+      anthropic_default_model = 'claude-sonnet-4-7',
+      anthropic_strategic_model = 'claude-opus-4-7'
     } = settings || {};
     const executionModeInfo = normalizeExecutionMode(exploration_mode, execution_mode);
     const normalizedExecutionMode = executionModeInfo.persistedMode;
@@ -278,18 +278,18 @@ voice:
 
 models:
   # Core models - GPT-5.2 (best general-purpose model)
-  primary: gpt-5.2
-  fast: gpt-5-mini
-  nano: gpt-5-mini
+  primary: gpt-5.5
+  fast: gpt-5.4-mini
+  nano: gpt-5.4-mini
   embeddings: text-embedding-3-small
   
   # Component-specific models
-  strategicModel: gpt-5.2            # Synthesis, planning, integration, QA agents
-  coordinatorStrategic: gpt-5.2      # Meta-coordinator strategic decisions
-  coordinatorStandard: gpt-5-mini    # Meta-coordinator reviews
-  plannerModel: gpt-5-mini           # Guided mode planner
-  curatorModel: gpt-5-mini           # Goal curator operations
-  curatorStrategic: gpt-5.2          # Goal curator deep analysis
+  strategicModel: gpt-5.5            # Synthesis, planning, integration, QA agents
+  coordinatorStrategic: gpt-5.5      # Meta-coordinator strategic decisions
+  coordinatorStandard: gpt-5.4-mini    # Meta-coordinator reviews
+  plannerModel: gpt-5.4-mini           # Guided mode planner
+  curatorModel: gpt-5.4-mini           # Goal curator operations
+  curatorStrategic: gpt-5.5          # Goal curator deep analysis
   
   defaultReasoningEffort: low
   defaultMaxTokens: ${enable_local_llm ? 4000 : 6000}
@@ -306,25 +306,25 @@ ${enable_anthropic ? `
 
     # Available models (easily add new ones as Anthropic releases them)
     availableModels:
-      - name: "claude-sonnet-4-5"
+      - name: "claude-sonnet-4-7"
         costPerMToken: [3, 15]
         maxTokens: 200000
         supportsThinking: true
-      - name: "claude-opus-4-5"
+      - name: "claude-opus-4-7"
         costPerMToken: [15, 75]
         maxTokens: 200000
         supportsThinking: true
-      - name: "claude-opus-4-6"
+      - name: "claude-opus-4-7"
         costPerMToken: [15, 75]
         maxTokens: 200000
         supportsThinking: true
 
     # Model mapping (GPT names → Claude models)
     modelMapping:
-      gpt-5.2: "${anthropic_default_model}"
+      gpt-5.5: "${anthropic_default_model}"
       gpt-5: "${anthropic_default_model}"
-      gpt-5-mini: "${anthropic_default_model}"
-      gpt-5-nano: "${anthropic_default_model}"
+      gpt-5.4-mini: "${anthropic_default_model}"
+      gpt-5.4-nano: "${anthropic_default_model}"
 
     # Settings
     useExtendedThinking: true
@@ -340,7 +340,7 @@ modelAssignments:
     # FALLBACK TEMPORARILY DISABLED FOR TESTING
     # fallback:
     #   provider: openai
-    #   model: "gpt-5.2"
+    #   model: "gpt-5.5"
 
   analysis:
     provider: anthropic
@@ -348,7 +348,7 @@ modelAssignments:
     # FALLBACK TEMPORARILY DISABLED FOR TESTING
     # fallback:
     #   provider: openai
-    #   model: "gpt-5.2"
+    #   model: "gpt-5.5"
 
   document_analysis:
     provider: anthropic
@@ -356,7 +356,7 @@ modelAssignments:
     # FALLBACK TEMPORARILY DISABLED FOR TESTING
     # fallback:
     #   provider: openai
-    #   model: "gpt-5.2"
+    #   model: "gpt-5.5"
 
   # Strategic agents - Use best model (Opus)
   synthesis:
@@ -365,7 +365,7 @@ modelAssignments:
     # FALLBACK TEMPORARILY DISABLED FOR TESTING
     # fallback:
     #   provider: openai
-    #   model: "gpt-5.2"
+    #   model: "gpt-5.5"
 
   integration:
     provider: anthropic
@@ -373,7 +373,7 @@ modelAssignments:
     # FALLBACK TEMPORARILY DISABLED FOR TESTING
     # fallback:
     #   provider: openai
-    #   model: "gpt-5.2"
+    #   model: "gpt-5.5"
 
   quality_assurance:
     provider: anthropic
@@ -381,7 +381,7 @@ modelAssignments:
     # FALLBACK TEMPORARILY DISABLED FOR TESTING
     # fallback:
     #   provider: openai
-    #   model: "gpt-5.2"
+    #   model: "gpt-5.5"
 
   # Default
   default:
@@ -390,7 +390,7 @@ modelAssignments:
     # FALLBACK TEMPORARILY DISABLED FOR TESTING
     # fallback:
     #   provider: openai
-    #   model: "gpt-5.2"
+    #   model: "gpt-5.5"
 ` : ''}
 ${enable_local_llm ? `
   # Local LLM provider (Ollama, vLLM, llama.cpp, etc.)
@@ -399,10 +399,10 @@ ${enable_local_llm ? `
     baseURL: "${local_llm_base_url}"
     defaultModel: "${local_llm_default_model}"
     modelMapping:
-      gpt-5.2: "${local_llm_default_model}"
+      gpt-5.5: "${local_llm_default_model}"
       gpt-5: "${local_llm_default_model}"
-      gpt-5-mini: "${local_llm_fast_model}"
-      gpt-5-nano: "${local_llm_fast_model}"
+      gpt-5.4-mini: "${local_llm_fast_model}"
+      gpt-5.4-nano: "${local_llm_fast_model}"
     supportsTools: true
     supportsStreaming: true
 ${searxng_url ? `    searxngUrl: "${searxng_url}"` : '    # searxngUrl: "http://localhost:8888"  # Optional: SearXNG for reliable web search'}
@@ -422,7 +422,7 @@ modelAssignments:
 coordinator:
   enabled: ${(dream_mode || enable_consolidation_mode) ? 'false' : 'true'}
   reviewCyclePeriod: ${enable_local_llm ? Math.max(review_period, 25) : (enable_stabilization ? 15 : review_period)}  # Increased for local LLM
-  model: gpt-5-mini
+  model: gpt-5.4-mini
   reasoningEffort: low
   maxTokens: 3000
   maxConcurrent: ${enable_local_llm ? 2 : (enable_stabilization ? 2 : max_concurrent)}  # Reduced for local LLM
@@ -984,8 +984,8 @@ experimental:
       searxng_url: '',
       // Anthropic Claude settings (OAuth primary, API key fallback)
       enable_anthropic: false,
-      anthropic_default_model: 'claude-sonnet-4-5',
-      anthropic_strategic_model: 'claude-opus-4-6'
+      anthropic_default_model: 'claude-sonnet-4-7',
+      anthropic_strategic_model: 'claude-opus-4-7'
     };
   }
 }

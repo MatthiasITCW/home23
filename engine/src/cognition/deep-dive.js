@@ -224,6 +224,9 @@ Hard boundaries:
 - Do not speculate about hobbies, life patterns, personal workload, motivation, attention, flow state, or hardware purchasing.
 - Do not use words like crisis, overloaded, unsustainable, drowning, or personal system unless the payload literally contains that wording.
 - Use only explicit metrics from the payload and the channel/source metadata.
+- Process topology metadata is authoritative when present.
+- Expected sibling process roles are not duplicates: an agent engine, dashboard, and harness may run side by side, and multiple agents may run the same role shape side by side.
+- Only call out duplicate deployment when topology.duplicateCandidate is true or when topologyWarning reports a mismatch.
 - Identify the operational risk, the missing evidence, and the next bounded verifier or action.
 - End after the operational implication. No essay.
 

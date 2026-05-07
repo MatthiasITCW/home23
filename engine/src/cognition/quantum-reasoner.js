@@ -4,8 +4,8 @@ const { LatentProjector } = require('./latent-projector');
 const crypto = require('crypto');
 
 /**
- * Quantum Reasoner - GPT-5.2 Version
- * Parallel hypothesis generation with GPT-5.2's extended reasoning
+ * Quantum Reasoner - GPT-5.5 Version
+ * Parallel hypothesis generation with GPT-5.5's extended reasoning
  * Uses Responses API with web_search and reasoning capabilities
  */
 class QuantumReasoner {
@@ -85,7 +85,7 @@ class QuantumReasoner {
         const branchStart = Date.now();
 
         try {
-          // Use GPT-5.2 with reasoning and optional web search
+          // Use GPT-5.5 with reasoning and optional web search
           const policyEffort = branchPlan.effortAssignments[i];
           const reasoningEffort = policyEffort || this.getBranchReasoningEffort(i, branches);
           const wantsWebSearch = branchPlan.webSearchAssignments[i] === 1;
@@ -105,7 +105,7 @@ class QuantumReasoner {
             ? await this.gpt5.generateWithWebSearch({
                 component: 'quantumReasoner',
                 purpose: 'branches',
-                model: 'gpt-5-mini',
+                model: 'gpt-5.4-mini',
                 instructions: branchPrompt,
                 messages: [{ role: 'user', content: 'Produce your output per the system instructions above, including the required action tag (INVESTIGATE/NOTIFY/TRIGGER/NO_ACTION) on its own line if the role specifies one.' }],
                 max_completion_tokens: 8000,
@@ -188,7 +188,7 @@ class QuantumReasoner {
       };
     }
 
-    this.logger?.info('Superposition generated (GPT-5.2)', {
+    this.logger?.info('Superposition generated (GPT-5.5)', {
       branches: validHypotheses.length,
       withWebSearch: validHypotheses.filter(h => h.usedWebSearch).length,
       withExtendedReasoning: validHypotheses.filter(h => h.reasoning).length,
@@ -278,7 +278,7 @@ class QuantumReasoner {
   }
 
   /**
-   * Collapse superposition using GPT-5.2 meta-reasoning
+   * Collapse superposition using GPT-5.5 meta-reasoning
    */
   async collapseSuperposition(superposition, collapseContext = {}) {
     const hypotheses = superposition.superposition;
@@ -309,7 +309,7 @@ class QuantumReasoner {
   }
 
   /**
-   * Collapse by selecting best using GPT-5.2 reasoning
+   * Collapse by selecting best using GPT-5.5 reasoning
    */
   async collapseToBestGPT5(hypotheses, context) {
     const evaluationPrompt = `Evaluate these ${hypotheses.length} hypotheses and select the SINGLE BEST one based on depth, coherence, and insight.
@@ -324,17 +324,17 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
 
     try {
       const response = await this.gpt5.generateFast({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: 'You are an expert at evaluating reasoning quality and selecting the best hypothesis.',
         messages: [{ role: 'user', content: evaluationPrompt }],
-        max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 50 - too low!)
+        max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 50 - too low!)
         reasoningEffort: 'low'
       });
 
       const selection = parseInt(response.content.trim());
       
       if (selection >= 1 && selection <= hypotheses.length) {
-        this.logger?.info('Collapsed to best (GPT-5.2)', { selected: selection });
+        this.logger?.info('Collapsed to best (GPT-5.5)', { selected: selection });
         return hypotheses[selection - 1];
       }
     } catch (error) {
@@ -345,7 +345,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
   }
 
   /**
-   * Collapse by weighted combination with GPT-5.2 scoring
+   * Collapse by weighted combination with GPT-5.5 scoring
    */
   async collapseWeightedGPT5(hypotheses, context) {
     // Score each hypothesis using GPT-5
@@ -370,7 +370,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
     for (const h of weighted) {
       cumulative += h.weight;
       if (rand <= cumulative) {
-        this.logger?.info('Collapsed weighted (GPT-5.2)', { 
+        this.logger?.info('Collapsed weighted (GPT-5.5)', { 
           selected: h.branchId, 
           weight: h.weight.toFixed(3),
           score: h.score.toFixed(2)
@@ -388,10 +388,10 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
   async scoreHypothesis(hypothesis) {
     try {
       const response = await this.gpt5.generateFast({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: 'Rate this hypothesis from 1-10 based on quality, depth, and coherence. Respond with ONLY a number.',
         messages: [{ role: 'user', content: hypothesis.hypothesis.substring(0, 500) }],
-        max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 50 - too low!)
+        max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 50 - too low!)
         reasoningEffort: 'low'
       });
 
@@ -475,7 +475,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
       return null;
     }
 
-    // Use GPT-5.2 with web search to make a creative leap
+    // Use GPT-5.5 with web search to make a creative leap
     try {
       const response = await this.gpt5.generateWithWebSearch({
         instructions: 'Make an unexpected conceptual leap. Find a distant but potentially insightful connection.',
@@ -484,7 +484,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
         reasoningEffort: 'low'
       });
 
-      this.logger?.info('Quantum tunnel occurred (GPT-5.2 + web)', {
+      this.logger?.info('Quantum tunnel occurred (GPT-5.5 + web)', {
         target: response.content.substring(0, 50)
       });
 
@@ -517,7 +517,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
     const baseOpts = {
       component: 'quantumReasoner',
       purpose: 'branches',
-      model: 'gpt-5-mini',
+      model: 'gpt-5.4-mini',
       instructions: branchPrompt,
       max_completion_tokens: 8000,
       reasoningEffort,
@@ -616,7 +616,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
   }
 
   /**
-   * Single reasoning path using GPT-5.2 with extended reasoning
+   * Single reasoning path using GPT-5.5 with extended reasoning
    */
   async singleReasoning(prompt, context = {}) {
     // Check if in pure mode
@@ -644,7 +644,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
     const response = await this.gpt5.generate({
       component: 'quantumReasoner',
       purpose: 'singleReasoning',
-      model: 'gpt-5.2', // Use GPT-5.2 for deep dream reasoning
+      model: 'gpt-5.5', // Use GPT-5.5 for deep dream reasoning
       instructions,
       messages: [{ role: 'user', content: userMessage }],
       maxTokens: 25000, // Deep dream reasoning needs space for rich exploration
@@ -663,7 +663,7 @@ Respond with ONLY the number (1-${hypotheses.length}) of the best hypothesis.`;
       content: response.content, // Also as content
       reasoning: response.reasoning,
       weight: 1.0,
-      model: response.model || 'gpt-5.2',
+      model: response.model || 'gpt-5.5',
       startedAt: new Date(completedAt).toISOString(),
       completedAt: new Date(completedAt).toISOString(),
       durationMs: 0,

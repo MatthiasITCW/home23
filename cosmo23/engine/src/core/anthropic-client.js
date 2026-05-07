@@ -15,6 +15,12 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { getAnthropicApiKey, prepareSystemPrompt, isOAuthToken, getStealthHeaders } = require('../services/anthropic-oauth-engine');
 
+// HOME23 PATCH — Claude Opus 4.7 rejects legacy sampling params such as
+// temperature and uses adaptive thinking instead of the older budgeted shape.
+function isAnthropicSamplingDeprecatedModel(model) {
+  return /^claude-opus-4-7(?:$|[-@])/.test(String(model || '').trim());
+}
+
 class AnthropicClient {
   /**
    * Initialize Anthropic client adapter
@@ -33,16 +39,20 @@ class AnthropicClient {
 
     // Model mapping (GPT names → Claude models)
     this.modelMapping = config.modelMapping || {
-      'gpt-5.2': 'claude-sonnet-4-5',
-      'gpt-5': 'claude-sonnet-4-5',
-      'gpt-5-mini': 'claude-sonnet-4-5',
-      'gpt-5-nano': 'claude-sonnet-4-5'
+      'gpt-5.5': 'claude-sonnet-4-7',
+      'gpt-5': 'claude-sonnet-4-7',
+      'gpt-5.4-mini': 'claude-sonnet-4-7',
+      'gpt-5.4-nano': 'claude-sonnet-4-7'
     };
 
     // Default settings
     this.defaultMaxTokens = config.defaultMaxTokens || 8000;
     this.temperature = config.temperature || 0.1;
     this.useExtendedThinking = config.useExtendedThinking !== false;
+    this._availableModelIds = null;
+    this._availableModelIdsFetchedAt = 0;
+    this._modelListHeaders = null;
+    this._modelListBaseURL = config.baseURL || config.baseUrl || 'https://api.anthropic.com';
   }
 
   /**
@@ -94,6 +104,8 @@ class AnthropicClient {
         const credentials = await getAnthropicApiKey();
         this.isOAuth = credentials.isOAuth;
         this._credentialsFetchedAt = Date.now();
+        this._modelListHeaders = this._buildModelListHeaders(credentials);
+        this._modelListBaseURL = 'https://api.anthropic.com';
 
         this.logger?.info?.('[AnthropicClient] Initializing with OAuth token (stealth mode)');
         this.anthropic = new Anthropic({
@@ -121,6 +133,12 @@ class AnthropicClient {
           throw new Error('No Anthropic-compatible credentials configured');
         }
         this.logger?.info?.(`[AnthropicClient] Initializing ${this.providerId} with ${this.isOAuth ? 'OAuth' : 'API key'} credentials`);
+        this._modelListHeaders = this._buildModelListHeaders({
+          authToken: options.authToken,
+          apiKey: options.apiKey,
+          defaultHeaders: options.defaultHeaders
+        });
+        this._modelListBaseURL = options.baseURL || 'https://api.anthropic.com';
         this.anthropic = new Anthropic(options);
       }
     } catch (error) {
@@ -190,14 +208,17 @@ class AnthropicClient {
       const tools = options.tools ? this._transformTools(options.tools) : undefined;
 
       // Determine if extended thinking should be used
-      const useExtendedThinking = this._shouldUseExtendedThinking(options.reasoningEffort);
-
       // Get model (with mapping)
       const model = this._getModelFromOptions(options);
+      const wireModel = await this._resolveWireModel(model);
+      const usesAdaptiveThinking = isAnthropicSamplingDeprecatedModel(wireModel);
 
-      // Determine temperature (CRITICAL: Anthropic requires temperature=1 when thinking is enabled)
+      // Determine if extended thinking should be used
+      const useExtendedThinking = this._shouldUseExtendedThinking(options.reasoningEffort);
+
+      // Pre-4.7 thinking required temperature=1. Opus 4.7 removes sampling parameters entirely.
       let temperature = options.temperature !== undefined ? options.temperature : this.temperature;
-      if (useExtendedThinking) {
+      if (useExtendedThinking && !usesAdaptiveThinking) {
         this.logger?.info?.('[AnthropicClient] Extended thinking enabled, forcing temperature=1', {
           originalTemp: temperature,
           useExtendedThinking
@@ -207,13 +228,16 @@ class AnthropicClient {
 
       // Build API request
       const requestParams = {
-        model,
+        model: wireModel,
         max_tokens: options.max_output_tokens || this.defaultMaxTokens,
-        temperature,
         system: systemPrompt,
         messages,
         stream: true
       };
+
+      if (!isAnthropicSamplingDeprecatedModel(wireModel)) {
+        requestParams.temperature = temperature;
+      }
 
       // Add tools if provided
       if (tools && tools.length > 0) {
@@ -227,15 +251,27 @@ class AnthropicClient {
 
       // Add extended thinking if appropriate
       if (useExtendedThinking) {
-        requestParams.thinking = {
-          type: 'enabled',
-          budget_tokens: 2000
-        };
+        if (usesAdaptiveThinking) {
+          requestParams.thinking = {
+            type: 'adaptive',
+            display: 'summarized'
+          };
+          requestParams.output_config = {
+            effort: options.reasoningEffort || 'high'
+          };
+        } else {
+          requestParams.thinking = {
+            type: 'enabled',
+            budget_tokens: 2000
+          };
+        }
       }
 
       this.logger?.info?.('[AnthropicClient] Starting generation', {
         model,
-        temperature,
+        wireModel,
+        temperature: usesAdaptiveThinking ? null : temperature,
+        samplingParamsOmitted: usesAdaptiveThinking,
         hasTools: !!tools,
         toolCount: tools?.length || 0,
         messageCount: messages.length,
@@ -374,12 +410,13 @@ class AnthropicClient {
 
       // Get model
       const model = this._getModelFromOptions(options);
+      const wireModel = await this._resolveWireModel(model);
+      const samplingParamsOmitted = isAnthropicSamplingDeprecatedModel(wireModel);
 
       // Use Anthropic's native web_search tool
       const requestParams = {
-        model,
+        model: wireModel,
         max_tokens: options.maxTokens || options.max_output_tokens || this.defaultMaxTokens,
-        temperature: options.temperature !== undefined ? options.temperature : this.temperature,
         system: prepareSystemPrompt(options.instructions, this.isOAuth),
         messages,
         tools: [{
@@ -390,7 +427,11 @@ class AnthropicClient {
         stream: true
       };
 
-      this.logger?.info?.('[AnthropicClient] Using native web_search tool', { model, query });
+      if (!samplingParamsOmitted) {
+        requestParams.temperature = options.temperature !== undefined ? options.temperature : this.temperature;
+      }
+
+      this.logger?.info?.('[AnthropicClient] Using native web_search tool', { model, wireModel, query, samplingParamsOmitted });
 
       // Stream the response
       const stream = await this.anthropic.messages.stream(requestParams);
@@ -828,7 +869,7 @@ class AnthropicClient {
    * Get model with mapping
    */
   _getModelFromOptions(options) {
-    const requestedModel = options.model || 'gpt-5.2';
+    const requestedModel = options.model || 'gpt-5.5';
     // HOME23 PATCH — non-Anthropic providers (e.g. MiniMax via the
     // Anthropic-compatible endpoint) reuse this client class but must NOT
     // be silently rewritten to a Claude model. Pass the requested model
@@ -840,7 +881,100 @@ class AnthropicClient {
     if (requestedModel.startsWith('claude-')) {
       return requestedModel;
     }
-    return this.modelMapping[requestedModel] || 'claude-sonnet-4-5';
+    return this.modelMapping[requestedModel] || 'claude-sonnet-4-7';
+  }
+
+  async _resolveWireModel(model) {
+    if (this.providerId && this.providerId !== 'anthropic') {
+      return model;
+    }
+
+    const available = await this._getAvailableModelIds();
+    if (!available || available.has(model)) {
+      return model;
+    }
+
+    const fallbacks = this._rankModelFallbacks(model, available);
+    if (fallbacks.length > 0) {
+      const wireModel = fallbacks[0];
+      this.logger?.warn?.('[AnthropicClient] Selected model not available to OAuth token; using wire fallback', {
+        requestedModel: model,
+        wireModel
+      });
+      return wireModel;
+    }
+
+    return model;
+  }
+
+  async _getAvailableModelIds() {
+    const now = Date.now();
+    if (this._availableModelIds && now - this._availableModelIdsFetchedAt < 5 * 60 * 1000) {
+      return this._availableModelIds;
+    }
+
+    try {
+      const page = await this._listAvailableModels();
+      this._availableModelIds = new Set((page.data || []).map(model => model.id).filter(Boolean));
+      this._availableModelIdsFetchedAt = now;
+      return this._availableModelIds;
+    } catch (error) {
+      this.logger?.warn?.('[AnthropicClient] Could not refresh model availability:', error.message);
+      return this._availableModelIds;
+    }
+  }
+
+  async _listAvailableModels() {
+    const modelsResource = this.anthropic.models || this.anthropic.beta?.models;
+    if (modelsResource?.list) {
+      return await modelsResource.list({ limit: 100 });
+    }
+    return await this._fetchAvailableModels();
+  }
+
+  async _fetchAvailableModels() {
+    if (!this._modelListHeaders) {
+      throw new Error('Anthropic model-list credentials unavailable');
+    }
+
+    const baseURL = String(this._modelListBaseURL || 'https://api.anthropic.com').replace(/\/+$/, '');
+    const url = `${baseURL}${baseURL.endsWith('/v1') ? '' : '/v1'}/models?limit=100`;
+    const response = await fetch(url, {
+      headers: this._modelListHeaders
+    });
+    if (!response.ok) {
+      throw new Error(`Anthropic model list failed with HTTP ${response.status}`);
+    }
+    return await response.json();
+  }
+
+  _buildModelListHeaders(credentials = {}) {
+    const headers = {
+      'anthropic-version': '2023-06-01',
+      ...(credentials.defaultHeaders || {})
+    };
+
+    if (credentials.authToken) {
+      headers.authorization = `Bearer ${credentials.authToken}`;
+    } else if (credentials.apiKey) {
+      headers['x-api-key'] = credentials.apiKey;
+    }
+
+    return headers;
+  }
+
+  _rankModelFallbacks(model, available) {
+    const ids = [...available];
+    const prefix = model.startsWith('claude-sonnet-')
+      ? 'claude-sonnet-'
+      : model.startsWith('claude-opus-')
+        ? 'claude-opus-'
+        : model.startsWith('claude-haiku-')
+          ? 'claude-haiku-'
+          : null;
+
+    if (!prefix) return [];
+    return ids.filter(id => id.startsWith(prefix));
   }
 
   /**

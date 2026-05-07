@@ -211,7 +211,7 @@ Respond in JSON format:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.models?.strategicModel || 'gpt-5.2',
+        model: this.config.models?.strategicModel || 'gpt-5.5',
         instructions: prompt,
         messages: [{ role: 'user', content: 'Identify cross-cutting patterns.' }],
         maxTokens: 25000,

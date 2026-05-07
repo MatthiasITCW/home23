@@ -13,7 +13,13 @@
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
-const { getAnthropicApiKey, prepareSystemPrompt, isOAuthToken } = require('../server/services/anthropic-oauth');
+const { getAnthropicApiKey, prepareSystemPrompt, isOAuthToken, getStealthHeaders } = require('../server/services/anthropic-oauth');
+
+// HOME23 PATCH — Claude Opus 4.7 rejects legacy sampling params such as
+// temperature and uses adaptive thinking instead of the older budgeted shape.
+function isAnthropicSamplingDeprecatedModel(model) {
+  return /^claude-opus-4-7(?:$|[-@])/.test(String(model || '').trim());
+}
 
 class AnthropicClient {
   /**
@@ -25,9 +31,15 @@ class AnthropicClient {
     this.logger = logger;
     this.config = config;
     this.anthropic = null;  // Lazy initialization
-    this.isOAuth = false;
+    this.providerId = String(config.providerId || 'anthropic');
+    this.useOAuthService = this.providerId === 'anthropic' && config.useOAuthService !== false;
+    this.isOAuth = Boolean(config.authToken && isOAuthToken(config.authToken));
     this._credentialsFetchedAt = 0;  // Track when credentials were obtained
     this._refreshPromise = null;    // Lock to prevent concurrent refresh
+    this._availableModelIds = null;
+    this._availableModelIdsFetchedAt = 0;
+    this._modelListHeaders = null;
+    this._modelListBaseURL = config.baseURL || config.baseUrl || 'https://api.anthropic.com';
 
     // Model mapping (GPT names → Claude models)
     this.modelMapping = config.modelMapping || {
@@ -87,18 +99,48 @@ class AnthropicClient {
     }
 
     try {
-      // Get credentials from OAuth system (auto-refreshes expired tokens)
-      const credentials = await getAnthropicApiKey();
-      this.isOAuth = credentials.isOAuth;
       this._credentialsFetchedAt = Date.now();
+      if (this.useOAuthService) {
+        // Get credentials from OAuth system (auto-refreshes expired tokens)
+        const credentials = await getAnthropicApiKey();
+        this.isOAuth = credentials.isOAuth;
+        this._modelListHeaders = this._buildModelListHeaders(credentials);
+        this._modelListBaseURL = 'https://api.anthropic.com';
 
-      this.logger?.info?.('[AnthropicClient] Initializing with OAuth token (stealth mode)');
-      this.isOAuth = true;
-      this.anthropic = new Anthropic({
-        authToken: credentials.authToken,
-        defaultHeaders: credentials.defaultHeaders,
-        dangerouslyAllowBrowser: credentials.dangerouslyAllowBrowser
-      });
+        this.logger?.info?.('[AnthropicClient] Initializing with OAuth token (stealth mode)');
+        this.isOAuth = true;
+        this.anthropic = new Anthropic({
+          authToken: credentials.authToken,
+          defaultHeaders: credentials.defaultHeaders,
+          dangerouslyAllowBrowser: credentials.dangerouslyAllowBrowser
+        });
+      } else {
+        const options = {};
+        if (this.config.baseURL || this.config.baseUrl) {
+          options.baseURL = this.config.baseURL || this.config.baseUrl;
+        }
+        if (this.config.authToken) {
+          this.isOAuth = isOAuthToken(this.config.authToken);
+          options.authToken = this.config.authToken;
+          if (this.isOAuth) {
+            options.defaultHeaders = getStealthHeaders();
+            options.dangerouslyAllowBrowser = true;
+          }
+        } else if (this.config.apiKey) {
+          this.isOAuth = false;
+          options.apiKey = this.config.apiKey;
+        } else {
+          throw new Error(`${this.providerId} provider missing Anthropic-compatible credentials`);
+        }
+        this.logger?.info?.(`[AnthropicClient] Initializing ${this.providerId} with ${this.isOAuth ? 'OAuth' : 'API key'} credentials`);
+        this._modelListHeaders = this._buildModelListHeaders({
+          authToken: options.authToken,
+          apiKey: options.apiKey,
+          defaultHeaders: options.defaultHeaders
+        });
+        this._modelListBaseURL = options.baseURL || 'https://api.anthropic.com';
+        this.anthropic = new Anthropic(options);
+      }
     } catch (error) {
       if (isRefresh) {
         // Restore old client — stale credentials are better than no credentials
@@ -159,15 +201,17 @@ class AnthropicClient {
       // Transform tools from OpenAI → Anthropic format
       const tools = options.tools ? this._transformTools(options.tools) : undefined;
 
-      // Determine if extended thinking should be used
-      const useExtendedThinking = this._shouldUseExtendedThinking(options.reasoningEffort);
-
       // Get model (with mapping)
       const model = this._getModelFromOptions(options);
+      const wireModel = await this._resolveWireModel(model);
+      const usesAdaptiveThinking = isAnthropicSamplingDeprecatedModel(wireModel);
 
-      // Determine temperature (CRITICAL: Anthropic requires temperature=1 when thinking is enabled)
+      // Determine if extended thinking should be used
+      const useExtendedThinking = this._shouldUseExtendedThinking(options.reasoningEffort, wireModel);
+
+      // Pre-4.7 thinking required temperature=1. Opus 4.7 removes sampling parameters entirely.
       let temperature = options.temperature !== undefined ? options.temperature : this.temperature;
-      if (useExtendedThinking) {
+      if (useExtendedThinking && !usesAdaptiveThinking) {
         this.logger?.info?.('[AnthropicClient] Extended thinking enabled, forcing temperature=1', {
           originalTemp: temperature,
           useExtendedThinking
@@ -176,14 +220,19 @@ class AnthropicClient {
       }
 
       // Build API request
+      const requestedMaxTokens = options.max_output_tokens || options.maxOutputTokens || options.maxTokens;
+      const maxTokens = Math.min(requestedMaxTokens || this.defaultMaxTokens, this._getMaxTokensForModel(wireModel));
       const requestParams = {
-        model,
-        max_tokens: options.max_output_tokens || this.defaultMaxTokens,
-        temperature,
+        model: wireModel,
+        max_tokens: maxTokens,
         system: systemPrompt,
         messages,
         stream: true
       };
+
+      if (!isAnthropicSamplingDeprecatedModel(wireModel)) {
+        requestParams.temperature = temperature;
+      }
 
       // Add tools if provided
       if (tools && tools.length > 0) {
@@ -197,15 +246,29 @@ class AnthropicClient {
 
       // Add extended thinking if appropriate
       if (useExtendedThinking) {
-        requestParams.thinking = {
-          type: 'enabled',
-          budget_tokens: 2000
-        };
+        if (usesAdaptiveThinking) {
+          requestParams.thinking = {
+            type: 'adaptive',
+            display: 'summarized'
+          };
+          requestParams.output_config = {
+            effort: options.reasoningEffort || 'high'
+          };
+        } else {
+          requestParams.thinking = {
+            type: 'enabled',
+            budget_tokens: 2000
+          };
+        }
       }
 
       this.logger?.info?.('[AnthropicClient] Starting generation', {
         model,
-        temperature,
+        wireModel,
+        temperature: usesAdaptiveThinking ? null : temperature,
+        samplingParamsOmitted: usesAdaptiveThinking,
+        requestedMaxTokens: requestedMaxTokens || null,
+        maxTokens,
         hasTools: !!tools,
         toolCount: tools?.length || 0,
         messageCount: messages.length,
@@ -344,12 +407,13 @@ class AnthropicClient {
 
       // Get model
       const model = this._getModelFromOptions(options);
+      const wireModel = await this._resolveWireModel(model);
+      const samplingParamsOmitted = isAnthropicSamplingDeprecatedModel(wireModel);
 
       // Use Anthropic's native web_search tool
       const requestParams = {
-        model,
+        model: wireModel,
         max_tokens: options.maxTokens || options.max_output_tokens || this.defaultMaxTokens,
-        temperature: options.temperature !== undefined ? options.temperature : this.temperature,
         system: prepareSystemPrompt(options.instructions, this.isOAuth),
         messages,
         tools: [{
@@ -360,7 +424,11 @@ class AnthropicClient {
         stream: true
       };
 
-      this.logger?.info?.('[AnthropicClient] Using native web_search tool', { model, query });
+      if (!samplingParamsOmitted) {
+        requestParams.temperature = options.temperature !== undefined ? options.temperature : this.temperature;
+      }
+
+      this.logger?.info?.('[AnthropicClient] Using native web_search tool', { model, wireModel, query, samplingParamsOmitted });
 
       // Stream the response
       const stream = await this.anthropic.messages.stream(requestParams);
@@ -599,6 +667,7 @@ class AnthropicClient {
     let model = null;
 
     try {
+      streamLoop:
       for await (const event of stream) {
         // Message start - capture metadata
         if (event.type === 'message_start') {
@@ -695,6 +764,7 @@ class AnthropicClient {
         // Message stop - completion
         else if (event.type === 'message_stop') {
           this.logger?.debug?.('[AnthropicClient] Stream complete');
+          break streamLoop;
         }
 
         // Error handling
@@ -702,6 +772,27 @@ class AnthropicClient {
           this.logger?.error?.('[AnthropicClient] Stream error:', event.error);
           throw new Error(event.error?.message || 'Streaming error');
         }
+      }
+
+      const finalMessage = typeof stream.finalMessage === 'function'
+        ? await Promise.race([
+            stream.finalMessage().catch(error => {
+              this.logger?.warn?.('[AnthropicClient] finalMessage unavailable:', error.message);
+              return null;
+            }),
+            new Promise(resolve => setTimeout(() => resolve(null), 5000))
+          ])
+        : null;
+
+      if (finalMessage) {
+        const finalText = this.extractTextFromResponse(finalMessage);
+        if (finalText && finalText.length >= textContent.length) {
+          textContent = finalText;
+        }
+        responseId = finalMessage.id || responseId;
+        model = finalMessage.model || model;
+        inputTokens = finalMessage.usage?.input_tokens || inputTokens;
+        outputTokens = finalMessage.usage?.output_tokens || outputTokens;
       }
 
       // Build GPT5Client-compatible response with web search data
@@ -789,9 +880,10 @@ class AnthropicClient {
   /**
    * Determine if extended thinking should be used
    */
-  _shouldUseExtendedThinking(reasoningEffort) {
+  _shouldUseExtendedThinking(reasoningEffort, model = '') {
     if (!this.useExtendedThinking) return false;
     if (!reasoningEffort) return false;
+    if (model.includes('haiku')) return false;
 
     // Map reasoning effort → extended thinking
     const effortLevel = (reasoningEffort || '').toLowerCase();
@@ -803,11 +895,117 @@ class AnthropicClient {
    */
   _getModelFromOptions(options) {
     const requestedModel = options.model || 'gpt-5.2';
+    // HOME23 PATCH — MiniMax and future Anthropic-compatible providers reuse
+    // this client class. Only real Anthropic should map non-Claude names to Claude.
+    if (this.providerId && this.providerId !== 'anthropic') {
+      return requestedModel;
+    }
     // If already a Claude model, use it directly
     if (requestedModel.startsWith('claude-')) {
       return requestedModel;
     }
     return this.modelMapping[requestedModel] || 'claude-sonnet-4-5';
+  }
+
+  async _resolveWireModel(model) {
+    if (this.providerId && this.providerId !== 'anthropic') {
+      return model;
+    }
+
+    const available = await this._getAvailableModelIds();
+    if (!available || available.has(model)) {
+      return model;
+    }
+
+    const fallbacks = this._rankModelFallbacks(model, available);
+    if (fallbacks.length > 0) {
+      const wireModel = fallbacks[0];
+      this.logger?.warn?.('[AnthropicClient] Selected model not available to OAuth token; using wire fallback', {
+        requestedModel: model,
+        wireModel
+      });
+      return wireModel;
+    }
+
+    return model;
+  }
+
+  async _getAvailableModelIds() {
+    const now = Date.now();
+    if (this._availableModelIds && now - this._availableModelIdsFetchedAt < 5 * 60 * 1000) {
+      return this._availableModelIds;
+    }
+
+    try {
+      const page = await this._listAvailableModels();
+      this._availableModelIds = new Set((page.data || []).map(model => model.id).filter(Boolean));
+      this._availableModelIdsFetchedAt = now;
+      return this._availableModelIds;
+    } catch (error) {
+      this.logger?.warn?.('[AnthropicClient] Could not refresh model availability:', error.message);
+      return this._availableModelIds;
+    }
+  }
+
+  async _listAvailableModels() {
+    const modelsResource = this.anthropic.models || this.anthropic.beta?.models;
+    if (modelsResource?.list) {
+      return await modelsResource.list({ limit: 100 });
+    }
+    return await this._fetchAvailableModels();
+  }
+
+  async _fetchAvailableModels() {
+    if (!this._modelListHeaders) {
+      throw new Error('Anthropic model-list credentials unavailable');
+    }
+
+    const baseURL = String(this._modelListBaseURL || 'https://api.anthropic.com').replace(/\/+$/, '');
+    const url = `${baseURL}${baseURL.endsWith('/v1') ? '' : '/v1'}/models?limit=100`;
+    const response = await fetch(url, {
+      headers: this._modelListHeaders
+    });
+    if (!response.ok) {
+      throw new Error(`Anthropic model list failed with HTTP ${response.status}`);
+    }
+    return await response.json();
+  }
+
+  _buildModelListHeaders(credentials = {}) {
+    const headers = {
+      'anthropic-version': '2023-06-01',
+      ...(credentials.defaultHeaders || {})
+    };
+
+    if (credentials.authToken) {
+      headers.authorization = `Bearer ${credentials.authToken}`;
+    } else if (credentials.apiKey) {
+      headers['x-api-key'] = credentials.apiKey;
+    }
+
+    return headers;
+  }
+
+  _rankModelFallbacks(model, available) {
+    const ids = [...available];
+    const prefix = model.startsWith('claude-sonnet-')
+      ? 'claude-sonnet-'
+      : model.startsWith('claude-opus-')
+        ? 'claude-opus-'
+        : model.startsWith('claude-haiku-')
+          ? 'claude-haiku-'
+          : null;
+
+    if (!prefix) return [];
+    return ids.filter(id => id.startsWith(prefix));
+  }
+
+  _getMaxTokensForModel(model) {
+    if (model.includes('haiku')) return 8192;
+    if (model.startsWith('claude-opus-4')) return 32000;
+    if (model.startsWith('claude-sonnet-4')) return 64000;
+    if (model.startsWith('claude-3-7-sonnet')) return 64000;
+    return 8192;
   }
 
   /**
@@ -833,6 +1031,12 @@ class AnthropicClient {
   extractTextFromResponse(response) {
     if (!response) return '';
     if (typeof response === 'string') return response;
+    if (Array.isArray(response.content)) {
+      return response.content
+        .filter(block => block?.type === 'text' && typeof block.text === 'string')
+        .map(block => block.text)
+        .join('\n');
+    }
     if (response.content) return response.content;
     if (response.output?.content) return response.output.content;
     return '';

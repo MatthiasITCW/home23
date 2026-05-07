@@ -486,8 +486,8 @@ class UnifiedClient extends GPT5Client {
     
     // xAI reasoning effort support varies by model
     // grok-4: Does NOT support reasoning_effort (automatic)
-    // grok-3-mini, grok-3-mini-fast: Support low/high
-    const supportsReasoningEffort = assignment.model.includes('grok-3');
+    // grok-4.20-0309-reasoning, grok-4.20-0309-non-reasoning: Support low/high
+    const supportsReasoningEffort = assignment.model.includes('grok-4.3');
     if (supportsReasoningEffort && reasoningEffort && reasoningEffort !== 'none') {
       payload.reasoning = { effort: reasoningEffort };
     }
@@ -763,7 +763,7 @@ class UnifiedClient extends GPT5Client {
       throw new Error('Anthropic provider not initialized. Enable it in config or set LLM_BACKEND=anthropic. Check that providers.anthropic.enabled is true in config.yaml.');
     }
 
-    const modelToUse = assignment.model || 'claude-sonnet-4-5';
+    const modelToUse = assignment.model || 'claude-sonnet-4-7';
 
     try {
       this.logger?.info(`[UnifiedClient] Using Anthropic provider with model ${modelToUse}`);

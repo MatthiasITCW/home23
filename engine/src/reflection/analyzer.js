@@ -1,8 +1,8 @@
 const { UnifiedClient } = require('../core/unified-client');
 
 /**
- * Reflection Analyzer - GPT-5.2 Version
- * Uses GPT-5.2 extended reasoning for deeper pattern analysis
+ * Reflection Analyzer - GPT-5.5 Version
+ * Uses GPT-5.5 extended reasoning for deeper pattern analysis
  */
 class ReflectionAnalyzer {
   constructor(config, logger, fullConfig = null) {
@@ -19,7 +19,7 @@ class ReflectionAnalyzer {
   }
 
   /**
-   * Analyze journal using GPT-5.2 with extended reasoning
+   * Analyze journal using GPT-5.5 with extended reasoning
    */
   async analyzeJournal(journal) {
     if (!this.config.enabled || !journal || journal.length < 10) {
@@ -34,7 +34,7 @@ class ReflectionAnalyzer {
       .substring(0, 1000); // Keep total input small
 
     const response = await this.gpt5.generate({
-      model: 'gpt-5.2', // Meta-analysis benefits from reasoning
+      model: 'gpt-5.5', // Meta-analysis benefits from reasoning
       instructions: `Brief meta-analysis: Identify ONE key pattern and ONE improvement area.`,
       messages: [{ role: 'user', content: `Recent thoughts:\n${thoughtText}\n\nProvide ONE pattern and ONE improvement (2-3 sentences each).` }],
       max_completion_tokens: 10000, // Meta-cognitive analysis needs space
@@ -74,7 +74,7 @@ class ReflectionAnalyzer {
       })));
     }
 
-    this.logger?.info('Journal analyzed (GPT-5.2)', {
+    this.logger?.info('Journal analyzed (GPT-5.5)', {
       patterns: analysis.patterns?.length || 0,
       strategies: analysis.strategies?.length || 0,
       improvements: analysis.improvements?.length || 0,
@@ -85,7 +85,7 @@ class ReflectionAnalyzer {
   }
 
   /**
-   * Parse analysis from GPT-5.2 response
+   * Parse analysis from GPT-5.5 response
    */
   parseAnalysis(content) {
     try {
@@ -94,7 +94,7 @@ class ReflectionAnalyzer {
         return JSON.parse(jsonMatch[0]);
       }
     } catch (error) {
-      // GPT-5.2 might provide structured text instead of JSON
+      // GPT-5.5 might provide structured text instead of JSON
       return this.parseStructuredText(content);
     }
 
@@ -197,7 +197,7 @@ class ReflectionAnalyzer {
   }
 
   /**
-   * Suggest prompt evolution using GPT-5.2 meta-reasoning
+   * Suggest prompt evolution using GPT-5.5 meta-reasoning
    */
   async suggestPromptEvolution(currentPrompt, role) {
     if (!this.config.promptEvolutionEnabled) return null;
@@ -209,7 +209,7 @@ class ReflectionAnalyzer {
       .join('\n');
 
     const response = await this.gpt5.generate({
-      model: 'gpt-5.2', // Meta-improvement of prompts needs reasoning
+      model: 'gpt-5.5', // Meta-improvement of prompts needs reasoning
       instructions: `Improve this AI role prompt by incorporating effective strategies while maintaining core purpose.
 
 Current prompt: "${currentPrompt}"
@@ -221,7 +221,7 @@ Provide only the improved prompt, no explanation.`,
       reasoningEffort: 'high' // Improving system's own prompts is complex meta-cognition
     });
 
-    this.logger?.info('Prompt evolution suggested (GPT-5.2)', {
+    this.logger?.info('Prompt evolution suggested (GPT-5.5)', {
       role,
       hasReasoning: Boolean(response.reasoning)
     });

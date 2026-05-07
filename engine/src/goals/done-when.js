@@ -106,7 +106,7 @@ async function checkJudged(crit, env) {
   let verdict, reason;
   try {
     const resp = await env.llmClient.chat({
-      model: crit.judgeModel || 'gpt-5-mini',
+      model: crit.judgeModel || 'gpt-5.4-mini',
       messages: prompt,
       max_completion_tokens: 200,
       temperature: 0.1,

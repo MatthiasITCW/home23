@@ -966,7 +966,7 @@ async function stepProviders(config, projectRoot, providerFilter = null) {
 
       if (authMethod === 'oauth') {
         info('OAuth will authenticate using your ChatGPT Plus/Pro subscription.');
-        info('This gives access to Codex models (gpt-5.2, gpt-5.3-codex, gpt-5.3-codex-spark).');
+        info('This gives access to Codex models (gpt-5.5, gpt-5.5-pro, gpt-5.3-codex, gpt-5.3-codex-spark).');
         console.log('');
 
         const spin = spinner('Opening browser for OpenAI authentication...');

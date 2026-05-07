@@ -809,7 +809,7 @@ Be specific and cite cycle numbers.`;
 
     try {
       const analysis = await this.gpt5.generateWithRetry({
-        model: this.config.model || this.config.models?.coordinatorStandard || 'gpt-5-mini', // Use configured model (now gpt-5-mini)
+        model: this.config.model || this.config.models?.coordinatorStandard || 'gpt-5.4-mini', // Use configured model (now gpt-5.4-mini)
         instructions: prompt,
         messages: [{ role: 'user', content: 'Analyze this cognitive output concisely.' }],
         maxTokens: 10000, // Increased from 3000 - strategic work benefits from higher reasoning allocation
@@ -921,7 +921,7 @@ IMPORTANT: Be explicit with goal IDs for programmatic action.`;
 
     try {
       const evaluation = await this.gpt5.generateWithRetry({
-        model: this.config.models?.coordinatorStrategic || 'gpt-5.2', // Strategic goal prioritization needs GPT-5.2
+        model: this.config.models?.coordinatorStrategic || 'gpt-5.5', // Strategic goal prioritization needs GPT-5.5
         instructions: prompt,
         messages: [{ role: 'user', content: 'Evaluate this goal portfolio concisely.' }],
         maxTokens: 25000, // Strategic prioritization needs deep analysis space
@@ -1037,7 +1037,7 @@ Provide insights on:
 
     try {
       const analysis = await this.gpt5.generateWithRetry({
-        model: this.config.model || this.config.models?.coordinatorStandard || 'gpt-5-mini',
+        model: this.config.model || this.config.models?.coordinatorStandard || 'gpt-5.4-mini',
         instructions: prompt,
         messages: [{ role: 'user', content: 'Analyze memory network concisely.' }],
         maxTokens: 10000, // Increased from 3000 - agent spec benefits from detailed reasoning
@@ -1951,7 +1951,7 @@ Requirements:
 
     try {
       const decisions = await this.gpt5.generateWithRetry({
-        model: this.config.models?.coordinatorStrategic || 'gpt-5.2', // Use GPT-5.2 for strategic decisions - this is important!
+        model: this.config.models?.coordinatorStrategic || 'gpt-5.5', // Use GPT-5.5 for strategic decisions - this is important!
         instructions: decisionPrompt,
         messages: [{ role: 'user', content: 'Generate strategic action plan - be comprehensive but concise.' }],
         maxTokens: 16000, // Maximum allocation - most important strategic decision point (capped at API max)
@@ -3392,7 +3392,7 @@ Respond in JSON format:
 
     try {
       const response = await this.gpt5.generateWithRetry({
-        model: this.config.model || this.config.models?.coordinatorStandard || 'gpt-5-mini', // Use mini for faster mission spec generation
+        model: this.config.model || this.config.models?.coordinatorStandard || 'gpt-5.4-mini', // Use mini for faster mission spec generation
         instructions: prompt,
         messages: [{ role: 'user', content: 'Create mission specification.' }],
         maxTokens: 6000, // Increased from 1500 - status updates need comprehensive output
@@ -3401,7 +3401,7 @@ Respond in JSON format:
 
       // Check if response has content
       if (!response || !response.content || response.content.trim() === '') {
-        this.logger.warn('Empty response from GPT-5-mini for mission spec', {
+        this.logger.warn('Empty response from GPT-5.4-mini for mission spec', {
           goalId: goal.id,
           hasResponse: Boolean(response),
           hasContent: Boolean(response?.content)
@@ -4800,7 +4800,7 @@ Respond with JSON:
 
     try {
       const response = await this.gpt5.complete({
-        model: this.config.models?.coordinatorStrategic || this.config.models?.primary || 'gpt-5.2',
+        model: this.config.models?.coordinatorStrategic || this.config.models?.primary || 'gpt-5.5',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 600,
         temperature: 0.2,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Phase 2B Self-Propelled AI - GPT-5.2 Version
- * Uses GPT-5.2 Responses API with extended reasoning, web search, and tools
+ * Phase 2B Self-Propelled AI - GPT-5.5 Version
+ * Uses GPT-5.5 Responses API with extended reasoning, web search, and tools
  */
 
 const path = require('path');
@@ -88,7 +88,7 @@ async function main() {
     logger.info('');
   }
   logger.info('System Capabilities:');
-  logger.info('  • GPT-5.2 Multi-Tier Reasoning (xhigh/high/medium/low/none)');
+  logger.info('  • GPT-5.5 Multi-Tier Reasoning (xhigh/high/medium/low/none)');
   logger.info('  • Goal Curator (campaigns & synthesis)');
   logger.info('  • Quality Assurance (validation gate)');
   logger.info('  • MCP Bridge (agent system awareness)');
@@ -207,13 +207,13 @@ async function main() {
   logger.info(`✅ Cluster-aware memory wrapper initialized (${clusterMemoryManager.isClusterEnabled() ? 'cluster mode' : 'local mode'})`);
   
   const summarizer = new MemorySummarizer(config.architecture, logger, config);
-  logger.info('✅ Memory summarizer (GPT-5.2) initialized');
+  logger.info('✅ Memory summarizer (GPT-5.5) initialized');
   
   const roles = new DynamicRoleSystem(config.architecture, logger, config);
-  logger.info('✅ Dynamic role system (GPT-5.2) initialized');
+  logger.info('✅ Dynamic role system (GPT-5.5) initialized');
   
   const quantum = new QuantumReasoner(config.architecture, logger, config);
-  logger.info('✅ Quantum reasoner (GPT-5.2) initialized');
+  logger.info('✅ Quantum reasoner (GPT-5.5) initialized');
   
   const stateModulator = new CognitiveStateModulator(config.architecture, logger);
   logger.info('✅ Cognitive state modulator initialized');
@@ -228,10 +228,10 @@ async function main() {
   logger.info('✅ Intrinsic goal system initialized');
   
   const goalCapture = new GoalCaptureSystem(logger);
-  logger.info('✅ Goal capture system (GPT-5.2) initialized');
+  logger.info('✅ Goal capture system (GPT-5.5) initialized');
   
   const reflection = new ReflectionAnalyzer(config.architecture, logger);
-  logger.info('✅ Reflection analyzer (GPT-5.2) initialized');
+  logger.info('✅ Reflection analyzer (GPT-5.5) initialized');
   
   const environment = new EnvironmentInterface(config.architecture, logger);
   logger.info('✅ Environment interface initialized');
@@ -499,9 +499,9 @@ async function main() {
     hasGoals: true
   });
   
-  // Create GPT-5.2 orchestrator
+  // Create GPT-5.5 orchestrator
   logger.info('');
-  logger.info('Creating GPT-5.2 orchestrator...');
+  logger.info('Creating GPT-5.5 orchestrator...');
   
   const orchestrator = new Orchestrator(
     config,
@@ -633,10 +633,10 @@ async function main() {
   
   logger.info('');
   logger.info('╔══════════════════════════════════════════════════╗');
-  logger.info('║   Phase 2B GPT-5.2 System Ready                 ║');
+  logger.info('║   Phase 2B GPT-5.5 System Ready                 ║');
   logger.info('╚══════════════════════════════════════════════════╝');
   logger.info('');
-  logger.info('GPT-5.2 Enhanced Features:');
+  logger.info('GPT-5.5 Enhanced Features:');
   logger.info('');
   logger.info('CORE PHASE 2B:');
   logger.info('  • Network Memory (spreading activation, Hebbian)');
@@ -650,7 +650,7 @@ async function main() {
   logger.info('  • Focus/Exploration Oscillations');
   logger.info('  • Deep Sleep with Dreams');
   logger.info('');
-  logger.info('GPT-5.2 ENHANCEMENTS:');
+  logger.info('GPT-5.5 ENHANCEMENTS:');
   logger.info('  ⭐ Extended Reasoning (see AI thinking process)');
   logger.info('  🌐 Web Search (curiosity role + quantum branches)');
   logger.info('  ⚡ Optimized Models (right model for each task)');
@@ -874,13 +874,17 @@ async function main() {
     // Phase 4: machine + OS channels (opt-in per config).
     const machineCfg = osEngineCfg?.channels?.machine;
     if (machineCfg?.enabled) {
-      const { CpuChannel }    = await import('./channels/machine/cpu-channel.js');
-      const { MemoryChannel } = await import('./channels/machine/memory-channel.js');
-      const { DiskChannel }   = await import('./channels/machine/disk-channel.js');
+      const { CpuChannel }     = await import('./channels/machine/cpu-channel.js');
+      const { MemoryChannel }  = await import('./channels/machine/memory-channel.js');
+      const { DiskChannel }    = await import('./channels/machine/disk-channel.js');
+      const { ProcessChannel } = await import('./channels/machine/process-channel.js');
+      const { SwapChannel }    = await import('./channels/machine/swap-channel.js');
       channelBus.register(new CpuChannel({ intervalMs: 30 * 1000 }));
       channelBus.register(new MemoryChannel({ intervalMs: 30 * 1000 }));
       channelBus.register(new DiskChannel({ intervalMs: 5 * 60 * 1000 }));
-      registered.push('machine.cpu', 'machine.memory', 'machine.disk');
+      channelBus.register(new ProcessChannel({ intervalMs: 60 * 1000 }));
+      channelBus.register(new SwapChannel({ intervalMs: 60 * 1000 }));
+      registered.push('machine.cpu', 'machine.memory', 'machine.disk', 'machine.process', 'machine.swap');
     }
     const osCfg = osEngineCfg?.channels?.os;
     if (osCfg?.enabled) {
@@ -1108,7 +1112,7 @@ async function main() {
 }
 
 main().catch(error => {
-  console.error('Phase 2B GPT-5.2 initialization failed:', error);
+  console.error('Phase 2B GPT-5.5 initialization failed:', error);
   console.error(error.stack);
   process.exit(1);
 });

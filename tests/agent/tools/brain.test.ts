@@ -29,6 +29,24 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 }
 
 describe('brain_query', () => {
+  it('defaults omitted agent queries to quick mode and the catalog query model', async () => {
+    let capturedBody: any;
+    (globalThis as any).fetch = async (_url: any, init: any) => {
+      capturedBody = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ answer: 'ok' }) } as unknown as Response;
+    };
+
+    await brainQueryTool.execute({ query: 'q' }, makeCtx());
+
+    assert.equal(Object.hasOwn(capturedBody, 'model'), false);
+    assert.equal(capturedBody.mode, 'quick');
+    assert.equal(capturedBody.enableSynthesis, false);
+    assert.equal(capturedBody.includeOutputs, false);
+    assert.equal(capturedBody.includeThoughts, false);
+    assert.equal(capturedBody.includeCoordinatorInsights, false);
+    assert.equal(capturedBody.exportFormat, null);
+  });
+
   it('sends the dashboard tab payload shape to ${brainRoute}/query', async () => {
     let capturedUrl = '';
     let capturedBody: any;
@@ -67,6 +85,35 @@ describe('brain_query', () => {
     assert.equal(capturedBody.pgsFullSweep, true);
   });
 
+  it('uses pgsSynthModel as the PGS synthesis model', async () => {
+    let capturedBody: any;
+    (globalThis as any).fetch = async (_url: any, init: any) => {
+      capturedBody = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ answer: 'ok' }) } as unknown as Response;
+    };
+    await brainQueryTool.execute(
+      { query: 'q', model: 'gpt-5.2', enablePGS: true, pgsSynthModel: 'grok-4.20-0309-reasoning' },
+      makeCtx(),
+    );
+    assert.equal(capturedBody.model, 'grok-4.20-0309-reasoning');
+  });
+
+  it('returns timeout context instead of the raw abort message', async () => {
+    (globalThis as any).fetch = async () => {
+      const err = new Error('The operation was aborted due to timeout');
+      (err as Error & { name: string }).name = 'TimeoutError';
+      throw err;
+    };
+
+    const result = await brainQueryTool.execute({ query: 'q' }, makeCtx());
+
+    assert.equal(result.is_error, true);
+    assert.match(result.content, /brain_query timed out after 120s/);
+    assert.match(result.content, /model=catalog-default/);
+    assert.match(result.content, /mode=quick/);
+    assert.match(result.content, /PGS=false/);
+  });
+
   it('passes priorContext through for follow-up queries', async () => {
     let capturedBody: any;
     (globalThis as any).fetch = async (_url: any, init: any) => {
@@ -78,6 +125,41 @@ describe('brain_query', () => {
       makeCtx(),
     );
     assert.deepEqual(capturedBody.priorContext, { query: 'prior', answer: 'prior answer' });
+  });
+
+  it('returns source, PGS, export path, and raw metadata provenance', async () => {
+    (globalThis as any).fetch = async () => {
+      return {
+        ok: true,
+        json: async () => ({
+          answer: 'ok',
+          exportedTo: '/fake/exports/query.md',
+          metadata: {
+            model: 'grok-4.20-0309-reasoning',
+            mode: 'pgs',
+            sources: { memoryNodes: 44, thoughts: 0, edges: 88 },
+            pgs: {
+              successfulSweeps: 7,
+              sweptPartitions: 10,
+              failedSweeps: 3,
+              totalPartitions: 82,
+              sweepModel: 'claude-sonnet-4-6',
+              synthesisModel: 'grok-4.20-0309-reasoning',
+            },
+          },
+        }),
+      } as unknown as Response;
+    };
+
+    const result = await brainQueryTool.execute(
+      { query: 'q', enablePGS: true, pgsConfig: { sweepFraction: 0.25 } },
+      makeCtx(),
+    );
+
+    assert.match(result.content, /sources=44 memory nodes, 0 thoughts, 88 edges/);
+    assert.match(result.content, /PGS=7 successful\/10 swept, 3 failed, 82 total partitions/);
+    assert.match(result.content, /exportedTo=\/fake\/exports\/query\.md/);
+    assert.match(result.content, /metadata: .*"sources":\{"memoryNodes":44/);
   });
 
   it('returns is_error when brainRoute is null', async () => {

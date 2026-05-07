@@ -2,8 +2,8 @@ const OpenAI = require('openai');
 const { getOpenAIClient } = require('./openai-client');
 
 /**
- * GPT-5.2 Responses API Client Wrapper
- * Uses OpenAI's new Responses API with GPT-5.2 models and tool support
+ * GPT-5 Responses API Client Wrapper
+ * Uses OpenAI's Responses API with current GPT-5-family models and tool support
  */
 class GPT5Client {
   constructor(logger) {
@@ -12,12 +12,12 @@ class GPT5Client {
   }
 
   /**
-   * Generate response using GPT-5.2 Responses API with STREAMING
+   * Generate response using GPT-5 Responses API with STREAMING
    * Proper implementation matching Cosmo's pattern
    */
   async generate(options = {}) {
     const {
-      model = 'gpt-5.2',
+      model = process.env.OPENAI_DEFAULT_MODEL || 'gpt-5.5',
       instructions = '',
       messages = [],
       input = null,
@@ -41,7 +41,7 @@ class GPT5Client {
     // Build payload in Responses API format
     const payload = {
       model,
-      stream: true // Use streaming for GPT-5.2 Responses API
+      stream: true // Use streaming for GPT-5.5 Responses API
     };
 
     // NEW: Support both input string (preferred for web search) and messages array
@@ -79,12 +79,12 @@ class GPT5Client {
       payload.include = include;
     }
 
-    // NOTE: temperature is NOT supported by GPT-5.2 Responses API
+    // NOTE: temperature is NOT supported by GPT-5.5 Responses API
     // The model controls its own sampling internally
 
-    // Per OpenAI docs: GPT-5.2 defaults to 'none' reasoning effort
+    // Per OpenAI docs: GPT-5.5 defaults to 'none' reasoning effort
     // Use 'low'/'medium'/'high' for more thinking, 'xhigh' for hardest problems
-    // NOTE: Only GPT-5 models support reasoning.effort. GPT-5.2 adds 'none' (default) and 'xhigh'
+    // NOTE: Only GPT-5 models support reasoning.effort. GPT-5.5 adds 'none' (default) and 'xhigh'
     const supportsReasoningEffort = model.includes('gpt-5');
     if (reasoning) {
       payload.reasoning = reasoning;
@@ -205,7 +205,7 @@ class GPT5Client {
 
       // If we STILL have no content after all fallbacks, that's a real problem
       if (!aggregatedText || aggregatedText.length === 0) {
-        const errorMsg = `No content received from GPT-5.2 (${errorType || 'unknown reason'})`;
+        const errorMsg = `No content received from ${model} (${errorType || 'unknown reason'})`;
         this.logger?.error?.(errorMsg, {
           model,
           hadError,
@@ -240,7 +240,7 @@ class GPT5Client {
         output: finalResponse?.output // CRITICAL: Pass through for code_interpreter file annotations
       };
     } catch (error) {
-      this.logger?.error?.('GPT-5.2 API call failed', { 
+      this.logger?.error?.('GPT-5.5 API call failed', { 
         error: error.message,
         stack: error.stack 
       });
@@ -304,7 +304,7 @@ class GPT5Client {
     
     // All retries exhausted
     this.logger?.error?.(`All ${maxRetries} retry attempts failed`);
-    throw lastError || new Error('GPT-5.2 call failed after all retries');
+    throw lastError || new Error('GPT-5.5 call failed after all retries');
   }
 
   /**
@@ -398,7 +398,7 @@ class GPT5Client {
   }
 
   /**
-   * Extract reasoning from response (GPT-5.2 feature)
+   * Extract reasoning from response (GPT-5.5 feature)
    */
   extractReasoning(response) {
     if (!response?.output) return null;
@@ -511,7 +511,7 @@ class GPT5Client {
   }
 
   /**
-   * Generate with extended reasoning (GPT-5.2 deep thinking) WITH RETRY
+   * Generate with extended reasoning (GPT-5 deep thinking) WITH RETRY
    */
   async generateWithReasoning(options = {}) {
     return this.generateWithRetry({
@@ -523,12 +523,12 @@ class GPT5Client {
   }
 
   /**
-   * Fast generation with GPT-5-mini
+   * Fast generation with GPT-5.4 mini
    */
   async generateFast(options = {}) {
     return this.generateWithRetry({
       ...options,
-      model: options.model || 'gpt-5-mini', // Use mini by default, nano is broken
+      model: options.model || 'gpt-5.4-mini',
       reasoningEffort: 'low',
       max_output_tokens: options.max_output_tokens || options.maxOutputTokens || options.maxTokens || 1000
     }, 3);
@@ -876,5 +876,3 @@ class GPT5Client {
 }
 
 module.exports = { GPT5Client };
-
-

@@ -484,7 +484,7 @@ class CodeCreationAgent extends BaseAgent {
     };
     const sanitizeEffort = effort => {
       const value = typeof effort === 'string' ? effort.toLowerCase() : defaults.reasoningEffort;
-      // GPT-5.2 supports 'none', 'low', 'medium', 'high', and 'xhigh' reasoning effort
+      // GPT-5.5 supports 'none', 'low', 'medium', 'high', and 'xhigh' reasoning effort
       return ['none', 'low', 'medium', 'high', 'xhigh'].includes(value) ? value : defaults.reasoningEffort;
     };
 
@@ -706,7 +706,7 @@ class CodeCreationAgent extends BaseAgent {
       `- "description": single sentence describing the complete file purpose\n` +
       `- "category": one of ["source","test","documentation","config","support"]\n\n` +
       `Planning rules:\n` +
-      `- ONE entry per file - generate complete, functional code in a single pass (GPT-5.2 supports 4000+ output tokens).\n` +
+      `- ONE entry per file - generate complete, functional code in a single pass (GPT-5.5 supports 4000+ output tokens).\n` +
       `- NO multi-stage builds - create the entire file at once with all required functionality.\n` +
       `- Keep the overall plan focused (<= 12 files total) while covering all mission requirements.${instructionTightening}\n` +
       `- Include tests/docs only when explicitly required.\n` +

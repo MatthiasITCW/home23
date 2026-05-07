@@ -5,6 +5,8 @@
 
 import type { ToolDefinition, ToolContext, ToolResult } from '../types.js';
 
+const DEFAULT_BRAIN_QUERY_MODE = 'quick';
+
 type MemoryGraphResponse = {
   nodes?: Array<{ cluster?: number | string | null }>;
   edges?: Array<unknown>;
@@ -101,7 +103,7 @@ export const brainQueryTool: ToolDefinition = {
   name: 'brain_query',
   description:
     'Query the brain with the same protocol the dashboard Query tab uses. ' +
-    'Three modes: full (balanced, default), expert (maximum depth, multi-pass), dive (exploratory synthesis, creative cross-domain). ' +
+    'Modes: quick (fast targeted extraction, default for agent chat), full (balanced), expert (maximum depth, multi-pass), dive (exploratory synthesis, creative cross-domain). ' +
     'Enable PGS for full graph coverage via parallel partition sweeps — set enablePGS=true and pick pgsConfig.sweepFraction ' +
     '(0.10 skim, 0.25 sample, 0.50 deep, 1.0 full). Sweep model should be fast/cheap (many parallel calls); ' +
     'synthesis model stronger (one final reasoning pass). For follow-up queries that build on a prior answer, pass priorContext.',
@@ -112,14 +114,15 @@ export const brainQueryTool: ToolDefinition = {
       model: { type: 'string', description: 'Main query model (answer generation). Any model from cosmo23 catalog.' },
       mode: {
         type: 'string',
-        enum: ['full', 'expert', 'dive'],
-        description: 'full=balanced (default), expert=maximum depth, dive=exploratory synthesis',
+        enum: ['quick', 'full', 'expert', 'dive'],
+        description: 'quick=fast targeted extraction (default), full=balanced, expert=maximum depth, dive=exploratory synthesis',
       },
-      enableSynthesis: { type: 'boolean', description: 'Enable synthesis layer over retrieved evidence (default true)' },
+      enableSynthesis: { type: 'boolean', description: 'Enable the extra post-query synthesis metadata layer (default false for agent chat)' },
       includeOutputs: { type: 'boolean', description: 'Include agent output files as evidence' },
       includeThoughts: { type: 'boolean', description: 'Include thought journal entries as evidence' },
       includeCoordinatorInsights: { type: 'boolean', description: 'Include coordinator reviews/insights' },
       allowActions: { type: 'boolean', description: 'Permit the query to trigger tool actions (default false — safety)' },
+      exportFormat: { type: 'string', enum: ['markdown', 'json'], description: 'Optional: export the query result from COSMO23' },
       enablePGS: { type: 'boolean', description: 'Enable Progressive Graph Search (full graph coverage)' },
       pgsMode: { type: 'string', description: 'PGS mode — default "full"' },
       pgsConfig: {
@@ -154,11 +157,12 @@ export const brainQueryTool: ToolDefinition = {
     const sweepFraction = pgsConfig?.sweepFraction;
     const pgsFullSweep = typeof sweepFraction === 'number' && sweepFraction >= 1.0;
 
+    const explicitModel = input.enablePGS && input.pgsSynthModel ? input.pgsSynthModel : input.model;
+
     const body: Record<string, unknown> = {
       query: input.query,
-      model: input.model,
-      mode: input.mode ?? 'full',
-      enableSynthesis: input.enableSynthesis ?? true,
+      mode: input.mode ?? DEFAULT_BRAIN_QUERY_MODE,
+      enableSynthesis: input.enableSynthesis ?? false,
       includeOutputs: input.includeOutputs ?? false,
       includeThoughts: input.includeThoughts ?? false,
       includeCoordinatorInsights: input.includeCoordinatorInsights ?? false,
@@ -170,9 +174,12 @@ export const brainQueryTool: ToolDefinition = {
       pgsSweepModel: input.pgsSweepModel,
       pgsSynthModel: input.pgsSynthModel,
       priorContext: input.priorContext ?? null,
-      exportFormat: 'markdown',
+      exportFormat: input.exportFormat ?? null,
       provider: null,
     };
+    if (explicitModel) {
+      body.model = explicitModel;
+    }
 
     const timeoutMs = body.enablePGS ? 1_800_000 : 120_000;
 
@@ -193,18 +200,48 @@ export const brainQueryTool: ToolDefinition = {
       const answer = (data.answer ?? data.response ?? data.text ?? '') as string;
       const evidence = data.evidence as Array<unknown> | undefined;
       const meta = data.metadata as Record<string, unknown> | undefined;
+      const exportedTo = typeof data.exportedTo === 'string' ? data.exportedTo : null;
 
       const parts: string[] = [];
       parts.push(answer.slice(0, 10_000) || 'brain_query returned empty result.');
 
       const footer: string[] = [];
       if (evidence?.length) footer.push(`${evidence.length} evidence nodes`);
-      if (body.enablePGS && meta?.pgsPartitions) footer.push(`PGS: ${JSON.stringify(meta.pgsPartitions)}`);
+      const sources = meta?.sources as Record<string, unknown> | undefined;
+      if (sources) {
+        footer.push(
+          `sources=${sources.memoryNodes ?? 0} memory nodes, ${sources.thoughts ?? 0} thoughts, ${sources.edges ?? 0} edges`,
+        );
+      }
+      const pgs = meta?.pgs as Record<string, unknown> | undefined;
+      if (body.enablePGS && pgs) {
+        footer.push(
+          `PGS=${pgs.successfulSweeps ?? '?'} successful/${pgs.sweptPartitions ?? '?'} swept, ` +
+          `${pgs.failedSweeps ?? 0} failed, ${pgs.totalPartitions ?? '?'} total partitions, ` +
+          `sweep=${pgs.sweepModel ?? '?'}, synth=${pgs.synthesisModel ?? meta?.model ?? '?'}`,
+        );
+      }
       if (meta?.models) footer.push(`models=${JSON.stringify(meta.models)}`);
+      if (meta?.model) footer.push(`model=${meta.model}`);
+      if (exportedTo) footer.push(`exportedTo=${exportedTo}`);
       if (footer.length) parts.push(`\n\n---\n[${footer.join(' · ')} · mode=${body.mode}]`);
+      if (meta) {
+        parts.push(`\nmetadata: ${JSON.stringify(meta).slice(0, 4000)}`);
+      }
 
       return { content: parts.join('') };
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'TimeoutError' || /aborted due to timeout|timeout/i.test(message)) {
+        return {
+          content:
+            `brain_query timed out after ${Math.round(timeoutMs / 1000)}s ` +
+            `(model=${body.model ?? 'catalog-default'}, mode=${body.mode}, PGS=${Boolean(body.enablePGS)}, route=${ctx.brainRoute}). ` +
+            `Use brain_search for direct hits, or rerun brain_query with a narrower query/mode="quick"; use enablePGS only for deliberate coverage sweeps.`,
+          is_error: true,
+        };
+      }
       return { content: `brain_query error: ${err instanceof Error ? err.message : String(err)}`, is_error: true };
     }
   },
@@ -216,7 +253,7 @@ export const brainQueryExportTool: ToolDefinition = {
   name: 'brain_query_export',
   description:
     'Export a prior brain_query answer to the brain export directory as markdown or json. ' +
-    'Pass the query, answer, and optionally metadata from the brain_query response. ' +
+    'Pass the query, answer, and metadata from the brain_query response so source counts and PGS provenance are preserved. ' +
     'The file is written inside the brain\'s own runs/<brain>/exports/ directory and the path is returned.',
   input_schema: {
     type: 'object',
@@ -224,7 +261,7 @@ export const brainQueryExportTool: ToolDefinition = {
       query: { type: 'string', description: 'The original query' },
       answer: { type: 'string', description: 'The answer to export' },
       format: { type: 'string', enum: ['markdown', 'json'], description: 'Output format (default markdown)' },
-      metadata: { type: 'object', description: 'Metadata from the brain_query response (models, mode, evidence counts, etc.)' },
+      metadata: { type: 'object', description: 'Metadata from the brain_query response (models, mode, evidence counts, PGS provenance, etc.)' },
     },
     required: ['query', 'answer'],
   },

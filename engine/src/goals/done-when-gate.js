@@ -107,7 +107,7 @@ function applyLegacyFallback(goalData, config = {}) {
       criteria: [{
         type: 'judged',
         criterion: `The goal "${desc}" is satisfied when a memory node or output file in outputs/ documents its resolution with at least one concrete finding.`,
-        judgeModel: 'gpt-5-mini',
+        judgeModel: 'gpt-5.4-mini',
         judgedAt: null, judgedVerdict: null
       }]
     },

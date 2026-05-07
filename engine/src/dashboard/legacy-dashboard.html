@@ -2120,7 +2120,7 @@
 
                 ${thought.reasoning ? `
                     <div class="detail-section">
-                        <div class="detail-label">GPT-5.2 Reasoning</div>
+                        <div class="detail-label">GPT-5.5 Reasoning</div>
                         <div class="detail-value" style="font-style: italic; opacity: 0.9;">
                             ${escapeHtml(thought.reasoning.substring(0, 500))}${thought.reasoning.length > 500 ? '...' : ''}
                         </div>
@@ -2141,7 +2141,7 @@
                         <div class="detail-card-label">Mode</div>
                     </div>
                     <div class="detail-card">
-                        <div class="detail-card-value">${thought.model?.split('-')[0] || 'GPT-5.2'}</div>
+                        <div class="detail-card-value">${thought.model?.split('-')[0] || 'GPT-5.5'}</div>
                         <div class="detail-card-label">Model</div>
                     </div>
                 </div>
@@ -2972,7 +2972,7 @@
                     break;
                 case 'reasoning':
                     items = insights.reasoningTraces || [];
-                    title = 'Thoughts with Deep GPT-5.2 Reasoning';
+                    title = 'Thoughts with Deep GPT-5.5 Reasoning';
                     break;
                 case 'agents':
                     items = insights.agentBreakthroughs || [];
@@ -3181,7 +3181,7 @@
                     </div>
                     ${item.reasoning ? `
                         <div class="detail-section">
-                            <div class="detail-label">Complete GPT-5.2 Reasoning Trace (Full)</div>
+                            <div class="detail-label">Complete GPT-5.5 Reasoning Trace (Full)</div>
                             <div class="detail-value" style="font-style: italic; opacity: 0.9; background: rgba(157, 78, 221, 0.05); padding: 16px; border-radius: 8px; line-height: 1.7; max-height: 400px; overflow-y: auto;">
                                 ${escapeHtml(item.reasoning)}
                             </div>

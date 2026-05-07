@@ -222,19 +222,18 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
         type: 'jsonl_recent_match',
         args: { path: thoughtsPath, tsField: 'timestamp', windowMinutes: 20, minCount: 1 },
       },
-      // If thoughts.jsonl stops growing, the cognitive loop is stalled —
-      // either the engine deadlocked, the loop errored out of the catch, or
-      // a model provider is failing and no branches are landing. Immediate
-      // pm2 restart is the right first move; otherwise the whole brain
-      // appears alive (process up) but isn't actually thinking.
+      // If thoughts.jsonl stops growing, the cognitive loop may be stalled,
+      // but it can also be waking from sleep or busy in startup/consolidation.
+      // Do not have an engine restart itself from inside the live-problems
+      // loop: when the loop is alive enough to run remediation, diagnosis is
+      // safer than killing the process and extending the offline window.
       remediation: [
-        { type: 'pm2_restart', args: { name: `home23-${agent}` }, cooldownMin: 15 },
         { type: 'dispatch_to_agent', args: { budgetHours: 2 }, cooldownMin: 15 },
         {
           type: 'notify_jtr',
           args: {
             severity: 'alert',
-            text: "Cognitive loop stalled — no new thoughts in 20+ min. Restarted the engine once, no recovery. Model provider or deeper stall.",
+            text: "Cognitive loop stalled — no new thoughts in 20+ min. Agent diagnosis did not recover it. Model provider, sleep/recovery state, or deeper loop stall needs review.",
           },
           cooldownMin: 60,
         },

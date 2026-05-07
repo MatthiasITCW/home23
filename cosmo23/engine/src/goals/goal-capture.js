@@ -116,7 +116,7 @@ class GoalCaptureSystem {
         purpose: 'goalExtraction',
         instructions: `Analyze this AI thought and identify any implicit curiosities or topics that warrant investigation. List only clear, specific goals. Be concise.`,
         messages: [{ role: 'user', content: output.substring(0, 1000) }],
-        max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 200 - too low!)
+        max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 200 - too low!)
         reasoningEffort: 'low'
       });
 
@@ -178,7 +178,7 @@ class GoalCaptureSystem {
       purpose: 'goalPrioritization',
       instructions: 'Rate this goal priority (high/medium/low). Respond with ONLY: high, medium, or low',
       messages: [{ role: 'user', content: `Goal: "${goalText}"` }],
-      max_completion_tokens: 1024, // API minimum for gpt-5-mini (was 50 - too low!)
+      max_completion_tokens: 1024, // API minimum for gpt-5.4-mini (was 50 - too low!)
       reasoningEffort: 'low'
     });
 

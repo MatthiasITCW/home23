@@ -531,7 +531,7 @@ function formatToolResultContent(result, isClaudeFormat = false) {
 
 async function handleFunctionCalling(openai, anthropic, xai, indexer, params, eventEmitter) {
   const { 
-    message, currentFolder, model = 'gpt-5.2', context = [],
+    message, currentFolder, model = 'gpt-5.5', context = [],
     documentContent, selectedText, fileName, language, 
     fileTreeContext, conversationHistory 
   } = params;
@@ -672,9 +672,9 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
         }
         
         // Use exact model names from COSMO (tested and working)
-        const claudeModel = model === 'claude-opus-4-5' 
-          ? 'claude-opus-4-5'  // Opus - latest
-          : 'claude-sonnet-4-5';  // Sonnet - latest
+        const claudeModel = model === 'claude-opus-4-7' 
+          ? 'claude-opus-4-7'  // Opus - latest
+          : 'claude-sonnet-4-7';  // Sonnet - latest
         
         const response = await anthropic.messages.create({
           model: claudeModel,
@@ -724,7 +724,7 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
         
       } else {
         // ============ OPENAI (Responses API) ============
-        // GPT-5.2 best practice: use Responses API, keep state with previous_response_id,
+        // GPT-5.5 best practice: use Responses API, keep state with previous_response_id,
         // and rely on truncation='auto' instead of failing hard on context overflow.
 
         const trimmedMessages = trimMessages(messages, 200000);
@@ -748,11 +748,11 @@ async function handleFunctionCalling(openai, anthropic, xai, indexer, params, ev
           parallel_tool_calls: true,
           truncation: 'auto',
           max_output_tokens: 16000,
-          // Per GPT-5.2 guidance: keep temperature only with minimal reasoning effort.
-          // Newer GPT-5.2 supports reasoning.effort = 'none' | 'low' | 'medium' | 'high' | 'xhigh'.
-          reasoning: String(openaiModel).startsWith('gpt-5.2') ? { effort: 'none' } : undefined,
-          // GPT-5.2 verbosity control (SDK types may lag; API accepts this field)
-          text: String(openaiModel).startsWith('gpt-5.2') ? { verbosity: 'medium' } : undefined,
+          // Per GPT-5.5 guidance: keep temperature only with minimal reasoning effort.
+          // Newer GPT-5.5 supports reasoning.effort = 'none' | 'low' | 'medium' | 'high' | 'xhigh'.
+          reasoning: String(openaiModel).startsWith('gpt-5.5') ? { effort: 'none' } : undefined,
+          // GPT-5.5 verbosity control (SDK types may lag; API accepts this field)
+          text: String(openaiModel).startsWith('gpt-5.5') ? { verbosity: 'medium' } : undefined,
           temperature: 0.1
         };
 

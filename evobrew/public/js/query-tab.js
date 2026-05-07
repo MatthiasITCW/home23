@@ -427,17 +427,18 @@ function buildQueryModelOptions(byProvider, selectedValue) {
 
 function getQueryFallbackModelHtml() {
   return `
-    <option value="anthropic/latest-sonnet" data-provider="anthropic">Claude Sonnet 4.6</option>
-    <option value="anthropic/latest-opus" data-provider="anthropic">Claude Opus 4.6</option>
-    <option value="anthropic/latest-haiku" data-provider="anthropic">Claude Haiku 4.5</option>
-    <option value="openai-codex/latest-codex" data-provider="openai-codex">GPT-5.4</option>
-    <option value="openai-codex/latest-mini" data-provider="openai-codex">GPT-5.4 Mini</option>
-    <option value="openai-codex/latest-nano" data-provider="openai-codex">GPT-5.4 Nano</option>
-    <option value="xai/latest-4-20" data-provider="xai">Grok 4.20</option>
-    <option value="xai/latest-4-20-moe" data-provider="xai">Grok 4.20 Multi-Agent</option>
-    <option value="ollama-cloud/latest-kimi" data-provider="ollama-cloud">Kimi K2.6</option>
-    <option value="ollama-cloud/latest-minimax" data-provider="ollama-cloud">MiniMax M2.7</option>
-    <option value="ollama-cloud/latest-nemotron" data-provider="ollama-cloud">Nemotron 3 Super</option>
+    <option value="openai-codex/gpt-5.5" data-provider="openai-codex">GPT-5.5</option>
+    <option value="anthropic/claude-opus-4-7" data-provider="anthropic">Claude Opus 4.7</option>
+    <option value="anthropic/claude-sonnet-4-7" data-provider="anthropic">Claude Sonnet 4.7</option>
+    <option value="anthropic/claude-haiku-4-5" data-provider="anthropic">Claude Haiku 4.5</option>
+    <option value="openai/gpt-5.5" data-provider="openai">GPT-5.5 API</option>
+    <option value="openai/gpt-5.5-pro" data-provider="openai">GPT-5.5 Pro API</option>
+    <option value="minimax/MiniMax-M2.7" data-provider="minimax">MiniMax M2.7</option>
+    <option value="xai/grok-4.3" data-provider="xai">Grok 4.3</option>
+    <option value="xai/grok-4.20-0309-reasoning" data-provider="xai">Grok 4.20 Reasoning</option>
+    <option value="ollama-cloud/kimi-k2.6" data-provider="ollama-cloud">Kimi K2.6</option>
+    <option value="ollama-cloud/deepseek-v4-pro" data-provider="ollama-cloud">DeepSeek V4 Pro</option>
+    <option value="ollama-cloud/nemotron-3-super" data-provider="ollama-cloud">Nemotron 3 Super</option>
     <option value="openclaw/openclaw:coz" data-provider="openclaw">COZ — Agent with Memory</option>
   `;
 }
@@ -450,8 +451,8 @@ function seedQueryModelSelects() {
   const synthSelect = document.getElementById('qt-pgs-synth-model');
   const fallbackHtml = getQueryFallbackModelHtml();
   const runtimePrefs = window.EvobrewRuntimePrefs;
-  const defaultQuery = runtimePrefs?.getDefaultSelection?.('query', 'anthropic/latest-sonnet') || 'anthropic/latest-sonnet';
-  const defaultSweep = runtimePrefs?.getDefaultSelection?.('pgsSweep', 'anthropic/latest-sonnet') || 'anthropic/latest-sonnet';
+  const defaultQuery = runtimePrefs?.getDefaultSelection?.('query', 'openai-codex/gpt-5.5') || 'openai-codex/gpt-5.5';
+  const defaultSweep = runtimePrefs?.getDefaultSelection?.('pgsSweep', 'minimax/MiniMax-M2.7') || 'minimax/MiniMax-M2.7';
   const defaultSynth = runtimePrefs?.getDefaultSelection?.('pgsSynth', defaultQuery) || defaultQuery;
 
   select.innerHTML = fallbackHtml;
@@ -465,10 +466,10 @@ function seedQueryModelSelects() {
     sweepSelect.dataset.catalogLoaded = 'false';
     if ([...sweepSelect.options].some((option) => option.value === defaultSweep)) {
       sweepSelect.value = defaultSweep;
-    } else if ([...sweepSelect.options].some((option) => option.value === 'anthropic/claude-sonnet-4-6')) {
-      sweepSelect.value = 'anthropic/claude-sonnet-4-6';
+    } else if ([...sweepSelect.options].some((option) => option.value === 'minimax/MiniMax-M2.7')) {
+      sweepSelect.value = 'minimax/MiniMax-M2.7';
     } else {
-      sweepSelect.value = 'anthropic/latest-sonnet';
+      sweepSelect.value = 'anthropic/claude-sonnet-4-7';
     }
   }
 
@@ -495,8 +496,8 @@ function applyQueryModelCatalog(data) {
   const synthSelect = document.getElementById('qt-pgs-synth-model');
   const runtimePrefs = window.EvobrewRuntimePrefs;
 
-  const currentValue = select.value || 'openai/latest-stable';
-  const currentSweepValue = sweepSelect?.value || 'anthropic/latest-sonnet';
+  const currentValue = select.value || 'openai-codex/gpt-5.5';
+  const currentSweepValue = sweepSelect?.value || 'minimax/MiniMax-M2.7';
   const currentSynthValue = synthSelect?.value || currentValue;
 
   const renderedMain = runtimePrefs?.renderSelect
@@ -530,7 +531,7 @@ function applyQueryModelCatalog(data) {
     select.innerHTML = '';
     select.appendChild(buildQueryModelOptions(byProvider, currentValue));
     if (![...select.options].some((option) => option.selected)) {
-      const fallback = [...select.options].find((option) => option.value === 'openai/latest-stable') || select.options[0];
+      const fallback = [...select.options].find((option) => option.value === 'openai-codex/gpt-5.5') || select.options[0];
       if (fallback) fallback.selected = true;
     }
 
@@ -538,8 +539,8 @@ function applyQueryModelCatalog(data) {
       sweepSelect.innerHTML = '';
       sweepSelect.appendChild(buildQueryModelOptions(byProvider, currentSweepValue));
       if (![...sweepSelect.options].some((option) => option.selected)) {
-        const fallbackSweep = [...sweepSelect.options].find((option) => option.value === 'anthropic/claude-sonnet-4-6')
-          || [...sweepSelect.options].find((option) => option.value === 'anthropic/latest-sonnet')
+        const fallbackSweep = [...sweepSelect.options].find((option) => option.value === 'minimax/MiniMax-M2.7')
+          || [...sweepSelect.options].find((option) => option.value === 'anthropic/claude-sonnet-4-7')
           || sweepSelect.options[0];
         if (fallbackSweep) fallbackSweep.selected = true;
       }

@@ -35,7 +35,7 @@ class DashboardServer {
       ? path.resolve(runtimeEnv)
       : path.resolve(__dirname, '..', '..', '..', 'runtime');
     
-    // Default to GPT-5.2 logs, fallback to regular logs
+    // Default to GPT-5.5 logs, fallback to regular logs
     this.logsDir = logsDir || this.detectLogsDirectory();
     this.currentRun = runtimeEnv ? path.basename(this.defaultRunDir) : 'runtime'; // Track current run name
     this.currentRunMetadata = null;
@@ -75,6 +75,7 @@ class DashboardServer {
     this.logStreamClients = new Set();
     this.metadataErrorCache = new Set();
     this.homeSummaryCache = { data: null, expiresAt: 0 };
+    this._stateScalarsCache = null;
     
     // Logger for route handlers - using console for consistency
     this.logger = console;
@@ -132,9 +133,9 @@ class DashboardServer {
               baseURL: metadata.localLlmBaseUrl || process.env.LOCAL_LLM_BASE_URL || 'http://localhost:11434/v1',
               defaultModel: metadata.localLlmDefaultModel || 'qwen2.5:14b',
               modelMapping: {
-                'gpt-5.2': metadata.localLlmDefaultModel || 'qwen2.5:14b',
+                'gpt-5.5': metadata.localLlmDefaultModel || 'qwen2.5:14b',
                 'gpt-5': metadata.localLlmDefaultModel || 'qwen2.5:14b',
-                'gpt-5-mini': metadata.localLlmFastModel || 'qwen2.5:14b'
+                'gpt-5.4-mini': metadata.localLlmFastModel || 'qwen2.5:14b'
               }
             }
           },
@@ -161,9 +162,9 @@ class DashboardServer {
               baseURL: process.env.LOCAL_LLM_BASE_URL || 'http://localhost:11434/v1',
               defaultModel: 'qwen2.5:14b',
               modelMapping: {
-                'gpt-5.2': 'qwen2.5:14b',
+                'gpt-5.5': 'qwen2.5:14b',
                 'gpt-5': 'qwen2.5:14b',
-                'gpt-5-mini': 'qwen2.5:14b'
+                'gpt-5.4-mini': 'qwen2.5:14b'
               }
             }
           },
@@ -4692,7 +4693,7 @@ class DashboardServer {
           }
         };
         
-        // Use GPT-5.2 to analyze and generate next plan
+        // Use GPT-5.5 to analyze and generate next plan
         const { getOpenAIClient } = require('../core/openai-client');
         const client = getOpenAIClient();
         
@@ -4738,7 +4739,7 @@ OUTPUT FORMAT (JSON):
 Be specific, actionable, and maintain research continuity.`;
 
         const response = await client.chat.completions.create({
-          model: 'gpt-5-mini',
+          model: 'gpt-5.5',
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
           // NOTE: GPT-5 models don't support custom temperature, uses default (1.0)
@@ -4921,14 +4922,16 @@ Be specific, actionable, and maintain research continuity.`;
           oscillatorMode: summary.temporalState === 'sleeping' ? 'sleep' : 'focus',
           cognitiveState: {},
           memory: {
-            nodes: Number.isFinite(summary.memoryNodes) ? summary.memoryNodes : 0,
-            edges: 0,
-            clusters: 0,
+            nodes: Number.isFinite(summary.memoryGraph?.nodes) ? summary.memoryGraph.nodes : 0,
+            edges: Number.isFinite(summary.memoryGraph?.edges) ? summary.memoryGraph.edges : 0,
+            clusters: Number.isFinite(summary.memoryGraph?.clusters) ? summary.memoryGraph.clusters : 0,
+            source: summary.memoryGraph?.source || null,
           },
           goals: {
-            active: 0,
-            completed: 0,
-            archived: 0,
+            active: Number.isFinite(summary.goals?.active) ? summary.goals.active : 0,
+            completed: Number.isFinite(summary.goals?.completed) ? summary.goals.completed : 0,
+            archived: Number.isFinite(summary.goals?.archived) ? summary.goals.archived : 0,
+            source: summary.goals?.source || null,
           },
           temporal: summary.temporalState ? { state: summary.temporalState } : null,
           journal: summary.lastThoughtText ? [{
@@ -5789,30 +5792,6 @@ Be specific, actionable, and maintain research continuity.`;
           return res.status(400).json({ error: 'query string is required' });
         }
 
-        // Load state
-        let state = { memory: { nodes: [] } };
-        try {
-          state = await this.loadState();
-        } catch {
-          return res.json({ query, results: [], stats: { totalSearched: 0, totalMatched: 0 } });
-        }
-
-        // Get nodes (handle both array and object/map format)
-        let nodes = state.memory?.nodes || [];
-        if (!Array.isArray(nodes)) {
-          nodes = Object.values(nodes);
-        }
-
-        // Filter to nodes with embeddings
-        let searchable = nodes.filter(n => n.embedding && Array.isArray(n.embedding) && n.embedding.length > 0);
-        if (tag) {
-          searchable = searchable.filter(n => n.tag === tag);
-        }
-
-        if (searchable.length === 0) {
-          return res.json({ query, results: [], stats: { totalSearched: 0, totalMatched: 0, note: 'No nodes with embeddings found' } });
-        }
-
         // Embed the query using the same client/model as the engine
         const { getEmbeddingClient } = require('../core/openai-client');
         const client = getEmbeddingClient();
@@ -5838,6 +5817,9 @@ Be specific, actionable, and maintain research continuity.`;
           return res.status(500).json({ error: 'Failed to generate query embedding' });
         }
 
+        const resultLimit = Math.max(1, Math.min(100, parseInt(topK, 10) || 10));
+        const similarityThreshold = Number.isFinite(Number(minSimilarity)) ? Number(minSimilarity) : 0.4;
+
         // Cosine similarity (inlined from NetworkMemory)
         function cosineSimilarity(a, b) {
           if (!a || !b || a.length !== b.length) return 0;
@@ -5851,42 +5833,78 @@ Be specific, actionable, and maintain research continuity.`;
           return dot / (Math.sqrt(nA) * Math.sqrt(nB));
         }
 
-        // Score ALL searchable nodes and compute population statistics
-        let popSum = 0;
-        const allScores = [];
-        const scored = [];
+        // Score searchable nodes without materializing the full sidecar graph in
+        // dashboard heap. The live Jerry sidecar is hundreds of MB compressed.
+        let totalSearched = 0;
+        let totalMatched = 0;
+        let popMean = 0;
+        let popM2 = 0;
+        let topScore = 0;
+        const topCandidates = [];
+        let source = 'state';
 
-        for (const node of searchable) {
+        const scoreNode = (node) => {
+          if (!node?.embedding || !Array.isArray(node.embedding) || node.embedding.length === 0) return;
+          if (tag && node.tag !== tag) return;
           const similarity = cosineSimilarity(queryEmbedding, node.embedding);
-          popSum += similarity;
-          allScores.push(similarity);
-          if (similarity >= minSimilarity) {
-            scored.push({
-              id: node.id,
-              concept: node.concept,
-              tag: node.tag,
-              similarity: Math.round(similarity * 10000) / 10000,
-              weight: node.weight,
-              activation: node.activation,
-              cluster: node.cluster,
-              created: node.created,
-              accessed: node.accessed,
-              accessCount: node.accessCount,
+          totalSearched += 1;
+          const delta = similarity - popMean;
+          popMean += delta / totalSearched;
+          popM2 += delta * (similarity - popMean);
+          if (similarity > topScore) topScore = similarity;
+
+          if (similarity >= similarityThreshold) {
+            totalMatched += 1;
+            topCandidates.push({
+              rawSimilarity: similarity,
+              result: {
+                id: node.id,
+                concept: node.concept,
+                tag: node.tag,
+                similarity: Math.round(similarity * 10000) / 10000,
+                weight: node.weight,
+                activation: node.activation,
+                cluster: node.cluster,
+                created: node.created,
+                accessed: node.accessed,
+                accessCount: node.accessCount,
+              },
             });
+            topCandidates.sort((a, b) => b.rawSimilarity - a.rawSimilarity);
+            if (topCandidates.length > resultLimit) topCandidates.length = resultLimit;
           }
+        };
+
+        try {
+          const { sidecarsExist, readJsonlGz, nodesPath } = require('../core/memory-sidecar');
+          if (sidecarsExist(this.logsDir)) {
+            source = 'memory-sidecar';
+            await readJsonlGz(nodesPath(this.logsDir), scoreNode);
+          } else {
+            let state = { memory: { nodes: [] } };
+            try {
+              state = await this.loadState();
+            } catch {
+              return res.json({ query, results: [], stats: { totalSearched: 0, totalMatched: 0 } });
+            }
+
+            let nodes = state.memory?.nodes || [];
+            if (!Array.isArray(nodes)) {
+              nodes = Object.values(nodes);
+            }
+            for (const node of nodes) scoreNode(node);
+          }
+        } catch (error) {
+          console.error('[/api/memory/search] Sidecar search failed:', error.message);
+          return res.status(500).json({ error: error.message });
         }
 
-        scored.sort((a, b) => b.similarity - a.similarity);
-
-        const topScore = scored.length > 0 ? scored[0].similarity : 0;
-        const popMean = searchable.length > 0 ? popSum / searchable.length : 0;
+        if (totalSearched === 0) {
+          return res.json({ query, results: [], stats: { totalSearched: 0, totalMatched: 0, source, note: 'No nodes with embeddings found' } });
+        }
 
         // Population standard deviation for z-score
-        let popVariance = 0;
-        for (const s of allScores) {
-          popVariance += (s - popMean) * (s - popMean);
-        }
-        const popStdDev = allScores.length > 0 ? Math.sqrt(popVariance / allScores.length) : 0;
+        const popStdDev = totalSearched > 0 ? Math.sqrt(popM2 / totalSearched) : 0;
 
         // Z-score: how many standard deviations is the top result above the mean?
         // Real semantic matches: z > 2.5 (top result is a clear outlier)
@@ -5895,10 +5913,10 @@ Be specific, actionable, and maintain research continuity.`;
 
         // Adaptive threshold: stricter for large brains (noise), lenient for small ones
         // Also accept results above absolute similarity threshold (0.45) regardless of z-score
-        const minZScore = searchable.length < 50 ? 1.0 : searchable.length < 500 ? 2.0 : 3.0;
+        const minZScore = totalSearched < 50 ? 1.0 : totalSearched < 500 ? 2.0 : 3.0;
         const minAbsSimilarity = 0.45;
 
-        const candidateResults = scored.slice(0, topK);
+        const candidateResults = topCandidates.map(c => c.result);
         const hasSignal = candidateResults.length > 0 && (zScore >= minZScore || topScore >= minAbsSimilarity);
         const results = hasSignal ? candidateResults : [];
 
@@ -5906,13 +5924,14 @@ Be specific, actionable, and maintain research continuity.`;
           query,
           results,
           stats: {
-            totalSearched: searchable.length,
-            totalMatched: hasSignal ? scored.length : 0,
+            totalSearched,
+            totalMatched: hasSignal ? totalMatched : 0,
             topSimilarity: Math.round(topScore * 10000) / 10000,
             populationMean: Math.round(popMean * 10000) / 10000,
             populationStdDev: Math.round(popStdDev * 10000) / 10000,
             zScore: Math.round(zScore * 100) / 100,
             noiseFiltered: !hasSignal,
+            source,
           }
         });
       } catch (error) {
@@ -6239,7 +6258,7 @@ Be specific, actionable, and maintain research continuity.`;
           language,          // File language (markdown, json, etc.)
           fileTreeContext,   // Project file structure (for awareness)
           currentFolder,     // Current working directory (for file creation)
-          model = 'gpt-5.2', // User can select model (gpt-5.2 or claude)
+          model = 'MiniMax-M2.7',
           conversationHistory // Previous messages (optional)
         } = req.body;
         
@@ -6550,9 +6569,9 @@ You are empowered to explore and understand. The user trusts you to discover the
               const userMessages = messages.filter(m => m.role !== 'system');
               
               // Determine correct Claude model (December 2025)
-              const claudeModel = model === 'claude-opus-4-5' 
+              const claudeModel = model === 'claude-opus-4-7' 
                 ? 'claude-3-opus-20240229'  // Claude 3 Opus
-                : 'claude-sonnet-4-5-20250929';  // Claude Sonnet 4.5
+                : 'claude-sonnet-4-7-20250929';  // Claude Sonnet 4.7
               
               const stream = await anthropic.messages.create({
                 model: claudeModel,
@@ -6577,7 +6596,7 @@ You are empowered to explore and understand. The user trusts you to discover the
             } else {
               // OpenAI GPT Streaming
               const stream = await openai.chat.completions.create({
-                model: 'gpt-5.2',
+                model: 'gpt-5.5',
                 messages: messages,
                 temperature: 0.1,
                 max_completion_tokens: 16000,
@@ -6621,10 +6640,9 @@ You are empowered to explore and understand. The user trusts you to discover the
             const systemMsg = messages.find(m => m.role === 'system');
             const userMessages = messages.filter(m => m.role !== 'system');
             
-            // Determine correct Claude model (December 2025)
-            const claudeModel = model === 'claude-opus-4-5' 
-              ? 'claude-3-opus-20240229'  // Claude 3 Opus
-              : 'claude-sonnet-4-5-20250929';  // Claude Sonnet 4.5
+            const claudeModel = model.startsWith('claude-')
+              ? model
+              : 'claude-sonnet-4-7';
             
             const response = await anthropic.messages.create({
               model: claudeModel,
@@ -6642,9 +6660,9 @@ You are empowered to explore and understand. The user trusts you to discover the
             tokensUsed = (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
             
           } else {
-            // Use OpenAI GPT-5.2 (default)
+            // Use current OpenAI GPT default
             const response = await openai.chat.completions.create({
-              model: 'gpt-5.2',
+              model: 'gpt-5.5',
               messages: messages,
               temperature: 0.1,
               max_completion_tokens: 16000  // Increased from 4000
@@ -6770,7 +6788,7 @@ You are empowered to explore and understand. The user trusts you to discover the
         console.log(`[QUERY API] Query: "${query.substring(0, 60)}..."`);
         console.log(`[QUERY API] Target Run: ${targetRunName}`);
         console.log(`[QUERY API] Directory: ${targetRunDir}`);
-        console.log(`[QUERY API] Model: ${model || 'gpt-5.2'} | Mode: ${mode || 'normal'}`);
+        console.log(`[QUERY API] Model: ${model || 'MiniMax-M2.7'} | Mode: ${mode || 'normal'}`);
         console.log(`[QUERY API] Include Files: ${includeFiles !== false} | Allow Actions: ${allowActions || false}`);
         const effectiveBackendOverride = backendOverride || 'openai';
         console.log(`[QUERY API] Backend Override: ${effectiveBackendOverride} ${backendOverride ? '(explicit)' : '(defaulted to remote)'}`);
@@ -6804,7 +6822,7 @@ You are empowered to explore and understand. The user trusts you to discover the
         
         // Execute enhanced query
         const result = await runQueryEngine.executeEnhancedQuery(query, {
-          model: model || 'gpt-5.2',
+          model: model || runConfig?.models?.primary || 'MiniMax-M2.7',
           mode: mode || 'normal',
           exportFormat: exportFormat,
           includeFiles: includeFiles !== false, // Default true
@@ -6844,7 +6862,7 @@ You are empowered to explore and understand. The user trusts you to discover the
             timestamp: new Date().toISOString(),
             runName: targetRunName,
             query,
-            model: model || 'gpt-5.2',
+            model: model || runConfig?.models?.primary || 'MiniMax-M2.7',
             mode: mode || 'normal',
             answer: result.answer,
             evidence: result.evidence ? result.evidence.length : 0,
@@ -7173,7 +7191,7 @@ You are empowered to explore and understand. The user trusts you to discover the
             kind: 'executive_view',
             base: {
               query,
-              model: metadata?.model || 'gpt-5.2',
+              model: metadata?.model || 'unknown',
               mode: metadata?.mode || 'normal',
               timestamp: metadata?.timestamp || null
             },
@@ -7419,7 +7437,7 @@ You are empowered to explore and understand. The user trusts you to discover the
 
         // Execute query with follow-up context
         const result = await this.queryEngine.executeQuery(query, {
-          model: model || 'gpt-5.2',
+          model: model || this.config?.models?.primary || 'MiniMax-M2.7',
           mode: mode || 'normal',
           followUpContext: {
             sessionId,
@@ -7440,9 +7458,10 @@ You are empowered to explore and understand. The user trusts you to discover the
     this.app.get('/api/query/models', (req, res) => {
       res.json({
         models: [
-          { id: 'gpt-5.2', name: 'GPT-5.2', description: 'Best general-purpose model (default)' },
-          { id: 'gpt-5-mini', name: 'GPT-5 Mini', description: 'Fast & economical' },
-          { id: 'gpt-5.1-codex-max', name: 'GPT-5.1 Codex Max', description: 'Specialized for coding' }
+          { id: 'gpt-5.5', name: 'GPT-5.5', description: 'Current flagship for complex reasoning and coding' },
+          { id: 'gpt-5.5-pro', name: 'GPT-5.5 Pro', description: 'Highest-accuracy GPT-5.5 option for hard work' },
+          { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', description: 'Fast & economical' },
+          { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', description: 'Coding-optimized Codex model' }
         ],
         modes: [
           { id: 'fast', name: 'Fast', description: 'Low reasoning (8K tokens), quick answers' },
@@ -7874,7 +7893,7 @@ You are empowered to explore and understand. The user trusts you to discover the
         const { 
           runDir, 
           queryTimestamps = [], 
-          model = 'claude-sonnet-4-5',
+          model = 'claude-sonnet-4-7',
           reviewType = 'enterprise',
           customPrompt = null
         } = req.body;
@@ -7944,7 +7963,7 @@ You are empowered to explore and understand. The user trusts you to discover the
         proc.unref();  // Allow parent to exit independently
         
         const timeEstimate = queryTimestamps.length * 
-          (model === 'claude-opus-4-5' ? 25 : model === 'claude-sonnet-4-5' ? 15 : 20);
+          (model === 'claude-opus-4-7' ? 25 : model === 'claude-sonnet-4-7' ? 15 : 20);
         
         res.json({
           success: true,
@@ -9007,6 +9026,42 @@ You are empowered to explore and understand. The user trusts you to discover the
     });
   }
 
+  async loadStateScalars() {
+    const statePath = path.join(this.logsDir, 'state.json');
+    try {
+      const gzPath = statePath + '.gz';
+      let mtime = 0;
+      try {
+        const fsSync = require('fs');
+        const target = fsSync.existsSync(gzPath) ? gzPath : statePath;
+        if (fsSync.existsSync(target)) {
+          mtime = fsSync.statSync(target).mtimeMs;
+        }
+      } catch { /* file may not exist yet */ }
+
+      const now = Date.now();
+      const cache = this._stateScalarsCache;
+      if (cache && cache.mtime === mtime && (now - cache.loadedAt) < 30000) {
+        return cache.data;
+      }
+
+      const data = await StateCompression.loadCompressed(statePath);
+      if (data?.memory) {
+        data.memory = {
+          ...data.memory,
+          nodes: [],
+          edges: [],
+          scalarsOnly: true,
+        };
+      }
+      this._stateScalarsCache = { data, mtime, loadedAt: now };
+      return data;
+    } catch (error) {
+      this.logger?.warn?.('Could not load scalar state.json', { path: statePath, error: error.message });
+      return {};
+    }
+  }
+
   async loadState() {
     // state.json.gz is ~180MB compressed on a big brain — decompressing +
     // parsing it on every request blocks the event loop for 1-3 seconds.
@@ -9089,9 +9144,10 @@ You are empowered to explore and understand. The user trusts you to discover the
   }
 
   async buildHomeSummary() {
-    const [thoughtSummary, memoryNodes] = await Promise.all([
+    const [thoughtSummary, memoryGraph, goals] = await Promise.all([
       this.getThoughtsSummary(),
-      this.getFastMemoryNodeCount()
+      this.getFastMemoryGraphSummary(),
+      this.getFastGoalSummary()
     ]);
 
     const lastThought = thoughtSummary.lastThought;
@@ -9100,7 +9156,9 @@ You are empowered to explore and understand. The user trusts you to discover the
     return {
       cycleCount: lastThought?.cycle || 0,
       thoughtCount: thoughtSummary.count,
-      memoryNodes: Number.isFinite(memoryNodes) ? memoryNodes : null,
+      memoryNodes: Number.isFinite(memoryGraph?.nodes) ? memoryGraph.nodes : null,
+      memoryGraph,
+      goals,
       lastThoughtAt: lastThought?.timestamp || null,
       lastThoughtRole,
       lastThoughtText: lastThought?.thought || lastThought?.content || lastThought?.text || null,
@@ -9308,11 +9366,21 @@ You are empowered to explore and understand. The user trusts you to discover the
   }
 
   async getFastMemoryNodeCount() {
+    const graph = await this.getFastMemoryGraphSummary();
+    return Number.isFinite(graph?.nodes) ? graph.nodes : null;
+  }
+
+  async getFastMemoryGraphSummary() {
     const snapshotPath = path.join(this.logsDir, 'brain-snapshot.json');
     try {
       const snapshot = JSON.parse(await fs.readFile(snapshotPath, 'utf8'));
       if (Number.isFinite(snapshot?.nodeCount)) {
-        return snapshot.nodeCount;
+        return {
+          nodes: snapshot.nodeCount,
+          edges: Number.isFinite(snapshot.edgeCount) ? snapshot.edgeCount : 0,
+          clusters: Number.isFinite(snapshot.clusterCount) ? snapshot.clusterCount : 0,
+          source: 'brain-snapshot',
+        };
       }
     } catch {
       // Fall through to older advisory sources.
@@ -9322,7 +9390,12 @@ You are empowered to explore and understand. The user trusts you to discover the
     try {
       const cache = JSON.parse(await fs.readFile(cachePath, 'utf8'));
       if (Number.isFinite(cache?.nodeCount)) {
-        return cache.nodeCount;
+        return {
+          nodes: cache.nodeCount,
+          edges: Number.isFinite(cache.edgeCount) ? cache.edgeCount : 0,
+          clusters: Number.isFinite(cache.clusterCount) ? cache.clusterCount : 0,
+          source: 'dashboard-cache',
+        };
       }
     } catch {
       // Fall through to evaluation metrics.
@@ -9333,7 +9406,13 @@ You are empowered to explore and understand. The user trusts you to discover the
       const metrics = JSON.parse(await fs.readFile(metricsPath, 'utf8'));
       const totalNodes = metrics?.metrics?.memory?.totalNodes;
       if (Number.isFinite(totalNodes)) {
-        return totalNodes;
+        const totalEdges = metrics?.metrics?.memory?.totalEdges;
+        return {
+          nodes: totalNodes,
+          edges: Number.isFinite(totalEdges) ? totalEdges : 0,
+          clusters: 0,
+          source: 'evaluation-metrics',
+        };
       }
     } catch {
       // Fall through to state only if it's small enough.
@@ -9344,17 +9423,86 @@ You are empowered to explore and understand. The user trusts you to discover the
       const stats = await fs.stat(statePathGz);
       const maxInlineSummarySize = 30 * 1024 * 1024;
       if (stats.size <= maxInlineSummarySize) {
+        try {
+          const { sidecarsExist } = require('../core/memory-sidecar');
+          if (sidecarsExist(this.logsDir)) {
+            return { nodes: null, edges: 0, clusters: 0, source: 'memory-sidecar' };
+          }
+        } catch {
+          // If the sidecar helper is unavailable, keep the legacy fallback.
+        }
         const state = await this.loadState();
-        const nodeCount = state?.memory?.nodes?.length;
+        const nodes = Array.isArray(state?.memory?.nodes) ? state.memory.nodes : [];
+        const edges = Array.isArray(state?.memory?.edges) ? state.memory.edges : [];
+        const nodeCount = nodes.length;
         if (Number.isFinite(nodeCount)) {
-          return nodeCount;
+          const clusterIds = new Set(nodes
+            .map(n => n?.cluster)
+            .filter(c => c !== null && c !== undefined && String(c).trim() !== '')
+            .map(c => String(c)));
+          return {
+            nodes: nodeCount,
+            edges: edges.length,
+            clusters: clusterIds.size,
+            source: 'state',
+          };
         }
       }
     } catch {
       // No lightweight node source available.
     }
 
-    return null;
+    return { nodes: null, edges: 0, clusters: 0, source: null };
+  }
+
+  async getFastGoalSummary() {
+    const snapshotPath = path.join(this.logsDir, 'brain-snapshot.json');
+    try {
+      const snapshot = JSON.parse(await fs.readFile(snapshotPath, 'utf8'));
+      const counts = snapshot?.goalCounts;
+      if (
+        Number.isFinite(counts?.active) &&
+        Number.isFinite(counts?.completed) &&
+        Number.isFinite(counts?.archived)
+      ) {
+        return {
+          active: counts.active,
+          completed: counts.completed,
+          archived: counts.archived,
+          source: 'brain-snapshot',
+        };
+      }
+    } catch {
+      // Fall through to scalar state for older snapshots.
+    }
+
+    const statePathGz = path.join(this.logsDir, 'state.json.gz');
+    try {
+      const stats = await fs.stat(statePathGz);
+      const maxInlineSummarySize = 30 * 1024 * 1024;
+      if (stats.size > maxInlineSummarySize) {
+        return { active: 0, completed: 0, archived: 0, source: 'unavailable' };
+      }
+
+      const state = await this.loadStateScalars();
+      const goals = state?.goals || {};
+      return {
+        active: this._countGoalEntries(goals.active),
+        completed: this._countGoalEntries(goals.completed),
+        archived: this._countGoalEntries(goals.archived),
+        source: 'state',
+      };
+    } catch {
+      return { active: 0, completed: 0, archived: 0, source: null };
+    }
+  }
+
+  _countGoalEntries(entries) {
+    if (!entries) return 0;
+    if (Array.isArray(entries)) return entries.length;
+    if (entries instanceof Map) return entries.size;
+    if (typeof entries === 'object') return Object.keys(entries).length;
+    return 0;
   }
 
   /**
@@ -9650,7 +9798,7 @@ You are empowered to explore and understand. The user trusts you to discover the
               completed: !!goal.completedAt,
               completedAt: goal.completedAt,
               source: 'goals',
-              model: goal.source === 'dream_gpt5' ? 'gpt-5.2' : 'gpt-5.2'
+              model: goal.source === 'dream_gpt5' ? 'gpt-5.5' : 'gpt-5.5'
             });
           }
         });
@@ -9841,7 +9989,7 @@ You are empowered to explore and understand. The user trusts you to discover the
         config: { intervalHours: 4 },
         logger: console,
       });
-      this._synthesisAgent.startSchedule();
+      this._synthesisAgent.startSchedule({ runOnStart: false });
       console.log('[DashboardServer] Synthesis agent initialized');
     } catch (err) {
       console.warn('[DashboardServer] Synthesis agent not available:', err.message);
