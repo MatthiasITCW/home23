@@ -609,51 +609,52 @@ class UnifiedClient extends GPT5Client {
       messages = [],
       input = null,
       query = null,
-      maxTokens = 2000,
-      reasoningEffort = 'medium',
       tools = []
     } = options;
 
-    // Build input in Responses API format
+    const toCodexMessage = (role, content) => ({
+      type: 'message',
+      role,
+      content: typeof content === 'string'
+        ? [{
+            type: role === 'assistant' ? 'output_text' : 'input_text',
+            text: content
+          }]
+        : content
+    });
+
+    // Build input in Codex Responses item format. The Codex backend rejects
+    // bare string input with "Input must be a list".
     let resolvedInput;
     if (input !== null) {
-      resolvedInput = typeof input === 'string' ? input : input;
+      resolvedInput = typeof input === 'string'
+        ? [toCodexMessage('user', input)]
+        : input;
     } else if (query) {
-      resolvedInput = query;
+      resolvedInput = [toCodexMessage('user', query)];
     } else if (messages && messages.length > 0) {
-      resolvedInput = messages.map(msg => ({
-        type: 'message',
-        role: msg.role,
-        content: typeof msg.content === 'string'
-          ? [{ type: 'input_text', text: msg.content }]
-          : msg.content
-      }));
+      resolvedInput = messages.map(msg => toCodexMessage(msg.role, msg.content));
     } else {
       throw new Error('Either input, messages, or query must be provided');
     }
 
-    // Build request body matching OpenClaw's openai-codex-responses format
+    // Build request body matching the Home23 Codex agent loop. The ChatGPT
+    // Codex backend rejects public Responses-only parameters like
+    // max_output_tokens and include.
     const body = {
       model: assignment.model,
       store: false,
       stream: true,
       input: resolvedInput,
-      max_output_tokens: maxTokens,
-      tool_choice: 'auto',
-      parallel_tool_calls: true,
-      include: ['reasoning.encrypted_content'],
     };
 
     if (instructions && instructions.trim().length > 0) {
       body.instructions = instructions.trim();
     }
 
-    if (reasoningEffort && reasoningEffort !== 'none') {
-      body.reasoning = { effort: reasoningEffort, summary: 'auto' };
-    }
-
     if (tools.length > 0) {
       body.tools = tools;
+      body.tool_choice = 'auto';
     }
 
     // POST to chatgpt.com/backend-api/codex/responses (NOT /responses)

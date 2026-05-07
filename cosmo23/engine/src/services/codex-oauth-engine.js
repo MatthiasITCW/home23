@@ -10,8 +10,28 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const https = require('https');
-const { PrismaClient } = require('@prisma/client');
 const { encryptApiKey, decryptApiKey } = require('./encryption');
+
+function loadPrismaClientModule() {
+  // HOME23 PATCH: the embedded engine has its own node_modules tree, but its
+  // Prisma client can be an ungenerated stub. Prefer the generated COSMO root
+  // client and fall back to normal resolution for standalone installs.
+  const candidates = [
+    path.resolve(__dirname, '../../../node_modules/@prisma/client'),
+    '@prisma/client'
+  ];
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      return require(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+const { PrismaClient } = loadPrismaClientModule();
 
 let prisma = null;
 function getPrisma() {
@@ -27,6 +47,69 @@ const OPENAI_TOKEN_URL = 'https://auth.openai.com/oauth/token';
 
 let tokenCache = null;
 let cacheExpiry = 0;
+
+function firstEnv(...keys) {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const [, payload] = String(token || '').split('.');
+    if (!payload) return null;
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function parseExpiresAt(value) {
+  if (!value) return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getEnvCredentials() {
+  // HOME23 PATCH: Home23 mirrors the Codex OAuth JWT into secrets.yaml and PM2
+  // injects it into home23-cosmo23. Engine subprocesses inherit process.env, so
+  // prefer that live token before touching cosmo23's standalone Prisma store.
+  const accessToken = firstEnv(
+    'OPENAI_CODEX_AUTH_TOKEN',
+    'OPENAI_CODEX_ACCESS_TOKEN',
+    'OPENAI_CODEX_API_KEY',
+    'CODEX_AUTH_TOKEN'
+  );
+  if (!accessToken) return null;
+
+  const payload = decodeJwtPayload(accessToken);
+  const expiresAt = parseExpiresAt(process.env.OPENAI_CODEX_EXPIRES_AT)
+    || (payload?.exp ? payload.exp * 1000 : null);
+  const isExpired = expiresAt && (expiresAt - 5 * 60 * 1000) < Date.now();
+  if (isExpired) {
+    console.warn('[Codex-OAuth-Engine] Env token expired, falling back to OAuth DB');
+    return null;
+  }
+
+  const accountId = firstEnv('OPENAI_CODEX_ACCOUNT_ID', 'CHATGPT_ACCOUNT_ID')
+    || payload?.['https://api.openai.com/auth']?.chatgpt_account_id
+    || payload?.chatgpt_account_id
+    || null;
+
+  return {
+    accessToken,
+    refreshToken: null,
+    accountId,
+    expiresAt,
+    source: 'env',
+  };
+}
 
 /**
  * Refresh access token using stored refresh token.
@@ -139,6 +222,9 @@ async function getStoredToken() {
  */
 async function getCodexCredentials() {
   try {
+    const envCredentials = getEnvCredentials();
+    if (envCredentials) return envCredentials;
+
     const stored = await getStoredToken();
     if (!stored || !stored.token) return null;
 

@@ -93,7 +93,7 @@ export function generateEcosystem(home23Root) {
   lines.push(`if (!cosmo23EncryptionKey) {`);
   lines.push(`  console.warn('[ecosystem] Warning: cosmo23 encryption key not found in secrets.yaml. Run "home23 init" to generate.');`);
   lines.push(`}`);
-  lines.push(`const cosmo23DbUrl = 'file:' + path.join(HOME23, 'cosmo23', 'prisma', 'dev.db');`);
+  lines.push(`const cosmo23DbUrl = 'file:' + path.join(HOME23, 'cosmo23', '.cosmo23-config', 'database.db');`);
   lines.push(``);
   lines.push(`const commonEnv = {`);
   lines.push(`  NODE_ENV: 'production',`);
@@ -103,6 +103,7 @@ export function generateEcosystem(home23Root) {
   lines.push(`  OLLAMA_CLOUD_API_KEY: secrets.providers?.['ollama-cloud']?.apiKey || '',`);
   lines.push(`  MINIMAX_API_KEY: secrets.providers?.minimax?.apiKey || '',`);
   lines.push(`  ANTHROPIC_AUTH_TOKEN: secrets.providers?.anthropic?.apiKey || '',`);
+  lines.push(`  OPENAI_CODEX_AUTH_TOKEN: secrets.providers?.['openai-codex']?.apiKey || '',`);
   lines.push(`  OPENAI_API_KEY: secrets.providers?.openai?.apiKey || '',`);
   lines.push(`  XAI_API_KEY: secrets.providers?.xai?.apiKey || '',`);
   lines.push(`};`);
@@ -172,7 +173,7 @@ export function generateEcosystem(home23Root) {
     lines.push(`      autorestart: true, watch: false, merge_logs: true,`);
     lines.push(`      out_file: ${logsDir} + '/harness-out.log',`);
     lines.push(`      error_file: ${logsDir} + '/harness-err.log',`);
-    lines.push(`      env: { HOME23_AGENT: '${agent.name}', OLLAMA_CLOUD_API_KEY: commonEnv.OLLAMA_CLOUD_API_KEY, MINIMAX_API_KEY: commonEnv.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: commonEnv.ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY: commonEnv.OPENAI_API_KEY, XAI_API_KEY: commonEnv.XAI_API_KEY },`);
+    lines.push(`      env: { HOME23_AGENT: '${agent.name}', OLLAMA_CLOUD_API_KEY: commonEnv.OLLAMA_CLOUD_API_KEY, MINIMAX_API_KEY: commonEnv.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: commonEnv.ANTHROPIC_AUTH_TOKEN, OPENAI_CODEX_AUTH_TOKEN: commonEnv.OPENAI_CODEX_AUTH_TOKEN, OPENAI_API_KEY: commonEnv.OPENAI_API_KEY, XAI_API_KEY: commonEnv.XAI_API_KEY },`);
     lines.push(`    },`);
   }
 

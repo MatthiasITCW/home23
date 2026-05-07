@@ -141,6 +141,14 @@ function getStateHashForCache(state) {
 }
 
 class QueryEngine {
+  static buildCodexInputItems(text) {
+    return [{
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: String(text || '') }]
+    }];
+  }
+
   constructor(runtimeDir, openaiKey) {
     this.runtimeDir = runtimeDir;
     this.stateFile = path.join(runtimeDir, 'state.json.gz');
@@ -1902,10 +1910,7 @@ STYLE:
           store: false,
           stream: true,
           instructions: instructions,
-          input: `${context}\n\nQuestion: ${query}`,
-          reasoning: { effort: config.reasoningEffort || 'medium', summary: 'auto' },
-          max_output_tokens: config.maxTokens,
-          include: ['reasoning.encrypted_content'],
+          input: QueryEngine.buildCodexInputItems(`${context}\n\nQuestion: ${query}`),
         };
 
         const fetchResp = await fetch('https://chatgpt.com/backend-api/codex/responses', {

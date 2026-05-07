@@ -38,3 +38,11 @@ test('fails clearly when MiniMax is selected but no MiniMax query client is conf
     /MiniMax-M2\.7.*minimax.*not configured/i
   );
 });
+
+test('builds Codex query input as response input items', () => {
+  assert.deepEqual(QueryEngine.buildCodexInputItems('context\n\nQuestion: test'), [{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: 'context\n\nQuestion: test' }]
+  }]);
+});

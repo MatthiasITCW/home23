@@ -129,6 +129,7 @@ export function seedCosmo23Config(home23Root) {
   const ollamaCloudKey = secrets.providers?.['ollama-cloud']?.apiKey || '';
   const minimaxKey = secrets.providers?.minimax?.apiKey || '';
   const anthropicKey = secrets.providers?.anthropic?.apiKey || '';
+  const codexKey = secrets.providers?.['openai-codex']?.apiKey || '';
 
   if (openaiKey) {
     config.providers.openai = { ...config.providers.openai, enabled: true, api_key: openaiKey };
@@ -150,6 +151,11 @@ export function seedCosmo23Config(home23Root) {
   if (anthropicKey) {
     // COSMO anthropic is OAuth-only — we still record enabled=true so UI shows provider as available
     config.providers.anthropic = { ...config.providers.anthropic, enabled: true };
+  }
+  if (codexKey) {
+    // COSMO openai-codex is OAuth-only. Home23 injects the JWT through PM2;
+    // the stored provider flag keeps managed setup/provider status coherent.
+    config.providers['openai-codex'] = { ...config.providers['openai-codex'], enabled: true, oauth: true };
   }
 
   // Ensure ollama (local) and ollama-cloud base URLs come from home.yaml

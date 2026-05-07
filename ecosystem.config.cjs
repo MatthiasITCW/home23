@@ -27,7 +27,7 @@ const cosmo23EncryptionKey = secrets.cosmo23?.encryptionKey || '';
 if (!cosmo23EncryptionKey) {
   console.warn('[ecosystem] Warning: cosmo23 encryption key not found in secrets.yaml. Run "home23 init" to generate.');
 }
-const cosmo23DbUrl = 'file:' + path.join(HOME23, 'cosmo23', 'prisma', 'dev.db');
+const cosmo23DbUrl = 'file:' + path.join(HOME23, 'cosmo23', '.cosmo23-config', 'database.db');
 
 const commonEnv = {
   NODE_ENV: 'production',
@@ -37,6 +37,7 @@ const commonEnv = {
   OLLAMA_CLOUD_API_KEY: secrets.providers?.['ollama-cloud']?.apiKey || '',
   MINIMAX_API_KEY: secrets.providers?.minimax?.apiKey || '',
   ANTHROPIC_AUTH_TOKEN: secrets.providers?.anthropic?.apiKey || '',
+  OPENAI_CODEX_AUTH_TOKEN: secrets.providers?.['openai-codex']?.apiKey || '',
   OPENAI_API_KEY: secrets.providers?.openai?.apiKey || '',
   XAI_API_KEY: secrets.providers?.xai?.apiKey || '',
 };
@@ -77,7 +78,7 @@ module.exports = {
       autorestart: true, watch: false, merge_logs: true,
       out_file: path.join(HOME23, 'instances', 'jerry', 'logs') + '/harness-out.log',
       error_file: path.join(HOME23, 'instances', 'jerry', 'logs') + '/harness-err.log',
-      env: { HOME23_AGENT: 'jerry', OLLAMA_CLOUD_API_KEY: commonEnv.OLLAMA_CLOUD_API_KEY, MINIMAX_API_KEY: commonEnv.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: commonEnv.ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY: commonEnv.OPENAI_API_KEY, XAI_API_KEY: commonEnv.XAI_API_KEY },
+      env: { HOME23_AGENT: 'jerry', OLLAMA_CLOUD_API_KEY: commonEnv.OLLAMA_CLOUD_API_KEY, MINIMAX_API_KEY: commonEnv.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: commonEnv.ANTHROPIC_AUTH_TOKEN, OPENAI_CODEX_AUTH_TOKEN: commonEnv.OPENAI_CODEX_AUTH_TOKEN, OPENAI_API_KEY: commonEnv.OPENAI_API_KEY, XAI_API_KEY: commonEnv.XAI_API_KEY },
     },
 
     // ── forrest ──
@@ -113,7 +114,7 @@ module.exports = {
       autorestart: true, watch: false, merge_logs: true,
       out_file: path.join(HOME23, 'instances', 'forrest', 'logs') + '/harness-out.log',
       error_file: path.join(HOME23, 'instances', 'forrest', 'logs') + '/harness-err.log',
-      env: { HOME23_AGENT: 'forrest', OLLAMA_CLOUD_API_KEY: commonEnv.OLLAMA_CLOUD_API_KEY, MINIMAX_API_KEY: commonEnv.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: commonEnv.ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY: commonEnv.OPENAI_API_KEY, XAI_API_KEY: commonEnv.XAI_API_KEY },
+      env: { HOME23_AGENT: 'forrest', OLLAMA_CLOUD_API_KEY: commonEnv.OLLAMA_CLOUD_API_KEY, MINIMAX_API_KEY: commonEnv.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: commonEnv.ANTHROPIC_AUTH_TOKEN, OPENAI_CODEX_AUTH_TOKEN: commonEnv.OPENAI_CODEX_AUTH_TOKEN, OPENAI_API_KEY: commonEnv.OPENAI_API_KEY, XAI_API_KEY: commonEnv.XAI_API_KEY },
     },
 
     // ── chrome-cdp (shared) ──

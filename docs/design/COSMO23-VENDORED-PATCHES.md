@@ -339,6 +339,54 @@ Anthropic credentials in the environment.
 
 ---
 
+## Patch 4c — Codex OAuth env bridge + generated Prisma client (2026-05-07)
+
+**Files touched:**
+- `cosmo23/engine/src/services/codex-oauth-engine.js`
+- `cosmo23/engine/src/core/unified-client.js`
+- `cosmo23/lib/query-engine.js`
+- `cosmo23/server/index.js`
+- `cli/lib/cosmo23-config.js`
+- `ecosystem.config.cjs`
+- `cli/lib/generate-ecosystem.js`
+
+**Problem:** COSMO23 server-side Codex OAuth could be configured and valid, but
+launched research engine agents still failed with:
+
+```text
+No Codex OAuth credentials available. Import via server OAuth flow.
+```
+
+The engine-side reader resolved `@prisma/client` from
+`cosmo23/engine/node_modules`, whose generated client was only the uninitialized
+stub. The server path resolved the generated COSMO root Prisma client and
+reported OAuth as valid, so setup looked correct while the actual research
+engine treated Codex as missing.
+
+**Fix:** the engine Codex OAuth reader now mirrors Patch 4b's Home23 behavior:
+it first checks a Home23-injected `OPENAI_CODEX_AUTH_TOKEN`, derives expiry and
+account id from the JWT when available, and only falls back to the standalone
+OAuth DB when env is absent or stale. The DB fallback also prefers the generated
+COSMO root Prisma client before normal module resolution. Home23's PM2 ecosystem
+now injects `OPENAI_CODEX_AUTH_TOKEN` from
+`config/secrets.yaml.providers.openai-codex.apiKey`, points `DATABASE_URL` at
+the Home23-scoped `cosmo23/.cosmo23-config/database.db`, and managed setup
+status reports `openai-codex` as OAuth-configured when that env var is present.
+The COSMO engine and Query Codex call sites also normalize string/query input
+into Codex Responses input-item lists; the backend rejects bare string input
+with `Input must be a list`. They use the lean Home23 Codex request body and
+avoid public Responses-only fields such as `max_output_tokens` / `include`,
+which the ChatGPT Codex backend rejects.
+
+**Effect under Home23:** launched COSMO23 engine subprocesses can use the same
+Codex OAuth token the server/dashboard already knows is configured.
+
+**Effect under standalone COSMO:** unchanged unless the user explicitly sets
+`OPENAI_CODEX_AUTH_TOKEN`; otherwise the existing database-backed OAuth flow is
+still used.
+
+---
+
 ### Patch 5: HOME23_MANAGED Provider Suppression (2026-04-13)
 
 **File:** `server/index.js`

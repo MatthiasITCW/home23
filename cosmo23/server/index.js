@@ -771,6 +771,7 @@ app.get('/api/setup/status', async (_req, res) => {
   if (process.env.HOME23_MANAGED === 'true') {
     const providers = {};
     if (process.env.ANTHROPIC_AUTH_TOKEN) providers.anthropic = { configured: true, status: 'configured', auth_mode: 'oauth' };
+    if (process.env.OPENAI_CODEX_AUTH_TOKEN) providers['openai-codex'] = { configured: true, status: 'configured', auth_mode: 'oauth' };
     if (process.env.OPENAI_API_KEY) providers.openai = { configured: true, status: 'configured' };
     if (process.env.XAI_API_KEY) providers.xai = { configured: true, status: 'configured' };
     if (process.env.MINIMAX_API_KEY) providers.minimax = { configured: true, status: 'configured' };
