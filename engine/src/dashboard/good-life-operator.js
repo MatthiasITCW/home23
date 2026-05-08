@@ -27,6 +27,7 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
   const nowMs = toNowMs(now);
   const open = [];
   const chronic = [];
+  const resolvedRows = [];
   const resolvedJustNow = [];
   let resolved = 0;
   let unverifiable = 0;
@@ -50,6 +51,14 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
     } else if (problem?.state === 'resolved') {
       resolved += 1;
       const resolvedMs = toTimeMs(problem.resolvedAt);
+      resolvedRows.push({
+        id: problem.id || '',
+        claim: problem.claim || '',
+        resolvedAt: problem.resolvedAt || null,
+        ageMin: resolvedMs ? Math.max(0, Math.round((nowMs - resolvedMs) / 60000)) : null,
+        fixRecipe: problem.fixRecipe || null,
+        lastResult: problem.lastResult || null,
+      });
       if (resolvedMs && nowMs - resolvedMs < RECENT_RESOLUTION_MS) {
         resolvedJustNow.push({
           id: problem.id || '',
@@ -65,6 +74,7 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
   return {
     open,
     chronic,
+    resolved: resolvedRows.sort((a, b) => toTimeMs(b.resolvedAt) - toTimeMs(a.resolvedAt)),
     resolvedJustNow,
     counts: {
       open: open.length,
@@ -229,6 +239,45 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency }) {
   return lines;
 }
 
+function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail }) {
+  const activeRows = [
+    ...(Array.isArray(liveProblems.open) ? liveProblems.open : []),
+    ...(Array.isArray(liveProblems.chronic) ? liveProblems.chronic : []),
+  ];
+  const unverifiableCount = finiteCount(liveProblems.counts?.unverifiable) || 0;
+  const dailyActions = Array.isArray(regulator?.daily?.actions)
+    ? regulator.daily.actions
+      .slice()
+      .sort((a, b) => toTimeMs(b.at) - toTimeMs(a.at))
+      .slice(0, 12)
+    : [];
+  const commitmentsList = Array.isArray(commitments?.commitments) ? commitments.commitments : [];
+
+  return {
+    issues: {
+      activeCount: activeRows.length + unverifiableCount,
+      rows: activeRows,
+      unverifiableCount,
+    },
+    work: {
+      dailyActions,
+      daily: regulator?.daily || null,
+    },
+    resolutions: {
+      recent: (Array.isArray(liveProblems.resolved) ? liveProblems.resolved : []).slice(0, 12),
+      resolvedJustNow: Array.isArray(liveProblems.resolvedJustNow) ? liveProblems.resolvedJustNow : [],
+      totalResolved: finiteCount(liveProblems.counts?.resolved) || 0,
+    },
+    insights: {
+      activeCommitments: commitmentsList.filter((item) => item?.active),
+      commitments: commitmentsList,
+      trendMetrics: trends?.latest?.metrics || null,
+      trend: trends?.latest || null,
+      ledgerTail: Array.isArray(ledgerTail) ? ledgerTail.slice(-12).reverse() : [],
+    },
+  };
+}
+
 function buildGoodLifeOperatorModel({
   state = null,
   commitments = null,
@@ -278,6 +327,13 @@ function buildGoodLifeOperatorModel({
     trends: trends?.latest || null,
     ledgerTail: Array.isArray(ledgerTail) ? ledgerTail.slice(-5) : [],
   };
+  model.detail = buildDetailSections({
+    commitments: commitments || {},
+    trends: trends || {},
+    regulator: regulator || {},
+    liveProblems: directLiveProblems,
+    ledgerTail,
+  });
   model.operatorAnswer = buildOperatorAnswer({
     state,
     lanes,

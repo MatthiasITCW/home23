@@ -187,6 +187,32 @@
     </div>
   </div>
 
+  <!-- Good Life operator drill-down -->
+  <div class="h23-log-overlay" id="goodlife-overlay" onclick="if(event.target===this)closeGoodLifeOperator()">
+    <div class="h23-log-overlay-panel h23-goodlife-overlay-panel">
+      <div class="h23-log-overlay-header h23-goodlife-overlay-header">
+        <div>
+          <span class="h23-brainlog-title" id="goodlife-overlay-title">Good Life</span>
+          <span class="h23-goodlife-overlay-status" id="goodlife-overlay-status">UNKNOWN</span>
+        </div>
+        <div class="h23-goodlife-overlay-actions">
+          <button class="h23-goodlife-plain-btn" type="button" onclick="refreshGoodLifeOperator()">Refresh</button>
+          <button class="h23-goodlife-plain-btn" type="button" onclick="reverifyGoodLifeOperator()">Re-verify</button>
+          <button class="h23-log-overlay-close" onclick="closeGoodLifeOperator()" style="margin-left:8px;">&#10005;</button>
+        </div>
+      </div>
+      <div class="h23-goodlife-overlay-body">
+        <div class="h23-goodlife-overlay-top" id="goodlife-overlay-top"></div>
+        <div class="h23-goodlife-overlay-tabs" id="goodlife-overlay-tabs"></div>
+        <div class="h23-goodlife-overlay-workspace">
+          <div class="h23-goodlife-overlay-list" id="goodlife-overlay-list"></div>
+          <div class="h23-goodlife-overlay-detail" id="goodlife-overlay-detail"></div>
+        </div>
+        <div class="h23-goodlife-overlay-action-status" id="goodlife-overlay-action-status"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Live Problem editor dialog -->
   <div class="h23-log-overlay" id="problem-editor-overlay" onclick="if(event.target===this)closeProblemEditor()">
     <div class="h23-log-overlay-panel" style="max-width:720px;">

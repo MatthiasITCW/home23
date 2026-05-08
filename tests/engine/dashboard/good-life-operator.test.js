@@ -56,6 +56,7 @@ test('live-problem snapshot separates open, chronic, resolved, and unverifiable 
   assert.equal(snapshot.open[0].ageMin, 5);
   assert.equal(snapshot.chronic[0].detail, 'still failing');
   assert.equal(snapshot.resolvedJustNow[0].id, 'resolved_1');
+  assert.equal(snapshot.resolved[0].id, 'resolved_1');
 });
 
 test('Good Life operator model exposes safe current help state with evidence and action card', () => {
@@ -158,4 +159,52 @@ test('Good Life operator model refuses inheritance when freshness is unknown', (
   assert.equal(model.status, 'unknown');
   assert.equal(model.safeToInherit, false);
   assert.ok(model.consistency.warnings.some((warning) => warning.code === 'good_life_freshness_unknown'));
+});
+
+test('Good Life operator model builds end-user detail sections for drill-down navigation', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      evidence: {
+        liveProblems: { open: 0, chronic: 1, resolved: 1, unverifiable: 0, total: 2 },
+      },
+    }),
+    commitments: {
+      commitments: [
+        { id: 'continuity', lane: 'continuity', active: true, status: 'strained', title: 'Preserve continuity', reasons: ['16 open goals'] },
+        { id: 'development', lane: 'development', active: false, status: 'healthy', title: 'Learn from evidence' },
+      ],
+    },
+    trends: {
+      latest: {
+        at: '2026-05-08T13:43:00.000Z',
+        policy: 'help',
+        metrics: { openLiveProblems: 1, pendingAgenda: 145, lastUsefulOutputAt: '2026-05-08T13:30:00.000Z' },
+      },
+    },
+    regulator: {
+      daily: {
+        date: '2026-05-08',
+        actions: [
+          { at: '2026-05-08T12:00:00.000Z', agendaId: 'ag-old', mode: 'repair' },
+          { at: '2026-05-08T13:00:00.000Z', agendaId: 'ag-new', mode: 'help' },
+        ],
+      },
+    },
+    liveProblems: [
+      { id: 'chronic_1', state: 'chronic', claim: 'Chronic thing', openedAt: '2026-05-08T13:00:00.000Z', lastResult: { detail: 'still failing' } },
+      { id: 'resolved_1', state: 'resolved', claim: 'Resolved thing', resolvedAt: '2026-05-08T13:44:00.000Z', fixRecipe: { summary: 'Restarted the dashboard' } },
+    ],
+    ledgerTail: [
+      { at: '2026-05-08T13:40:00.000Z', event: 'good_life.evaluated', summary: 'help mode' },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.detail.issues.activeCount, 1);
+  assert.equal(model.detail.issues.rows[0].id, 'chronic_1');
+  assert.equal(model.detail.work.dailyActions[0].agendaId, 'ag-new');
+  assert.equal(model.detail.resolutions.recent[0].id, 'resolved_1');
+  assert.equal(model.detail.insights.activeCommitments[0].id, 'continuity');
+  assert.equal(model.detail.insights.trendMetrics.pendingAgenda, 145);
+  assert.equal(model.detail.insights.ledgerTail[0].event, 'good_life.evaluated');
 });

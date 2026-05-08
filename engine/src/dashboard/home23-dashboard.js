@@ -28,6 +28,12 @@ let homeTileCustomRefreshers = new Map();
 let homeTileCustomState = new Map();
 let tileActionDialogState = null;
 let homeTileBroadcast = null;
+const goodLifeSurfaceState = new Map();
+let goodLifeOverlayState = {
+  scope: 'home',
+  tab: 'issues',
+  selectedProblemId: null,
+};
 let workersState = {
   workers: [],
   templates: [],
@@ -2154,7 +2160,10 @@ function renderGoodLifeTile(scope = 'home', title = 'Good Life') {
   const id = (base) => goodLifeDomId(base, scope);
   return `
     <div class="h23-tile h23-tile-goodlife">
-      <div class="h23-tile-header"><span class="icon">⊙</span> ${escapeHtml(title)}</div>
+      <div class="h23-tile-header">
+        <span><span class="icon">⊙</span> ${escapeHtml(title)}</span>
+        <button class="h23-goodlife-detail-btn" type="button" onclick="openGoodLifeOperator('${escapeAttr(scope)}')">Details</button>
+      </div>
       <div class="h23-goodlife-head">
         <div>
           <div class="h23-goodlife-policy" id="${id('goodlife-policy')}">Loading...</div>
@@ -2684,13 +2693,14 @@ function renderGoodLifeProblems(operator, data) {
     return `${stats}<div class="h23-goodlife-empty">No open or chronic problems</div>`;
   }
 
+  const scope = data?._scope || 'home';
   return `${stats}<div class="h23-goodlife-problem-list">
     ${rows.map((row) => `
-      <div class="h23-goodlife-problem-row">
+      <button class="h23-goodlife-problem-row" type="button" onclick="openGoodLifeOperator('${escapeAttr(scope)}', '${escapeAttr(row.id)}')">
         <span class="h23-goodlife-problem-state ${goodLifeCssClass(row.state)}">${escapeHtml(row.state)}</span>
         <span class="h23-goodlife-problem-id">${escapeHtml(row.id)}</span>
         <span class="h23-goodlife-problem-claim">${escapeHtml(row.claim)}</span>
-      </div>
+      </button>
       ${row.detail ? `<div class="h23-goodlife-problem-detail">${escapeHtml(row.detail)}</div>` : ''}
     `).join('')}
   </div>`;
@@ -2723,6 +2733,10 @@ function renderGoodLifeActionCard(operator, state) {
 function updateGoodLifeTile(data, scope = 'home') {
   const id = (base) => goodLifeDomId(base, scope);
   const state = data?.state || null;
+  if (data) {
+    data._scope = scope;
+    goodLifeSurfaceState.set(scope, data);
+  }
   if (!state) {
     setText(id('goodlife-policy'), 'No Good Life state yet');
     setText(id('goodlife-summary'), '');
@@ -2768,6 +2782,327 @@ function updateGoodLifeTile(data, scope = 'home') {
   const evaluatedAt = operator?.freshness?.evaluatedAt || state.evaluatedAt;
   const freshness = evaluatedAt ? `evaluated ${timeSince(new Date(evaluatedAt))}` : 'freshness unknown';
   setText(id('goodlife-meta'), `${freshness} - ${action}`);
+}
+
+function goodLifeAgentForScope(scope = 'home') {
+  if (scope && scope.startsWith('agent-')) {
+    const name = scope.slice('agent-'.length);
+    return agents.find((agent) => agent.name === name) || null;
+  }
+  return primaryAgent;
+}
+
+function goodLifeLabelForScope(scope = 'home') {
+  const agent = goodLifeAgentForScope(scope);
+  return agent?.displayName || agent?.name || currentAgentLabel('This agent');
+}
+
+function goodLifeBaseForScope(scope = 'home') {
+  const agent = goodLifeAgentForScope(scope);
+  return agent ? apiBase(agent) : '';
+}
+
+async function loadGoodLifeForScope(scope = 'home') {
+  const base = goodLifeBaseForScope(scope);
+  const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: 5000 }).catch(() => null);
+  if (data) updateGoodLifeTile(data, scope);
+  return data;
+}
+
+function goodLifeProblemsFor(data, states) {
+  const wanted = new Set(states);
+  return (data?.liveProblems?.problems || [])
+    .filter((problem) => wanted.has(problem.state))
+    .sort((a, b) => {
+      const rank = { chronic: 0, open: 1, unverifiable: 2, resolved: 3 };
+      const stateRank = (rank[a.state] ?? 9) - (rank[b.state] ?? 9);
+      if (stateRank !== 0) return stateRank;
+      return Date.parse(b.updatedAt || b.lastCheckedAt || b.resolvedAt || b.openedAt || 0)
+        - Date.parse(a.updatedAt || a.lastCheckedAt || a.resolvedAt || a.openedAt || 0);
+    });
+}
+
+function goodLifeCountsText(counts = {}) {
+  return `${Number(counts.open || 0)} open / ${Number(counts.chronic || 0)} chronic / ${Number(counts.unverifiable || 0)} unverifiable`;
+}
+
+function renderGoodLifeJson(value) {
+  if (!value) return '<span class="h23-goodlife-empty">None</span>';
+  return `<pre class="h23-goodlife-json">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+}
+
+function renderGoodLifeProblemList(problems) {
+  if (!problems.length) return '<div class="h23-goodlife-empty h23-goodlife-pad">Nothing in this lane</div>';
+  const selectedId = goodLifeOverlayState.selectedProblemId;
+  return problems.map((problem) => {
+    const selected = problem.id === selectedId ? ' selected' : '';
+    const age = problem.state === 'resolved'
+      ? (problem.resolvedAt ? `resolved ${timeSince(new Date(problem.resolvedAt))}` : 'resolved')
+      : (problem.openedAt ? `${Math.max(0, Math.round((Date.now() - Date.parse(problem.openedAt)) / 60000))}m` : '');
+    const last = problem.lastResult?.detail || problem.fixRecipe?.summary || '';
+    return `<button class="h23-goodlife-list-row${selected}" type="button" onclick="selectGoodLifeProblem('${escapeAttr(problem.id)}')">
+      <span class="h23-goodlife-problem-state ${goodLifeCssClass(problem.state)}">${escapeHtml(problem.state || 'unknown')}</span>
+      <strong>${escapeHtml(problem.id || '')}</strong>
+      <span>${escapeHtml(problem.claim || '')}</span>
+      <small>${escapeHtml([age, last].filter(Boolean).join(' - '))}</small>
+    </button>`;
+  }).join('');
+}
+
+function renderGoodLifeWorkList(data) {
+  const actions = data?.operator?.detail?.work?.dailyActions || [];
+  if (!actions.length) return '<div class="h23-goodlife-empty h23-goodlife-pad">No routed work today</div>';
+  return actions.map((action) => `<div class="h23-goodlife-list-row static">
+    <span class="h23-goodlife-problem-state ${goodLifeCssClass(action.mode)}">${escapeHtml(action.mode || 'work')}</span>
+    <strong>${escapeHtml(action.agendaId || 'agenda')}</strong>
+    <span>${escapeHtml(action.category || action.summary || '')}</span>
+    <small>${action.at ? escapeHtml(timeSince(new Date(action.at))) : ''}</small>
+  </div>`).join('');
+}
+
+function renderGoodLifeInsightsList(data) {
+  const lanes = data?.operator?.lanes || [];
+  return lanes.map((lane) => `<div class="h23-goodlife-list-row static">
+    <span class="h23-goodlife-problem-state ${goodLifeCssClass(lane.status)}">${escapeHtml(lane.status)}</span>
+    <strong>${escapeHtml(lane.name)}</strong>
+    <span>${escapeHtml((lane.reasons || []).join(' - ') || lane.title || '')}</span>
+    <small>${lane.active ? 'active' : ''}</small>
+  </div>`).join('') || '<div class="h23-goodlife-empty h23-goodlife-pad">No lane evidence</div>';
+}
+
+function renderGoodLifeTop(data) {
+  const operator = data?.operator || {};
+  const counts = operator.liveProblems?.counts || {};
+  const freshness = operator.freshness || {};
+  const latest = operator.latestRegulatorAction || {};
+  const warnings = operator.consistency?.warnings || [];
+  return `
+    <div class="h23-goodlife-top-card">
+      <label>Mode</label>
+      <strong>${escapeHtml((operator.policy?.mode || 'unknown').toUpperCase())}</strong>
+      <span>${escapeHtml(operator.policy?.reason || operator.summary || '')}</span>
+    </div>
+    <div class="h23-goodlife-top-card">
+      <label>Issues</label>
+      <strong>${escapeHtml(goodLifeCountsText(counts))}</strong>
+      <span>${escapeHtml(warnings[0]?.message || 'projection current')}</span>
+    </div>
+    <div class="h23-goodlife-top-card">
+      <label>Freshness</label>
+      <strong>${escapeHtml(freshness.status || 'unknown')}</strong>
+      <span>${freshness.evaluatedAt ? `evaluated ${escapeHtml(timeSince(new Date(freshness.evaluatedAt)))}` : 'no evaluation timestamp'}</span>
+    </div>
+    <div class="h23-goodlife-top-card">
+      <label>Latest Work</label>
+      <strong>${escapeHtml(latest.agendaId || 'none')}</strong>
+      <span>${latest.at ? `routed ${escapeHtml(timeSince(new Date(latest.at)))}` : 'no routed agenda action'}</span>
+    </div>
+  `;
+}
+
+function renderGoodLifeTabs(data) {
+  const detail = data?.operator?.detail || {};
+  const counts = data?.operator?.liveProblems?.counts || {};
+  const tabs = [
+    ['issues', `Issues ${Number(counts.open || 0) + Number(counts.chronic || 0) + Number(counts.unverifiable || 0)}`],
+    ['work', `Work ${(detail.work?.dailyActions || []).length}`],
+    ['resolutions', `Resolutions ${detail.resolutions?.totalResolved || counts.resolved || 0}`],
+    ['insights', 'Insights'],
+  ];
+  return tabs.map(([tab, label]) => `<button class="h23-goodlife-tab ${goodLifeOverlayState.tab === tab ? 'active' : ''}" type="button" onclick="switchGoodLifeTab('${tab}')">${escapeHtml(label)}</button>`).join('');
+}
+
+function renderGoodLifeIssueDetail(problem) {
+  if (!problem) {
+    return '<div class="h23-goodlife-empty h23-goodlife-pad">Select an issue to see verifier, attempts, and evidence.</div>';
+  }
+  const last = problem.lastResult || {};
+  const attempts = (problem.remediationLog || []).slice().reverse();
+  const recipes = (problem.fixRecipeHistory || (problem.fixRecipe ? [problem.fixRecipe] : [])).slice().reverse();
+  return `
+    <div class="h23-goodlife-detail-head">
+      <span class="h23-goodlife-problem-state ${goodLifeCssClass(problem.state)}">${escapeHtml(problem.state)}</span>
+      <strong>${escapeHtml(problem.id)}</strong>
+    </div>
+    <h3>${escapeHtml(problem.claim || '')}</h3>
+    <div class="h23-goodlife-detail-grid">
+      <div><label>Last verifier result</label><p>${escapeHtml(last.detail || 'not checked')}</p><small>${last.at ? escapeHtml(timeSince(new Date(last.at))) : ''}</small></div>
+      <div><label>Lifecycle</label><p>${escapeHtml(problem.escalated ? 'escalated' : 'normal')} - step ${Number(problem.stepIndex || 0)} / ${(problem.remediation || []).length}</p><small>${problem.openedAt ? `opened ${escapeHtml(timeSince(new Date(problem.openedAt)))}` : ''}</small></div>
+    </div>
+    <div class="h23-goodlife-detail-actions">
+      <button class="h23-goodlife-plain-btn" type="button" onclick="testGoodLifeVerifier('${escapeAttr(problem.id)}')">Test Verifier</button>
+    </div>
+    <section><h4>Verifier</h4>${renderGoodLifeJson(problem.verifier)}</section>
+    <section><h4>Remediation Plan</h4>${renderGoodLifeJson(problem.remediation || [])}</section>
+    <section><h4>Recent Attempts</h4>${attempts.length ? attempts.map((attempt) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(attempt.type || 'attempt')}</strong><span>${escapeHtml(attempt.outcome || '')}</span><small>${escapeHtml(attempt.detail || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No attempts recorded</div>'}</section>
+    <section><h4>Fix Recipes</h4>${recipes.length ? recipes.map((recipe) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(recipe.verifierStatus || recipe.dispatchOutcome || 'recipe')}</strong><span>${escapeHtml(recipe.summary || '')}</span><small>${recipe.at ? escapeHtml(timeSince(new Date(recipe.at))) : ''}</small></div>`).join('') : '<div class="h23-goodlife-empty">No fix recipe recorded</div>'}</section>
+  `;
+}
+
+function renderGoodLifeWorkDetail(data) {
+  const operator = data?.operator || {};
+  const card = operator.actionCard || {};
+  const activeCommitments = operator.detail?.insights?.activeCommitments || [];
+  return `
+    <h3>Current Work</h3>
+    <div class="h23-goodlife-detail-grid">
+      <div><label>Intent</label><p>${escapeHtml(card.intent || operator.policy?.mode || 'unknown')}</p></div>
+      <div><label>Stop Condition</label><p>${escapeHtml(card.stopCondition || 'not recorded')}</p></div>
+      <div><label>Expected Outcome</label><p>${escapeHtml(card.expectedOutcome || 'not recorded')}</p></div>
+      <div><label>Risk</label><p>${escapeHtml([card.riskTier != null ? `risk ${card.riskTier}` : null, card.reversible ? 'reversible' : null, card.evidenceRequired ? 'evidence required' : null].filter(Boolean).join(', ') || 'not recorded')}</p></div>
+    </div>
+    <section><h4>Active Commitments</h4>${activeCommitments.length ? activeCommitments.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml((item.reasons || []).join(' - ') || item.status || '')}</span><small>${escapeHtml(item.lane || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active commitments</div>'}</section>
+  `;
+}
+
+function renderGoodLifeResolutionDetail(problem) {
+  if (!problem) return '<div class="h23-goodlife-empty h23-goodlife-pad">Select a resolution to inspect what closed.</div>';
+  return `
+    <div class="h23-goodlife-detail-head">
+      <span class="h23-goodlife-problem-state resolved">resolved</span>
+      <strong>${escapeHtml(problem.id)}</strong>
+    </div>
+    <h3>${escapeHtml(problem.claim || '')}</h3>
+    <div class="h23-goodlife-detail-grid">
+      <div><label>Resolved</label><p>${problem.resolvedAt ? escapeHtml(timeSince(new Date(problem.resolvedAt))) : 'unknown'}</p></div>
+      <div><label>Verifier</label><p>${escapeHtml(problem.lastResult?.detail || problem.fixRecipe?.verifierStatus || 'not recorded')}</p></div>
+    </div>
+    <section><h4>Fix Recipe</h4>${problem.fixRecipe ? renderGoodLifeJson(problem.fixRecipe) : '<div class="h23-goodlife-empty">No fix recipe recorded</div>'}</section>
+  `;
+}
+
+function renderGoodLifeInsightsDetail(data) {
+  const detail = data?.operator?.detail || {};
+  const metrics = detail.insights?.trendMetrics || {};
+  const ledger = detail.insights?.ledgerTail || [];
+  return `
+    <h3>Learned Signals</h3>
+    <div class="h23-goodlife-detail-grid">
+      ${Object.entries(metrics).slice(0, 8).map(([key, value]) => `<div><label>${escapeHtml(key)}</label><p>${escapeHtml(value)}</p></div>`).join('') || '<div><label>Trend Metrics</label><p>not recorded</p></div>'}
+    </div>
+    <section><h4>Recent Good Life Ledger</h4>${ledger.length ? ledger.map((entry) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(entry.event || entry.type || 'entry')}</strong><span>${escapeHtml(entry.summary || entry.message || entry.mode || '')}</span><small>${entry.at || entry.timestamp ? escapeHtml(timeSince(new Date(entry.at || entry.timestamp))) : ''}</small></div>`).join('') : '<div class="h23-goodlife-empty">No ledger entries</div>'}</section>
+  `;
+}
+
+function renderGoodLifeOverlay() {
+  const data = goodLifeSurfaceState.get(goodLifeOverlayState.scope);
+  const operator = data?.operator || {};
+  const overlay = document.getElementById('goodlife-overlay');
+  if (!overlay || !data) return;
+  setText('goodlife-overlay-title', `Good Life - ${goodLifeLabelForScope(goodLifeOverlayState.scope)}`);
+  const status = document.getElementById('goodlife-overlay-status');
+  if (status) {
+    status.textContent = operator.status === 'current' ? 'CURRENT' : String(operator.status || 'unknown').toUpperCase();
+    status.className = `h23-goodlife-overlay-status ${goodLifeCssClass(operator.status)}`;
+  }
+  setHtml('goodlife-overlay-top', renderGoodLifeTop(data));
+  setHtml('goodlife-overlay-tabs', renderGoodLifeTabs(data));
+
+  let listHtml = '';
+  let detailHtml = '';
+  if (goodLifeOverlayState.tab === 'issues') {
+    const problems = goodLifeProblemsFor(data, ['chronic', 'open', 'unverifiable']);
+    if (!goodLifeOverlayState.selectedProblemId || !problems.some((problem) => problem.id === goodLifeOverlayState.selectedProblemId)) {
+      goodLifeOverlayState.selectedProblemId = problems[0]?.id || null;
+    }
+    listHtml = renderGoodLifeProblemList(problems);
+    detailHtml = renderGoodLifeIssueDetail(problems.find((problem) => problem.id === goodLifeOverlayState.selectedProblemId));
+  } else if (goodLifeOverlayState.tab === 'work') {
+    listHtml = renderGoodLifeWorkList(data);
+    detailHtml = renderGoodLifeWorkDetail(data);
+  } else if (goodLifeOverlayState.tab === 'resolutions') {
+    const problems = goodLifeProblemsFor(data, ['resolved']);
+    if (!goodLifeOverlayState.selectedProblemId || !problems.some((problem) => problem.id === goodLifeOverlayState.selectedProblemId)) {
+      goodLifeOverlayState.selectedProblemId = problems[0]?.id || null;
+    }
+    listHtml = renderGoodLifeProblemList(problems);
+    detailHtml = renderGoodLifeResolutionDetail(problems.find((problem) => problem.id === goodLifeOverlayState.selectedProblemId));
+  } else {
+    listHtml = renderGoodLifeInsightsList(data);
+    detailHtml = renderGoodLifeInsightsDetail(data);
+  }
+
+  setHtml('goodlife-overlay-list', listHtml);
+  setHtml('goodlife-overlay-detail', detailHtml);
+}
+
+async function openGoodLifeOperator(scope = 'home', selectedProblemId = null) {
+  const nextScope = scope || 'home';
+  const scopeChanged = goodLifeOverlayState.scope !== nextScope;
+  goodLifeOverlayState.scope = nextScope;
+  goodLifeOverlayState.tab = selectedProblemId || scopeChanged ? 'issues' : goodLifeOverlayState.tab || 'issues';
+  goodLifeOverlayState.selectedProblemId = selectedProblemId || (scopeChanged ? null : goodLifeOverlayState.selectedProblemId);
+  setText('goodlife-overlay-action-status', '');
+  const overlay = document.getElementById('goodlife-overlay');
+  if (overlay) overlay.style.display = 'flex';
+  if (!goodLifeSurfaceState.has(goodLifeOverlayState.scope)) {
+    setHtml('goodlife-overlay-list', '<div class="h23-goodlife-empty h23-goodlife-pad">Loading...</div>');
+    await loadGoodLifeForScope(goodLifeOverlayState.scope);
+  }
+  renderGoodLifeOverlay();
+}
+
+function closeGoodLifeOperator() {
+  const overlay = document.getElementById('goodlife-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function switchGoodLifeTab(tab) {
+  goodLifeOverlayState.tab = tab;
+  goodLifeOverlayState.selectedProblemId = null;
+  renderGoodLifeOverlay();
+}
+
+function selectGoodLifeProblem(id) {
+  goodLifeOverlayState.selectedProblemId = id;
+  renderGoodLifeOverlay();
+}
+
+async function refreshGoodLifeOperator() {
+  setText('goodlife-overlay-action-status', 'Refreshing...');
+  await loadGoodLifeForScope(goodLifeOverlayState.scope);
+  renderGoodLifeOverlay();
+  setText('goodlife-overlay-action-status', 'Fresh data loaded.');
+}
+
+async function reverifyGoodLifeOperator() {
+  const base = goodLifeBaseForScope(goodLifeOverlayState.scope);
+  setText('goodlife-overlay-action-status', 'Re-verify queued...');
+  try {
+    const res = await fetch(`${base}/api/live-problems/tick`, { method: 'POST' });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    await loadGoodLifeForScope(goodLifeOverlayState.scope);
+    renderGoodLifeOverlay();
+    setText('goodlife-overlay-action-status', result.note || 'Re-verify queued for the next engine tick.');
+  } catch (err) {
+    setText('goodlife-overlay-action-status', `Re-verify failed: ${err.message}`);
+  }
+}
+
+async function testGoodLifeVerifier(problemId) {
+  const data = goodLifeSurfaceState.get(goodLifeOverlayState.scope);
+  const problem = (data?.liveProblems?.problems || []).find((entry) => entry.id === problemId);
+  if (!problem?.verifier) {
+    setText('goodlife-overlay-action-status', 'No verifier to test.');
+    return;
+  }
+  const base = goodLifeBaseForScope(goodLifeOverlayState.scope);
+  setText('goodlife-overlay-action-status', 'Testing verifier...');
+  try {
+    const res = await fetch(`${base}/api/live-problems/dry-run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verifier: problem.verifier }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    setText('goodlife-overlay-action-status', result.supported === false
+      ? `Verifier needs engine context: ${result.reason}`
+      : `Verifier result: ${result.result?.ok ? 'pass' : 'fail'} - ${result.result?.detail || 'no detail'}`);
+  } catch (err) {
+    setText('goodlife-overlay-action-status', `Verifier test failed: ${err.message}`);
+  }
 }
 
 function updateSystemTile(state) {
