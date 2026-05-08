@@ -20,8 +20,10 @@ async function main(argv) {
     projectDir: args.projectDir || DEFAULT_PROJECT_DIR,
     siteDir: args.siteDir || DEFAULT_SITE_DIR,
     publicBaseUrl: args.publicBaseUrl,
-    writeReceipt: args.writeReceipt || args.writeEventLog,
+    writeReceipt: args.writeReceipt || args.writeEventLog || args.writeTrustClaim,
     writeEventLog: args.writeEventLog || args.writeReceipt,
+    writeTrustClaim: args.writeTrustClaim || args.writeReceipt || args.writeEventLog,
+    trustStorePath: args.trustStorePath,
     checkRemote: args.checkRemote,
     correctionOf: args.correctionOf || null,
   });
@@ -33,6 +35,8 @@ async function main(argv) {
     console.log(`[evidence] ${receipt.subject} ${receipt.result} ${receipt.receiptId}`);
     if (result.receiptPath) console.log(`[evidence] receipt: ${result.receiptPath}`);
     if (result.eventLogPath) console.log(`[evidence] event log: ${result.eventLogPath}`);
+    if (result.trustStorePath) console.log(`[trust] store: ${result.trustStorePath}`);
+    if (result.trustExplanation) console.log(`[trust] safe_to_inherit: ${result.trustExplanation.safeToInherit ? 'yes' : 'no'} (${result.trustExplanation.status})`);
     for (const check of receipt.checks) {
       const status = check.pass ? 'pass' : 'fail';
       console.log(`[check] ${status.padEnd(4)} ${check.name}${check.detail ? ` - ${check.detail}` : ''}`);
@@ -52,6 +56,8 @@ function parseArgs(argv) {
     checkRemote: false,
     correctionOf: null,
     writeEventLog: false,
+    writeTrustClaim: false,
+    trustStorePath: null,
     json: false,
     help: false,
   };
@@ -64,6 +70,8 @@ function parseArgs(argv) {
     else if (arg === '--public-base-url') out.publicBaseUrl = argv[++i];
     else if (arg === '--write-receipt') out.writeReceipt = true;
     else if (arg === '--write-event') out.writeEventLog = true;
+    else if (arg === '--write-trust') out.writeTrustClaim = true;
+    else if (arg === '--trust-store') out.trustStorePath = path.resolve(argv[++i]);
     else if (arg === '--check-remote') out.checkRemote = true;
     else if (arg === '--correction-of') out.correctionOf = argv[++i];
     else if (arg === '--json') out.json = true;
@@ -75,7 +83,7 @@ function parseArgs(argv) {
 
 function printUsage() {
   console.error([
-    'Usage: scripts/verify-from-the-inside-publish <issue> [--write-receipt] [--write-event] [--check-remote]',
+    'Usage: scripts/verify-from-the-inside-publish <issue> [--write-receipt] [--write-event] [--write-trust] [--check-remote]',
     '',
     'Checks local issue JSON, rendered public HTML, copied JSON, homepage, feed, sitemap,',
     'and next-issue state, then emits an evidence.v1 receipt.',

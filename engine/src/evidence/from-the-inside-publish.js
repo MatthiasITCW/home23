@@ -10,6 +10,7 @@ const {
   writeEvidenceReceipt,
 } = require('./evidence-v1');
 const { EventLedger } = require('../core/event-ledger');
+const { TrustKernel } = require('../trust/trust-kernel');
 
 const DEFAULT_PROJECT_DIR = path.resolve(__dirname, '..', '..', '..', 'instances', 'jerry', 'projects', 'from-the-inside');
 const DEFAULT_SITE_DIR = '/Users/jtr/websites/olddeadshows.com';
@@ -186,7 +187,7 @@ async function verifyFromTheInsidePublish(opts = {}) {
 
   let receiptPath = null;
   let indexReceiptPath = null;
-  if (opts.writeReceipt || opts.writeEventLog) {
+  if (opts.writeReceipt || opts.writeEventLog || opts.writeTrustClaim) {
     receiptPath = opts.receiptPath
       ? path.resolve(opts.receiptPath)
       : path.join(projectDir, 'receipts', 'publish', `${padded}.evidence.json`);
@@ -224,13 +225,53 @@ async function verifyFromTheInsidePublish(opts = {}) {
     });
   }
 
-  return { receipt, receiptPath, indexPath: indexReceiptPath, event, eventLogPath };
+  let trustClaim = null;
+  let trustExplanation = null;
+  let trustStorePath = null;
+  if (opts.writeTrustClaim) {
+    trustStorePath = opts.trustStorePath
+      ? path.resolve(opts.trustStorePath)
+      : defaultTrustStorePath(projectDir);
+    const kernel = new TrustKernel({ storePath: trustStorePath, logger: opts.logger || null });
+    trustClaim = kernel.recordVerifiedClaim({
+      claim: {
+        id: `from-the-inside.issue.${padded}.published`,
+        type: 'issue.published',
+        subject: `from-the-inside/${padded}`,
+        predicate: 'published',
+        value: true,
+        actor: opts.actor || 'jerry',
+        observedAt: receipt.createdAt,
+        sourceRefs: receipt.sourceArtifacts.map((artifact) => ({
+          role: artifact.role || null,
+          path: artifact.path || null,
+          url: artifact.url || null,
+          sha256: artifact.sha256 || null,
+        })),
+        confidence: receipt.result === 'pass' ? 1 : 0,
+        scope: 'public_artifact',
+        privacyClass: 'public_artifact',
+        verifier: 'verify-from-the-inside-publish',
+      },
+      receipt,
+      receiptPath,
+      causedBy: event?.event_id || null,
+      createdAt: receipt.createdAt,
+    });
+    trustExplanation = kernel.explain(trustClaim.id, { now: receipt.createdAt });
+  }
+
+  return { receipt, receiptPath, indexPath: indexReceiptPath, event, eventLogPath, trustClaim, trustExplanation, trustStorePath };
 }
 
 function normalizeIssueNumber(issue) {
   const n = Number.parseInt(String(issue || '').trim(), 10);
   if (!Number.isFinite(n) || n <= 0) throw new Error('issue must be a positive number');
   return n;
+}
+
+function defaultTrustStorePath(projectDir) {
+  return path.resolve(projectDir, '..', '..', 'brain', 'trust', 'claims.jsonl');
 }
 
 function nonempty(value) {

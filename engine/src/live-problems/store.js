@@ -34,6 +34,7 @@ const {
   writeEvidenceReceipt,
 } = require('../evidence/evidence-v1');
 const { EventLedger } = require('../core/event-ledger');
+const { TrustKernel } = require('../trust/trust-kernel');
 
 const RESOLVED_KEEP_MS = 24 * 60 * 60 * 1000;   // keep resolved 24h so pulse can mention once
 const CHRONIC_AFTER_MS = 6 * 60 * 60 * 1000;    // open >6h with no progress → chronic
@@ -348,6 +349,29 @@ class LiveProblemStore {
           problemId: problem.id,
         },
         occurredAt: at,
+      });
+      const trust = new TrustKernel({ brainDir: this.brainDir, logger: this.logger });
+      trust.recordVerifiedClaim({
+        claim: {
+          id: `live-problem.${safeId}.fixed`,
+          type: 'live_problem.fixed',
+          subject: `live-problem/${problem.id}`,
+          predicate: 'state',
+          value: 'resolved',
+          actor: 'home23-live-problems',
+          observedAt: at,
+          sourceRefs: [{
+            type: 'file',
+            path: this.filePath,
+            problemId: problem.id,
+          }],
+          confidence: 1,
+          scope: 'live_problem',
+          privacyClass: 'operational_internal',
+          verifier: problem.verifier || null,
+        },
+        receipt,
+        receiptPath,
       });
     } catch (err) {
       this.logger.warn?.(`[live-problems] evidence receipt write failed: ${err.message}`);

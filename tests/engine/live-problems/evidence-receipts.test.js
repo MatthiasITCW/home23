@@ -46,6 +46,13 @@ test('LiveProblemStore writes evidence.v1 receipt when verifier resolves a live 
     assert.equal(fixed.payload.schema, 'home23.state-event.v1');
     assert.equal(fixed.payload.subject, 'live-problem/good_life_test_problem');
     assert.equal(fixed.payload.evidence.receiptId, receipt.receiptId);
+
+    const trustEvents = readFileSync(join(dir, 'trust', 'claims.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    const verified = trustEvents.find(e => e.eventType === 'claim.verified');
+    assert.ok(verified);
+    assert.equal(verified.claim.id, 'live-problem.good_life_test_problem.fixed');
+    assert.equal(verified.claim.status, 'known_verified');
+    assert.equal(verified.claim.evidenceRefs[0].receiptId, receipt.receiptId);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

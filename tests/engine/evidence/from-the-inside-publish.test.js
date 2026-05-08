@@ -59,6 +59,8 @@ test('verifyFromTheInsidePublish writes an evidence.v1 receipt for a clean publi
     siteDir,
     writeReceipt: true,
     writeEventLog: true,
+    writeTrustClaim: true,
+    trustStorePath: join(root, 'trust', 'claims.jsonl'),
     createdAt: '2026-05-08T12:00:00.000Z',
   });
 
@@ -75,6 +77,9 @@ test('verifyFromTheInsidePublish writes an evidence.v1 receipt for a clean publi
   assert.equal(result.event.payload.subject, 'from-the-inside/099');
   assert.equal(result.event.payload.evidence.receiptId, result.receipt.receiptId);
   assert.ok(existsSync(result.eventLogPath));
+  assert.equal(result.trustClaim.id, 'from-the-inside.issue.099.published');
+  assert.equal(result.trustExplanation.status, 'known_verified');
+  assert.equal(result.trustExplanation.safeToInherit, true);
 });
 
 test('verifyFromTheInsidePublish fails the receipt when rendered HTML loses the body ending', async () => {
