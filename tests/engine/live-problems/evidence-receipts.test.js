@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { LiveProblemStore } = require('../../../engine/src/live-problems/store.js');
+
+test('LiveProblemStore writes evidence.v1 receipt when verifier resolves a live problem', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-live-problem-evidence-'));
+  try {
+    const store = new LiveProblemStore({ brainDir: dir, logger: { info() {}, warn() {} } });
+    store.upsert({
+      id: 'good_life_test_problem',
+      claim: 'Good Life test problem',
+      seedOrigin: 'good-life',
+      verifier: { type: 'file_exists', args: { path: '/tmp/example' } },
+      remediation: [],
+    });
+
+    store.recordVerification('good_life_test_problem', {
+      ok: true,
+      detail: 'verified fixed',
+      observed: { source: 'test' },
+    });
+
+    const indexPath = join(dir, 'evidence', 'live-problems.jsonl');
+    assert.equal(existsSync(indexPath), true);
+    const index = JSON.parse(readFileSync(indexPath, 'utf8').trim());
+    const receipt = JSON.parse(readFileSync(index.path, 'utf8'));
+
+    assert.equal(receipt.receiptVersion, 'evidence.v1');
+    assert.equal(receipt.action, 'resolve_live_problem');
+    assert.equal(receipt.subject, 'live-problem/good_life_test_problem');
+    assert.equal(receipt.result, 'pass');
+    assert.equal(receipt.claimLevel, 'verified_claim');
+    assert.equal(receipt.checks.find(c => c.name === 'verifier_pass')?.pass, true);
+    assert.equal(receipt.checks.find(c => c.name === 'state_resolved')?.pass, true);
+    assert.equal(receipt.metadata.seedOrigin, 'good-life');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

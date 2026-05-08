@@ -27,6 +27,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+  artifactFromPath,
+  buildEvidenceReceipt,
+  safeReceiptPart,
+  writeEvidenceReceipt,
+} = require('../evidence/evidence-v1');
 
 const RESOLVED_KEEP_MS = 24 * 60 * 60 * 1000;   // keep resolved 24h so pulse can mention once
 const CHRONIC_AFTER_MS = 6 * 60 * 60 * 1000;    // open >6h with no progress → chronic
@@ -152,12 +158,15 @@ class LiveProblemStore {
     const p = this.problems.get(id);
     if (!p) return;
     const now = new Date().toISOString();
+    const priorState = p.state;
+    let resolvedTransition = false;
     this._touch(p, now);
     p.lastCheckedAt = now;
     p.lastResult = { ...result, at: now };
     if (result.ok) {
       delete p.transientFailureCount;
       if (p.state !== 'resolved') {
+        resolvedTransition = true;
         p.state = 'resolved';
         p.resolvedAt = now;
         p.stepIndex = 0;
@@ -191,6 +200,7 @@ class LiveProblemStore {
       }
     }
     this.save();
+    if (resolvedTransition) this._writeResolutionReceipt(p, result, priorState, now);
   }
 
   recordRemediation(id, entry) {
@@ -250,6 +260,71 @@ class LiveProblemStore {
     const now = this._touch(p);
     p.lastMentionedInPulseAt = now;
     this.save();
+  }
+
+  _writeResolutionReceipt(problem, verifierResult, priorState, at) {
+    try {
+      const sourceArtifacts = [];
+      const checks = [
+        {
+          name: 'verifier_pass',
+          pass: Boolean(verifierResult?.ok),
+          detail: verifierResult?.detail || null,
+          observed: verifierResult?.observed || null,
+          verifier: problem.verifier || null,
+        },
+        {
+          name: 'state_resolved',
+          pass: problem.state === 'resolved',
+          detail: `state=${problem.state}`,
+          observed: { priorState, resolvedAt: problem.resolvedAt || null },
+        },
+        {
+          name: 'result_recorded',
+          pass: problem.lastResult?.at === at && problem.lastResult?.ok === true,
+          detail: problem.lastResult?.at || 'missing lastResult.at',
+        },
+      ];
+
+      try {
+        sourceArtifacts.push(artifactFromPath(this.filePath, { role: 'live_problems_store' }));
+        checks.push({ name: 'store_hashed', pass: true, detail: this.filePath });
+      } catch (err) {
+        checks.push({ name: 'store_hashed', pass: false, detail: err.message });
+      }
+
+      const receipt = buildEvidenceReceipt({
+        actor: 'home23-live-problems',
+        action: 'resolve_live_problem',
+        subject: `live-problem/${problem.id}`,
+        sourceSurface: {
+          type: 'live-problems',
+          path: this.filePath,
+          problemId: problem.id,
+        },
+        sourceArtifacts,
+        derivedArtifacts: [],
+        checks,
+        createdAt: at,
+        metadata: {
+          problemId: problem.id,
+          claim: problem.claim || null,
+          seedOrigin: problem.seedOrigin || null,
+          verifier: problem.verifier || null,
+          priorState,
+          resolvedAt: problem.resolvedAt || null,
+          fixRecipe: problem.fixRecipe || null,
+        },
+      });
+
+      const stamp = at.replace(/[^0-9]/g, '').slice(0, 14);
+      const safeId = safeReceiptPart(problem.id);
+      const receiptPath = path.join(this.brainDir, 'evidence', 'live-problems', `${stamp}-${safeId}.evidence.json`);
+      const indexPath = path.join(this.brainDir, 'evidence', 'live-problems.jsonl');
+      writeEvidenceReceipt({ receipt, receiptPath, indexPath });
+    } catch (err) {
+      this.logger.warn?.(`[live-problems] evidence receipt write failed: ${err.message}`);
+    }
   }
 
   /** Drop resolved problems past the keep window. */
