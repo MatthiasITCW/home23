@@ -319,9 +319,20 @@ function topGoalText(goal = {}) {
 
 function goalArtifactText(goal = {}) {
   if (!goal?.artifact?.relativePath) return null;
-  return goal.artifact.exists
-    ? `artifact ready: ${goal.artifact.relativePath}`
-    : `artifact pending: ${goal.artifact.relativePath}`;
+  if (goal.artifact.exists) return `artifact ready: ${goal.artifact.relativePath}`;
+  const ageMin = finiteCount(goal.ageMin);
+  const source = String(goal.source || '').toLowerCase();
+  if (source === 'force-output' && ageMin != null && ageMin < WORK_REVIEW_GOAL_AGE_MIN) {
+    return `artifact pending: ${goal.artifact.relativePath}; review in ${formatMinutes(WORK_REVIEW_GOAL_AGE_MIN - ageMin)}`;
+  }
+  return `artifact pending: ${goal.artifact.relativePath}`;
+}
+
+function formatMinutes(minutes) {
+  const value = Math.max(0, Math.round(Number(minutes) || 0));
+  if (value >= 120) return `${Math.round(value / 60)}h`;
+  if (value >= 60) return '1h';
+  return `${value}m`;
 }
 
 function classifyAgendaReview(row = {}) {

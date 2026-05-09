@@ -914,7 +914,9 @@ test('Good Life operator brief includes active goal artifact status', () => {
           exists: false,
         },
         status: 'active',
+        source: 'force-output',
         createdAt: NOW,
+        ageMin: 60,
       }],
       counts: { activeAgenda: 0, activeGoals: 1 },
     },
@@ -922,8 +924,8 @@ test('Good Life operator brief includes active goal artifact status', () => {
     now: NOW,
   });
 
-  assert.equal(model.operatorBrief.next, 'Top goal: goal-output - Produce outputs/digest-6427.md; artifact pending: outputs/digest-6427.md');
-  assert.ok(model.operatorAnswer.some((line) => line.includes('artifact pending: outputs/digest-6427.md')));
+  assert.equal(model.operatorBrief.next, 'Top goal: goal-output - Produce outputs/digest-6427.md; artifact pending: outputs/digest-6427.md; review in 11h');
+  assert.ok(model.operatorAnswer.some((line) => line.includes('artifact pending: outputs/digest-6427.md; review in 11h')));
 });
 
 test('Good Life operator marks superseded repair agenda for review when registry is clear', () => {
