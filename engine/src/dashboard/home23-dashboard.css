@@ -3210,6 +3210,36 @@ body.h23-external-focus #cosmo23-refresh-btn {
   color: var(--text-muted);
 }
 
+.h23-goodlife-evidence-row p {
+  grid-column: 2 / -1;
+  margin: -2px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.h23-goodlife-section-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: -2px 0 6px;
+}
+
+.h23-goodlife-section-actions button {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1;
+  padding: 7px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.h23-goodlife-section-actions button:hover {
+  border-color: rgba(112, 211, 162, 0.35);
+  color: var(--text-primary);
+}
+
 .h23-goodlife-mini-actions {
   display: flex;
   align-items: center;

@@ -3140,6 +3140,7 @@ function renderGoodLifeWorkDetail(data) {
   const obligations = operator.detail?.work?.obligations || {};
   const agenda = obligations.activeAgenda || [];
   const goals = obligations.activeGoals || [];
+  const reviewAgenda = agenda.filter((item) => item.review?.recommended);
   const agendaMeta = (item) => [
     item.status,
     item.ageMin != null ? `${item.ageMin}m` : null,
@@ -3158,7 +3159,7 @@ function renderGoodLifeWorkDetail(data) {
       <div><label>Expected Outcome</label><p>${escapeHtml(card.expectedOutcome || 'not recorded')}</p></div>
       <div><label>Risk</label><p>${escapeHtml([card.riskTier != null ? `risk ${card.riskTier}` : null, card.reversible ? 'reversible' : null, card.evidenceRequired ? 'evidence required' : null].filter(Boolean).join(', ') || 'not recorded')}</p></div>
     </div>
-    <section><h4>Active Agenda</h4>${agenda.length ? agenda.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.id || 'agenda')}</strong><span>${escapeHtml(item.content || '')}</span><small>${escapeHtml(agendaMeta(item))}</small>${item.review?.recommended ? `<p><strong>Review:</strong> ${escapeHtml(item.review.reason || 'operator review recommended')}${item.review.next ? ` - ${escapeHtml(item.review.next)}` : ''}</p>` : ''}${agendaActions(item)}</div>`).join('') : '<div class="h23-goodlife-empty">No active agenda rows</div>'}</section>
+    <section><h4>Active Agenda</h4>${reviewAgenda.length ? `<div class="h23-goodlife-section-actions"><button type="button" onclick="dismissGoodLifeAgendaReviewRows()">Dismiss ${reviewAgenda.length} review row${reviewAgenda.length === 1 ? '' : 's'}</button></div>` : ''}${agenda.length ? agenda.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.id || 'agenda')}</strong><span>${escapeHtml(item.content || '')}</span><small>${escapeHtml(agendaMeta(item))}</small>${item.review?.recommended ? `<p><strong>Review:</strong> ${escapeHtml(item.review.reason || 'operator review recommended')}${item.review.next ? ` - ${escapeHtml(item.review.next)}` : ''}</p>` : ''}${agendaActions(item)}</div>`).join('') : '<div class="h23-goodlife-empty">No active agenda rows</div>'}</section>
     <section><h4>Active Goals</h4>${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p><div class="h23-goodlife-mini-actions"><button type="button" onclick="archiveGoodLifeGoal('${escapeAttr(goal.id || '')}')">Archive Goal</button></div>` : ''}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
     <section><h4>Active Commitments</h4>${activeCommitments.length ? activeCommitments.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml((item.reasons || []).join(' - ') || item.status || '')}</span><small>${escapeHtml(item.lane || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active commitments</div>'}</section>
   `;
@@ -3345,6 +3346,46 @@ async function updateGoodLifeAgendaStatus(agendaId, status) {
     setText('goodlife-overlay-action-status', `${agendaId} marked ${status}.`);
   } catch (err) {
     setText('goodlife-overlay-action-status', `Agenda update failed: ${err.message}`);
+  }
+}
+
+async function dismissGoodLifeAgendaReviewRows() {
+  const data = goodLifeSurfaceState.get(goodLifeOverlayState.scope);
+  const agenda = data?.operator?.detail?.work?.obligations?.activeAgenda || [];
+  const reviewRows = agenda.filter((item) => item?.id && item.review?.recommended);
+  if (!reviewRows.length) {
+    setText('goodlife-overlay-action-status', 'No Good Life agenda review rows to dismiss.');
+    return;
+  }
+
+  const confirmed = window.confirm(`Dismiss ${reviewRows.length} Good Life agenda review row${reviewRows.length === 1 ? '' : 's'} as stale? This keeps a status receipt and removes them from active work.`);
+  if (!confirmed) return;
+
+  const base = goodLifeBaseForScope(goodLifeOverlayState.scope);
+  setText('goodlife-overlay-action-status', `Dismissing ${reviewRows.length} agenda review row${reviewRows.length === 1 ? '' : 's'}...`);
+  let updated = 0;
+  try {
+    for (const row of reviewRows) {
+      const res = await fetch(`${base}/api/agenda/${encodeURIComponent(row.id)}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'stale',
+          actor: 'good-life-operator',
+          note: `dismissed stale Good Life review row: ${row.review?.reason || 'operator review recommended'}`,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.ok === false) throw new Error(result.error || `HTTP ${res.status}`);
+      updated += 1;
+    }
+    await loadGoodLifeForScope(goodLifeOverlayState.scope);
+    renderGoodLifeOverlay();
+    setText('goodlife-overlay-action-status', `${updated} agenda review row${updated === 1 ? '' : 's'} dismissed.`);
+  } catch (err) {
+    await loadGoodLifeForScope(goodLifeOverlayState.scope).catch(() => {});
+    renderGoodLifeOverlay();
+    setText('goodlife-overlay-action-status', `Dismissed ${updated}/${reviewRows.length}; failed: ${err.message}`);
   }
 }
 
