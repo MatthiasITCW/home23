@@ -2714,6 +2714,82 @@ body.h23-external-focus #cosmo23-refresh-btn {
   color: var(--text-muted);
 }
 
+.h23-goodlife-brief-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 10px;
+  align-items: stretch;
+  border: 1px solid rgba(90,200,250,0.2);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(90,200,250,0.055);
+  min-width: 0;
+}
+
+.h23-goodlife-brief-panel.needs-user,
+.h23-goodlife-brief-panel.critical {
+  border-color: rgba(255,190,90,0.36);
+  background: rgba(255,190,90,0.075);
+}
+
+.h23-goodlife-brief-panel.repairing {
+  border-color: rgba(255,120,120,0.28);
+  background: rgba(255,120,120,0.055);
+}
+
+.h23-goodlife-brief-panel.clear {
+  border-color: rgba(112,211,162,0.24);
+  background: rgba(112,211,162,0.055);
+}
+
+.h23-goodlife-brief-status {
+  align-self: start;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: var(--text-primary);
+  background: rgba(0,0,0,0.16);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.h23-goodlife-brief-main,
+.h23-goodlife-brief-next,
+.h23-goodlife-brief-receipt {
+  min-width: 0;
+}
+
+.h23-goodlife-brief-main strong,
+.h23-goodlife-brief-receipt strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.h23-goodlife-brief-main span,
+.h23-goodlife-brief-next span,
+.h23-goodlife-brief-receipt small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.h23-goodlife-brief-next label,
+.h23-goodlife-brief-receipt span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .h23-goodlife-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 1fr);
@@ -3323,6 +3399,10 @@ body.h23-external-focus #cosmo23-refresh-btn {
 
 @media (max-width: 980px) {
   .h23-goodlife-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .h23-goodlife-brief-panel {
     grid-template-columns: 1fr;
   }
 

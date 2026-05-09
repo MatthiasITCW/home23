@@ -279,6 +279,10 @@ test('Good Life operator answer surfaces live problems that need user interventi
   assert.ok(model.operatorAnswer.some((line) => line.includes('need user intervention')));
   assert.ok(model.operatorAnswer.some((line) => line.includes('Top live problem: needs_jtr')));
   assert.ok(model.operatorAnswer.some((line) => line.includes('Next user action: notify_jtr - Pick the bridge owner.')));
+  assert.equal(model.operatorBrief.severity, 'needs-user');
+  assert.equal(model.operatorBrief.needsUser, true);
+  assert.equal(model.operatorBrief.activeProblemId, 'needs_jtr');
+  assert.match(model.operatorBrief.next, /User action: notify_jtr - Pick the bridge owner/);
 });
 
 test('Good Life operator answer names open live problem and latest fix attempt', () => {
@@ -355,7 +359,56 @@ test('Good Life operator model marks projection mismatch as conflicted and keeps
   assert.equal(model.projection.liveProblems.chronic, 5);
   assert.ok(model.consistency.warnings.some((warning) => warning.code === 'good_life_projection_mismatch'));
   assert.equal(model.liveProblems.chronic[0].id, 'agenda_a');
+  assert.equal(model.operatorBrief.severity, 'repairing');
+  assert.equal(model.operatorBrief.status, 'Repairing');
+  assert.equal(model.operatorBrief.activeProblemId, 'agenda_a');
   assert.ok(model.operatorAnswer.some((line) => line.includes('0 open, 2 chronic')));
+});
+
+test('Good Life operator brief calls out projection mismatch when registry is clear', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      lanes: {
+        viability: { status: 'critical', reasons: ['1 unresolved live problem(s)'] },
+      },
+      evidence: {
+        liveProblems: { open: 1, chronic: 0, resolved: 11, unverifiable: 0, total: 12 },
+      },
+    }),
+    liveProblems: [
+      { id: 'resolved_a', state: 'resolved', claim: 'Open issue cleared', resolvedAt: '2026-05-08T13:40:00.000Z' },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.status, 'conflicted');
+  assert.equal(model.liveProblems.counts.open, 0);
+  assert.equal(model.operatorBrief.severity, 'attention');
+  assert.equal(model.operatorBrief.status, 'Reconciling');
+  assert.match(model.operatorBrief.headline, /projection disagrees/);
+  assert.match(model.operatorBrief.why, /open projected 1, registry 0/);
+});
+
+test('Good Life operator brief names clear state and latest resolution receipt', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [
+      {
+        id: 'cycle_timeout_clear',
+        state: 'resolved',
+        claim: 'Cycle timeout verifier is clear',
+        resolvedAt: '2026-05-08T13:44:00.000Z',
+        lastResult: { detail: '0 matching log entries in last 30m' },
+        evidence: { receiptPath: 'instances/jerry/brain/evidence/live-problems/receipt.json' },
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.operatorBrief.severity, 'clear');
+  assert.equal(model.operatorBrief.headline, 'No active issues after recent repairs');
+  assert.equal(model.operatorBrief.latestResolution.id, 'cycle_timeout_clear');
+  assert.match(model.operatorBrief.next, /0 matching log entries/);
 });
 
 test('Good Life operator model treats old evaluations as stale even if counts agree', () => {

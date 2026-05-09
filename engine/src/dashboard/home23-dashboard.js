@@ -2227,6 +2227,7 @@ function renderGoodLifeTile(scope = 'home', title = 'Good Life') {
         </div>
         <div class="h23-goodlife-status unknown" id="${id('goodlife-status')}">UNKNOWN</div>
       </div>
+      <div class="h23-goodlife-brief" id="${id('goodlife-brief')}"></div>
       <div class="h23-goodlife-grid">
         <section class="h23-goodlife-section">
           <div class="h23-goodlife-section-title">Why</div>
@@ -2825,6 +2826,33 @@ function renderGoodLifeActionCard(operator, state) {
   `).join('');
 }
 
+function renderGoodLifeBrief(operator) {
+  const brief = operator?.operatorBrief || null;
+  if (!brief) return '';
+  const latest = brief.latestResolution;
+  const latestLine = latest?.id
+    ? `<div class="h23-goodlife-brief-receipt">
+        <span>Last resolution</span>
+        <strong>${escapeHtml(latest.id)}</strong>
+        ${latest.verifier ? `<small>${escapeHtml(latest.verifier)}</small>` : ''}
+      </div>`
+    : '';
+  return `
+    <div class="h23-goodlife-brief-panel ${goodLifeCssClass(brief.severity)}">
+      <div class="h23-goodlife-brief-status">${escapeHtml(brief.status || 'Status')}</div>
+      <div class="h23-goodlife-brief-main">
+        <strong>${escapeHtml(brief.headline || '')}</strong>
+        <span>${escapeHtml(brief.why || '')}</span>
+      </div>
+      <div class="h23-goodlife-brief-next">
+        <label>Next</label>
+        <span>${escapeHtml(brief.next || '')}</span>
+      </div>
+      ${latestLine}
+    </div>
+  `;
+}
+
 function updateGoodLifeTile(data, scope = 'home') {
   const id = (base) => goodLifeDomId(base, scope);
   const state = data?.state || null;
@@ -2835,6 +2863,7 @@ function updateGoodLifeTile(data, scope = 'home') {
   if (!state) {
     setText(id('goodlife-policy'), 'No Good Life state yet');
     setText(id('goodlife-summary'), '');
+    setHtml(id('goodlife-brief'), '');
     setHtml(id('goodlife-answer'), '');
     setHtml(id('goodlife-problems'), '');
     setHtml(id('goodlife-action'), '');
@@ -2848,6 +2877,7 @@ function updateGoodLifeTile(data, scope = 'home') {
   setText(id('goodlife-policy'), policy.toUpperCase());
   setText(id('goodlife-summary'), operator?.summary || state.summary || state.policy?.reason || '');
   setGoodLifeStatus(scope, operator || { status: 'current', safeToInherit: true });
+  setHtml(id('goodlife-brief'), renderGoodLifeBrief(operator));
 
   const answerLines = operator?.operatorAnswer?.length
     ? operator.operatorAnswer
@@ -3011,6 +3041,7 @@ function renderGoodLifeTop(data) {
     .filter(Boolean)
     .slice(0, 5);
   return `
+    ${renderGoodLifeBrief(operator)}
     <div class="h23-goodlife-top-grid">
       <div class="h23-goodlife-top-card">
         <label>Mode</label>

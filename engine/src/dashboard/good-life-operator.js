@@ -571,6 +571,116 @@ function summarizeTopLiveProblem(liveProblems = {}) {
   return lines;
 }
 
+function firstActiveLiveProblem(liveProblems = {}) {
+  const rows = [
+    ...(Array.isArray(liveProblems.open) ? liveProblems.open : []),
+    ...(Array.isArray(liveProblems.chronic) ? liveProblems.chronic : []),
+  ];
+  return rows.find((row) => row.nextRemediation?.requiresUser)
+    || rows.find((row) => row.state === 'chronic')
+    || rows[0]
+    || null;
+}
+
+function formatRemediationLine(prefix, next = {}) {
+  if (!next?.type && !next?.text) return null;
+  const text = next.text && next.text !== next.type
+    ? ` - ${compactText(next.text, 140)}`
+    : '';
+  return `${prefix}: ${next.type || 'next step'}${text}`;
+}
+
+function buildProjectionMismatchText(projection = {}, liveProblems = {}) {
+  const fields = ['open', 'chronic', 'unverifiable']
+    .map((key) => {
+      const projected = finiteCount(projection.liveProblems?.[key]);
+      const direct = finiteCount(liveProblems.counts?.[key]);
+      if (projected == null || direct == null || projected === direct) return null;
+      return `${key} projected ${projected}, registry ${direct}`;
+    })
+    .filter(Boolean);
+  return fields.length ? fields.join('; ') : null;
+}
+
+function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAction, projection, freshness }) {
+  const counts = liveProblems.counts || {};
+  const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
+  const interventionCount = Number(counts.interventionRequired || 0);
+  const activeProblem = firstActiveLiveProblem(liveProblems);
+  const warnings = consistency?.warnings || [];
+  const projectionMismatch = buildProjectionMismatchText(projection, liveProblems);
+  const latestResolution = Array.isArray(liveProblems.resolved) ? liveProblems.resolved[0] || null : null;
+
+  let severity = 'clear';
+  let status = 'Clear';
+  let headline = 'No active Good Life issues';
+  let why = policy?.reason || 'Live-problem registry is clear.';
+  let next = 'Continue monitoring current engine evidence.';
+
+  if (interventionCount > 0) {
+    severity = 'needs-user';
+    status = 'Needs jtr';
+    headline = `${interventionCount} live problem${interventionCount === 1 ? '' : 's'} need user intervention`;
+    why = activeProblem?.claim || activeProblem?.detail || 'Good Life reached a manual remediation step.';
+    next = formatRemediationLine('User action', activeProblem?.nextRemediation)
+      || 'User decision is required before autonomous repair can continue.';
+  } else if (activeCount > 0) {
+    severity = 'repairing';
+    status = 'Repairing';
+    headline = `${activeCount} active live problem${activeCount === 1 ? '' : 's'}`;
+    why = activeProblem?.claim || activeProblem?.detail || policy?.reason || 'Good Life is repairing verified drift.';
+    next = formatRemediationLine('Home23 next', activeProblem?.nextRemediation)
+      || 'Autonomous remediation can continue.';
+  } else if (projectionMismatch) {
+    severity = 'attention';
+    status = 'Reconciling';
+    headline = 'Registry is clear; Good Life projection disagrees';
+    why = projectionMismatch;
+    next = 'Next engine evaluation should reconcile the projection with the live registry.';
+  } else if (warnings.length > 0) {
+    severity = warnings.some((warning) => warning.severity === 'critical') ? 'critical' : 'attention';
+    status = severity === 'critical' ? 'Critical' : 'Attention';
+    headline = warnings[0].message || 'Good Life has an operator warning';
+    why = policy?.reason || warnings[0].code || 'Operator consistency warning is present.';
+    next = freshness?.status === 'stale'
+      ? 'Good Life needs a fresh evaluation before its projection is safe to inherit.'
+      : 'Review the warning before treating the projection as current.';
+  } else if (work?.activeTotal > 0) {
+    severity = 'working';
+    status = 'Working';
+    headline = `${work.activeTotal} active Good Life work item${work.activeTotal === 1 ? '' : 's'}`;
+    why = policy?.reason || 'Good Life has routed work but no active live problem.';
+    if (latestAction?.workerRoute?.worker) {
+      next = `Worker route: ${latestAction.workerRoute.worker}${latestAction.workerRoute.reason ? ` - ${compactText(latestAction.workerRoute.reason, 140)}` : ''}`;
+    } else if (work.topAgenda?.id) {
+      next = `Top agenda: ${work.topAgenda.id}`;
+    }
+  } else if (latestResolution) {
+    headline = 'No active issues after recent repairs';
+    why = latestResolution.claim || latestResolution.id || policy?.reason || why;
+    next = latestResolution.lastResult?.detail
+      ? `Last verifier: ${compactText(latestResolution.lastResult.detail, 140)}`
+      : 'Recent resolution is available in the receipts list.';
+  }
+
+  return {
+    severity,
+    status,
+    headline,
+    why: compactText(why, 220),
+    next: compactText(next, 220),
+    needsUser: interventionCount > 0,
+    activeProblemId: activeProblem?.id || null,
+    latestResolution: latestResolution ? {
+      id: latestResolution.id || '',
+      claim: compactText(latestResolution.claim || '', 180),
+      resolvedAt: latestResolution.resolvedAt || null,
+      verifier: compactText(latestResolution.lastResult?.detail || latestResolution.fixRecipe?.verifierStatus || '', 180),
+      receiptPath: latestResolution.evidence?.receiptPath || null,
+    } : null,
+  };
+}
+
 function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, latestAction }) {
   const lines = [];
   if (state?.summary || state?.policy?.reason) {
@@ -734,6 +844,15 @@ function buildGoodLifeOperatorModel({
     consistency,
     work,
     latestAction,
+  });
+  model.operatorBrief = buildOperatorBrief({
+    policy,
+    liveProblems: directLiveProblems,
+    consistency,
+    work,
+    latestAction,
+    projection,
+    freshness,
   });
   return model;
 }
