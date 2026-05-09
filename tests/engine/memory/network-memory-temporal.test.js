@@ -91,3 +91,18 @@ test('persistence changes capture node, edge, and removal mutations', async () =
   assert.ok(removed.removedEdgeKeys.length >= 1);
   assert.equal(memory.hasPersistenceChanges(), false);
 });
+
+test('exportPersistenceShell omits full node and edge payloads but keeps graph metadata', async () => {
+  const memory = makeMemory();
+  const first = await memory.addNode('first durable memory', 'test', [1, 0]);
+  const second = await memory.addNode('second durable memory', 'test', [1, 0]);
+  memory.addEdge(first.id, second.id, 0.25, 'manual');
+
+  const shell = memory.exportPersistenceShell();
+
+  assert.deepEqual(shell.nodes, []);
+  assert.deepEqual(shell.edges, []);
+  assert.ok(Array.isArray(shell.clusters));
+  assert.equal(shell.nextNodeId, memory.nextNodeId);
+  assert.equal(shell.nextClusterId, memory.nextClusterId);
+});

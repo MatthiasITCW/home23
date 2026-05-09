@@ -752,10 +752,13 @@ function buildConsistency({ state, projection, liveProblems, obligations, hasObl
         message: `${service.label || service.id || 'Runtime service'} is unavailable: ${service.error || 'ping failed'}`,
       });
     } else if (service?.slow === true) {
+      const degradedText = service.degraded
+        ? `${service.label || service.id || 'Runtime service'} health endpoint is slow or not answering, but ${service.pm2?.name || 'the PM2 process'} is ${service.pm2?.status || 'present'}: ${service.error || 'fallback health used'}`
+        : `${service.label || service.id || 'Runtime service'} is slow: ${service.latencyMs}ms health check exceeds ${service.slowThresholdMs || 5000}ms`;
       warnings.push({
         code: `runtime_${service.id || 'service'}_slow`,
         severity: 'warning',
-        message: `${service.label || service.id || 'Runtime service'} is slow: ${service.latencyMs}ms health check exceeds ${service.slowThresholdMs || 5000}ms`,
+        message: degradedText,
       });
     }
   }

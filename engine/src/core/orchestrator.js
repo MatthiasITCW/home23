@@ -6474,10 +6474,14 @@ class Orchestrator {
       await this.evaluation.save();
     }
     
+    const memoryShell = typeof this.memory?.exportPersistenceShell === 'function'
+      ? this.memory.exportPersistenceShell()
+      : this.memory.exportGraph();
+
     const state = {
       cycleCount: this.cycleCount,
       journal: this.journal.slice(-100),
-      memory: this.memory.exportGraph(),
+      memory: memoryShell,
       goals: this.goals.export(),
       roles: this.roles.getRoles(),
       reflection: this.reflection.export(),
@@ -6507,8 +6511,18 @@ class Orchestrator {
     const statePath = path.join(this.logsDir, 'state.json');
 
     try {
-      const nodesWithEmbeddings = state.memory?.nodes?.filter(n => n.embedding).length || 0;
-      const totalNodes = state.memory?.nodes?.length || 0;
+      const liveNodes = this.memory?.nodes;
+      const liveEdges = this.memory?.edges;
+      let nodesWithEmbeddings = 0;
+      if (liveNodes?.values) {
+        for (const node of liveNodes.values()) {
+          if (node?.embedding) nodesWithEmbeddings++;
+        }
+      } else {
+        nodesWithEmbeddings = state.memory?.nodes?.filter(n => n.embedding).length || 0;
+      }
+      const totalNodes = liveNodes?.size ?? state.memory?.nodes?.length ?? 0;
+      const totalEdges = liveEdges?.size ?? state.memory?.edges?.length ?? 0;
 
       // SAFEGUARD: resolve the last-known-good node count without trusting
       // state.json.gz first. In the sidecar architecture state.json.gz
@@ -6552,8 +6566,8 @@ class Orchestrator {
 
         // Merge feeder-injected nodes: any nodes on disk that aren't in our memory get added
         // This allows the feeder to write to state.json.gz between engine saves
-        if (existingState.memory?.nodes && state.memory?.nodes) {
-          const ourIds = new Set(state.memory.nodes.map(n => n.id));
+        if (existingState.memory?.nodes && state.memory?.nodes && existingState.memory.nodes.length > 0) {
+          const ourIds = new Set(liveNodes?.keys?.() || state.memory.nodes.map(n => n.id));
           const feederNodes = existingState.memory.nodes.filter(n => !ourIds.has(n.id));
           if (feederNodes.length > 0) {
             state.memory.nodes.push(...feederNodes);
@@ -6621,8 +6635,8 @@ class Orchestrator {
       let sidecarsWritten = null;
       const origNodes = state.memory?.nodes;
       const origEdges = state.memory?.edges;
-      const expectedNodes = Array.isArray(origNodes) ? origNodes.length : 0;
-      const expectedEdges = Array.isArray(origEdges) ? origEdges.length : 0;
+      const expectedNodes = totalNodes;
+      const expectedEdges = totalEdges;
       const sidecarWriteOptions = {
         level: this.config?.persistence?.memorySidecarGzipLevel,
       };
@@ -6663,17 +6677,17 @@ class Orchestrator {
             sidecarAgeMs >= fullRewriteIntervalMs;
 
           if (mustRewriteFullSidecars) {
-            sidecarsWritten = await writeMemorySidecars(this.logsDir, state.memory, sidecarWriteOptions);
+            sidecarsWritten = await writeMemorySidecars(this.logsDir, this.memory, sidecarWriteOptions);
             // Post-write invariant: the sidecars must contain exactly the
             // counts we just tried to save. If they don't, abort the swap
-            // and fall through to the legacy monolithic save.
+            // and refuse large-brain inline fallback below.
             if (sidecarsWritten.nodes.count !== expectedNodes ||
                 sidecarsWritten.edges.count !== expectedEdges) {
-              this.logger.warn('Memory sidecar count mismatch — keeping inline arrays in state.json.gz', {
+              this.logger.warn('Memory sidecar count mismatch — refusing unsafe inline fallback for large brain', {
                 expectedNodes, wroteNodes: sidecarsWritten.nodes.count,
                 expectedEdges, wroteEdges: sidecarsWritten.edges.count,
               });
-              sidecarsWritten = null;
+              throw new Error('memory sidecar count mismatch');
             } else {
               this.memory?.markPersistenceClean?.();
               sidecarsWritten.mode = 'full';

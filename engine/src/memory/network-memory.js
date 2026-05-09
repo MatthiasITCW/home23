@@ -1337,6 +1337,20 @@ class NetworkMemory {
     };
   }
 
+  exportPersistenceShell() {
+    return {
+      nodes: [],
+      edges: [],
+      clusters: Array.from(this.clusters.entries()).map(([id, nodes]) => ({
+        id,
+        size: nodes.size,
+        nodes: Array.from(nodes)
+      })),
+      nextNodeId: this.nextNodeId,
+      nextClusterId: this.nextClusterId
+    };
+  }
+
   /**
    * Save network state
    */

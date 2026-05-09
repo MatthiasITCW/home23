@@ -755,24 +755,31 @@ class DashboardServer {
       ? target.agentName.charAt(0).toUpperCase() + target.agentName.slice(1)
       : 'Agent';
     const slowMs = 5000;
-    const timeoutMs = 12000;
+    const timeoutMs = Number(this._home23RuntimeHealthTimeoutMs || 2500);
+    const fetchImpl = this._home23RuntimeHealthFetch || fetch;
+    const processSnapshot = this._home23RuntimeProcessSnapshot?.()
+      || this.getHome23RuntimeProcessSnapshot?.()
+      || {};
     const checks = [
       {
         id: 'engine',
         label: `${labelPrefix} engine realtime`,
         url: `http://127.0.0.1:${target.realtimePort}/health`,
+        processName: `home23-${target.agentName}`,
       },
       {
         id: 'harness',
         label: `${labelPrefix} harness bridge`,
         url: `http://127.0.0.1:${target.bridgePort}/health`,
+        processName: `home23-${target.agentName}-harness`,
       },
     ];
 
     const services = await Promise.all(checks.map(async (check) => {
       const startedAt = Date.now();
+      const pm2 = processSnapshot[check.processName] || null;
       try {
-        const response = await fetch(check.url, {
+        const response = await fetchImpl(check.url, {
           method: 'GET',
           headers: { accept: 'application/json' },
           signal: AbortSignal.timeout(timeoutMs),
@@ -788,16 +795,35 @@ class DashboardServer {
           slow: response.ok && latencyMs > slowMs,
           slowThresholdMs: slowMs,
           error: response.ok ? null : `HTTP ${response.status}`,
+          pm2,
         };
       } catch (error) {
+        const latencyMs = Date.now() - startedAt;
+        if (pm2?.status === 'online') {
+          return {
+            id: check.id,
+            label: check.label,
+            url: check.url,
+            ok: true,
+            degraded: true,
+            fallback: 'pm2-online',
+            status: null,
+            latencyMs,
+            slow: true,
+            slowThresholdMs: slowMs,
+            error: `health endpoint timed out or did not answer; ${pm2.name || check.processName} is online in PM2`,
+            pm2,
+          };
+        }
         return {
           id: check.id,
           label: check.label,
           url: check.url,
           ok: false,
           status: null,
-          latencyMs: Date.now() - startedAt,
+          latencyMs,
           error: error.message || String(error),
+          pm2,
         };
       }
     }));
@@ -808,6 +834,33 @@ class DashboardServer {
       ok: services.every((service) => service.ok),
       services,
     };
+  }
+
+  getHome23RuntimeProcessSnapshot() {
+    try {
+      const { execFileSync } = require('child_process');
+      const raw = execFileSync('pm2', ['jlist'], {
+        encoding: 'utf8',
+        timeout: 1500,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const rows = JSON.parse(raw);
+      const snapshot = {};
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const name = row?.name;
+        if (!name || !String(name).startsWith('home23-')) continue;
+        snapshot[name] = {
+          name,
+          status: row.pm2_env?.status || 'unknown',
+          pid: row.pid || null,
+          uptimeMs: row.pm2_env?.pm_uptime ? Date.now() - Number(row.pm2_env.pm_uptime) : null,
+          restarts: row.pm2_env?.restart_time ?? null,
+        };
+      }
+      return snapshot;
+    } catch {
+      return {};
+    }
   }
 
   async proxyWorkerConnector(req, res, method, connectorPath, timeoutMs = 120_000) {
