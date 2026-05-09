@@ -979,18 +979,17 @@ async function main() {
     // phase — dashboard surface writes already exist in the curator cycle;
     // future work can route them through a dedicated publisher.
     const publishCfg = osEngineCfg?.publish || {};
-    const { PublishLedger } = await import('./publish/publish-ledger.js');
+    const { PublishLedger, parseStarvationFloor } = await import('./publish/publish-ledger.js');
     const { WorkspaceInsightsPublisher, selectHighestConfidenceCluster } = await import('./publish/workspace-insights.js');
     const { DreamLogPublisher } = await import('./publish/dream-log.js');
     const { BridgeChatPublisher, computeSalience } = await import('./publish/bridge-chat-publisher.js');
     const workspacePath = process.env.COSMO_WORKSPACE_PATH
       ? path.resolve(process.env.COSMO_WORKSPACE_PATH)
       : path.join(path.dirname(runtimeRoot), 'workspace');
-    const starvationFloor = {};
-    for (const [k, v] of Object.entries(publishCfg.starvationFloor || {})) {
-      const ms = /^(\d+)\s*(s|m|h|d)$/i.exec(String(v).trim());
-      if (ms) starvationFloor[k] = parseInt(ms[1], 10) * { s: 1000, m: 60_000, h: 3600_000, d: 86400_000 }[ms[2].toLowerCase()];
-    }
+    const activePublishTargets = ['workspace_insights', 'dream_log'];
+    const starvationFloor = parseStarvationFloor(publishCfg.starvationFloor || {}, {
+      activeTargets: activePublishTargets,
+    });
     const publishLedger = new PublishLedger({
       path: path.join(runtimeRoot, 'publish-ledger.jsonl'),
       starvationFloor,

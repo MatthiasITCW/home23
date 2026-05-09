@@ -48,3 +48,20 @@ export class PublishLedger {
     return starving;
   }
 }
+
+export function parseStarvationFloor(config = {}, { activeTargets = null } = {}) {
+  const out = {};
+  const active = activeTargets ? new Set(activeTargets) : null;
+  for (const [target, value] of Object.entries(config || {})) {
+    if (active && !active.has(target)) continue;
+    const match = /^(\d+)\s*(s|m|h|d)$/i.exec(String(value).trim());
+    if (!match) continue;
+    out[target] = parseInt(match[1], 10) * {
+      s: 1000,
+      m: 60_000,
+      h: 3600_000,
+      d: 86400_000,
+    }[match[2].toLowerCase()];
+  }
+  return out;
+}
