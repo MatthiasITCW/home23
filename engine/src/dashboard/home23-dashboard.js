@@ -2826,16 +2826,20 @@ function renderGoodLifeActionCard(operator, state) {
   `).join('');
 }
 
-function renderGoodLifeBrief(operator) {
+function renderGoodLifeBrief(operator, scope = 'home') {
   const brief = operator?.operatorBrief || null;
   if (!brief) return '';
   const latest = brief.latestResolution;
+  const target = brief.target || {};
   const latestLine = latest?.id
     ? `<div class="h23-goodlife-brief-receipt">
         <span>Last resolution</span>
         <strong>${escapeHtml(latest.id)}</strong>
         ${latest.verifier ? `<small>${escapeHtml(latest.verifier)}</small>` : ''}
       </div>`
+    : '';
+  const action = target?.tab
+    ? `<button class="h23-goodlife-brief-action" type="button" onclick="openGoodLifeOperator('${escapeAttr(scope)}', '${escapeAttr(target.id || '')}', '${escapeAttr(target.tab || '')}')">${escapeHtml(target.label || 'Open Details')}</button>`
     : '';
   return `
     <div class="h23-goodlife-brief-panel ${goodLifeCssClass(brief.severity)}">
@@ -2849,6 +2853,7 @@ function renderGoodLifeBrief(operator) {
         <span>${escapeHtml(brief.next || '')}</span>
       </div>
       ${latestLine}
+      ${action}
     </div>
   `;
 }
@@ -2877,7 +2882,7 @@ function updateGoodLifeTile(data, scope = 'home') {
   setText(id('goodlife-policy'), policy.toUpperCase());
   setText(id('goodlife-summary'), operator?.summary || state.summary || state.policy?.reason || '');
   setGoodLifeStatus(scope, operator || { status: 'current', safeToInherit: true });
-  setHtml(id('goodlife-brief'), renderGoodLifeBrief(operator));
+  setHtml(id('goodlife-brief'), renderGoodLifeBrief(operator, scope));
 
   const answerLines = operator?.operatorAnswer?.length
     ? operator.operatorAnswer
@@ -3041,7 +3046,7 @@ function renderGoodLifeTop(data) {
     .filter(Boolean)
     .slice(0, 5);
   return `
-    ${renderGoodLifeBrief(operator)}
+    ${renderGoodLifeBrief(operator, data?._scope || goodLifeOverlayState.scope || 'home')}
     <div class="h23-goodlife-top-grid">
       <div class="h23-goodlife-top-card">
         <label>Mode</label>
@@ -3341,12 +3346,13 @@ function renderGoodLifeOverlay() {
   setHtml('goodlife-overlay-detail', detailHtml);
 }
 
-async function openGoodLifeOperator(scope = 'home', selectedProblemId = null) {
+async function openGoodLifeOperator(scope = 'home', selectedProblemId = null, requestedTab = null) {
   const nextScope = scope || 'home';
   const scopeChanged = goodLifeOverlayState.scope !== nextScope;
   goodLifeOverlayState.scope = nextScope;
-  goodLifeOverlayState.tab = selectedProblemId || scopeChanged ? 'issues' : goodLifeOverlayState.tab || 'issues';
-  goodLifeOverlayState.selectedProblemId = selectedProblemId || (scopeChanged ? null : goodLifeOverlayState.selectedProblemId);
+  const nextTab = requestedTab || (selectedProblemId ? 'issues' : null);
+  goodLifeOverlayState.tab = nextTab || (scopeChanged ? 'issues' : goodLifeOverlayState.tab || 'issues');
+  goodLifeOverlayState.selectedProblemId = selectedProblemId || (scopeChanged || nextTab ? null : goodLifeOverlayState.selectedProblemId);
   setText('goodlife-overlay-action-status', '');
   const overlay = document.getElementById('goodlife-overlay');
   if (overlay) overlay.style.display = 'flex';

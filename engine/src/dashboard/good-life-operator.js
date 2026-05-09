@@ -616,6 +616,12 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
   let headline = 'No active Good Life issues';
   let why = policy?.reason || 'Live-problem registry is clear.';
   let next = 'Continue monitoring current engine evidence.';
+  let target = {
+    tab: 'issues',
+    id: null,
+    label: 'Open Details',
+    worker: null,
+  };
 
   if (interventionCount > 0) {
     severity = 'needs-user';
@@ -624,6 +630,12 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     why = activeProblem?.claim || activeProblem?.detail || 'Good Life reached a manual remediation step.';
     next = formatRemediationLine('User action', activeProblem?.nextRemediation)
       || 'User decision is required before autonomous repair can continue.';
+    target = {
+      tab: 'issues',
+      id: activeProblem?.id || null,
+      label: 'Review Issue',
+      worker: null,
+    };
   } else if (activeCount > 0) {
     severity = 'repairing';
     status = 'Repairing';
@@ -631,12 +643,24 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     why = activeProblem?.claim || activeProblem?.detail || policy?.reason || 'Good Life is repairing verified drift.';
     next = formatRemediationLine('Home23 next', activeProblem?.nextRemediation)
       || 'Autonomous remediation can continue.';
+    target = {
+      tab: 'issues',
+      id: activeProblem?.id || null,
+      label: 'Review Repair',
+      worker: null,
+    };
   } else if (projectionMismatch) {
     severity = 'attention';
     status = 'Reconciling';
     headline = 'Registry is clear; Good Life projection disagrees';
     why = projectionMismatch;
     next = 'Next engine evaluation should reconcile the projection with the live registry.';
+    target = {
+      tab: 'insights',
+      id: null,
+      label: 'Review Signals',
+      worker: null,
+    };
   } else if (warnings.length > 0) {
     severity = warnings.some((warning) => warning.severity === 'critical') ? 'critical' : 'attention';
     status = severity === 'critical' ? 'Critical' : 'Attention';
@@ -645,6 +669,12 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     next = freshness?.status === 'stale'
       ? 'Good Life needs a fresh evaluation before its projection is safe to inherit.'
       : 'Review the warning before treating the projection as current.';
+    target = {
+      tab: 'insights',
+      id: null,
+      label: 'Review Warning',
+      worker: null,
+    };
   } else if (work?.activeTotal > 0) {
     severity = 'working';
     status = 'Working';
@@ -655,12 +685,24 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     } else if (work.topAgenda?.id) {
       next = `Top agenda: ${work.topAgenda.id}`;
     }
+    target = {
+      tab: 'work',
+      id: work.topAgenda?.id || work.topGoal?.id || null,
+      label: latestAction?.workerRoute?.worker ? `Open ${latestAction.workerRoute.worker}` : 'Review Work',
+      worker: latestAction?.workerRoute?.worker || null,
+    };
   } else if (latestResolution) {
     headline = 'No active issues after recent repairs';
     why = latestResolution.claim || latestResolution.id || policy?.reason || why;
     next = latestResolution.lastResult?.detail
       ? `Last verifier: ${compactText(latestResolution.lastResult.detail, 140)}`
       : 'Recent resolution is available in the receipts list.';
+    target = {
+      tab: 'resolutions',
+      id: latestResolution.id || null,
+      label: 'View Resolution',
+      worker: null,
+    };
   }
 
   return {
@@ -671,6 +713,7 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     next: compactText(next, 220),
     needsUser: interventionCount > 0,
     activeProblemId: activeProblem?.id || null,
+    target,
     latestResolution: latestResolution ? {
       id: latestResolution.id || '',
       claim: compactText(latestResolution.claim || '', 180),
