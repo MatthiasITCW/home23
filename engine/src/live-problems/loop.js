@@ -17,6 +17,8 @@
  * state — jtr sees it in the dashboard but nothing else happens.
  */
 
+const fs = require('fs');
+const os = require('os');
 const { runVerifier } = require('./verifiers');
 const { runRemediator } = require('./remediators');
 const { appendSignal } = require('../cognition/signals');
@@ -24,6 +26,7 @@ const { appendSignal } = require('../cognition/signals');
 const DEFAULT_INTERVAL_MS = 90 * 1000;          // 1.5 min between ticks
 const DEFAULT_STEP_COOLDOWN_MIN = 10;           // cooldown per step if not specified
 const WARMUP_DELAY_MS = 20 * 1000;              // wait 20s after start before first tick
+const RESOLVED_REVERIFY_MS = 10 * 60 * 1000;    // re-verify resolved every 10 min
 
 function getCompletedDispatchRecipe(problem) {
   if (!problem?.dispatchedAt || !problem?.fixRecipe?.at) return null;
@@ -67,6 +70,43 @@ function classifyDispatchRecipe(recipe) {
   return { outcome: 'failed', advance: true };
 }
 
+function expandHome(p) {
+  if (!p || typeof p !== 'string') return p;
+  return p.startsWith('~') ? p.replace(/^~/, os.homedir()) : p;
+}
+
+function verifierSourcePaths(verifier) {
+  if (!verifier?.type) return [];
+  if (verifier.type === 'composed') {
+    return (verifier.args?.verifiers || []).flatMap((child) => verifierSourcePaths(child));
+  }
+  const p = verifier.args?.path;
+  return typeof p === 'string' && p.trim() ? [expandHome(p)] : [];
+}
+
+function verifierSourceChangedSinceLastCheck(problem) {
+  const lastMs = problem?.lastCheckedAt ? Date.parse(problem.lastCheckedAt) : 0;
+  if (!lastMs) return true;
+  for (const p of verifierSourcePaths(problem?.verifier)) {
+    try {
+      if (fs.statSync(p).mtimeMs > lastMs) return true;
+    } catch {
+      // Missing/unreadable verifier inputs should be rechecked so the verifier
+      // records the current failure instead of staying hidden behind cooldown.
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldReverifyResolvedProblem(problem, { force = false, nowMs = Date.now() } = {}) {
+  if (force) return true;
+  const lastMs = problem?.lastCheckedAt ? Date.parse(problem.lastCheckedAt) : 0;
+  if (!lastMs) return true;
+  if (nowMs - lastMs >= RESOLVED_REVERIFY_MS) return true;
+  return verifierSourceChangedSinceLastCheck(problem);
+}
+
 class LiveProblemsLoop {
   constructor({ store, logger, ctxProvider, intervalMs }) {
     this.store = store;
@@ -105,13 +145,10 @@ class LiveProblemsLoop {
       this.store.reloadIfChanged();
       this.store.pruneResolved();
       const all = this.store.all();
-      const RESOLVED_REVERIFY_MS = 10 * 60 * 1000;  // re-verify resolved every 10 min
       for (const p of all) {
         if (p.state === 'unverifiable') continue;
         if (p.state === 'resolved') {
-          // Re-verify periodically to catch regressions + keep timestamps fresh
-          const lastMs = p.lastCheckedAt ? Date.parse(p.lastCheckedAt) : 0;
-          if (Date.now() - lastMs < RESOLVED_REVERIFY_MS) continue;
+          if (!shouldReverifyResolvedProblem(p)) continue;
         }
         await this._processOne(p);
       }
@@ -329,4 +366,5 @@ module.exports = {
   DEFAULT_INTERVAL_MS,
   classifyDispatchRecipe,
   shouldAdvanceAfterIneffectiveSuccess,
+  shouldReverifyResolvedProblem,
 };

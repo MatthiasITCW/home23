@@ -357,6 +357,7 @@ const remediators = {
         },
         body: JSON.stringify({
           prompt,
+          ownerAgent: ctx.agentName || process.env.HOME23_AGENT || undefined,
           requestedBy: 'live-problems',
           requester: 'engine',
           source: { type: 'live-problem', id: problem.id },

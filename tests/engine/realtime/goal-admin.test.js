@@ -88,10 +88,12 @@ test('goal admin refuses to archive missing or inactive goals', async () => {
 test('live-problems admin immediately processes all problems', async () => {
   const server = new RealtimeServer(0, { info: () => {}, warn: () => {}, error: () => {} });
   let called = false;
+  let processArgs = null;
   server.setOrchestrator({
     liveProblems: {
-      async processAllNow() {
+      async processAllNow(args) {
         called = true;
+        processArgs = args;
         return {
           processed: 2,
           changed: [{ id: 'health_log_fresh', state: 'resolved' }],
@@ -114,6 +116,7 @@ test('live-problems admin immediately processes all problems', async () => {
   assert.equal(payload.processed, 2);
   assert.deepEqual(payload.changed, [{ id: 'health_log_fresh', state: 'resolved' }]);
   assert.equal(called, true);
+  assert.deepEqual(processArgs, { force: true });
 });
 
 test('live-problems admin processes one problem by id', async () => {

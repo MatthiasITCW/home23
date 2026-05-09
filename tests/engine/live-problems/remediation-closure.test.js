@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -9,7 +9,11 @@ const require = createRequire(import.meta.url);
 const { LiveProblemStore } = require('../../../engine/src/live-problems/store.js');
 const { seedAll } = require('../../../engine/src/live-problems/seed.js');
 const { isRestartableProcess } = require('../../../engine/src/live-problems/remediators.js');
-const { classifyDispatchRecipe, shouldAdvanceAfterIneffectiveSuccess } = require('../../../engine/src/live-problems/loop.js');
+const {
+  classifyDispatchRecipe,
+  shouldAdvanceAfterIneffectiveSuccess,
+  shouldReverifyResolvedProblem,
+} = require('../../../engine/src/live-problems/loop.js');
 const { runVerifier } = require('../../../engine/src/live-problems/verifiers.js');
 
 test('seedAll prunes obsolete generic agent live-problem seeds', () => {
@@ -82,6 +86,59 @@ test('resolved live problem stays resolved on transient verifier failure', () =>
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('resolved log-backed problem re-verifies when source log changed inside cooldown', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
+  try {
+    const logPath = join(dir, 'engine-err.log');
+    writeFileSync(logPath, '[12:00:00] INFO boot\n');
+    const lastCheckedAt = '2026-05-09T20:00:00.000Z';
+    utimesSync(logPath, new Date('2026-05-09T19:59:00.000Z'), new Date('2026-05-09T20:01:00.000Z'));
+
+    assert.equal(shouldReverifyResolvedProblem({
+      state: 'resolved',
+      lastCheckedAt,
+      verifier: {
+        type: 'log_recent_count',
+        args: { path: logPath, pattern: 'Cycle timeout exceeded' },
+      },
+    }, { nowMs: Date.parse('2026-05-09T20:03:00.000Z') }), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolved problem stays in cooldown when verifier source has not changed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
+  try {
+    const logPath = join(dir, 'engine-err.log');
+    writeFileSync(logPath, '[12:00:00] INFO boot\n');
+    const lastCheckedAt = '2026-05-09T20:00:00.000Z';
+    utimesSync(logPath, new Date('2026-05-09T19:58:00.000Z'), new Date('2026-05-09T19:59:00.000Z'));
+
+    assert.equal(shouldReverifyResolvedProblem({
+      state: 'resolved',
+      lastCheckedAt,
+      verifier: {
+        type: 'log_recent_count',
+        args: { path: logPath, pattern: 'Cycle timeout exceeded' },
+      },
+    }, { nowMs: Date.parse('2026-05-09T20:03:00.000Z') }), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('manual resolved live-problem processing can force reverify inside cooldown', () => {
+  assert.equal(shouldReverifyResolvedProblem({
+    state: 'resolved',
+    lastCheckedAt: '2026-05-09T20:00:00.000Z',
+    verifier: { type: 'http_ping', args: { url: 'http://127.0.0.1:1' } },
+  }, {
+    force: true,
+    nowMs: Date.parse('2026-05-09T20:01:00.000Z'),
+  }), true);
 });
 
 test('store stamps updatedAt on verification and remediation transitions', () => {

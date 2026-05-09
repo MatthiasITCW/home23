@@ -17,7 +17,7 @@ const path = require('path');
 const fs = require('fs');
 const yaml = require('js-yaml');
 const { LiveProblemStore } = require('./store');
-const { LiveProblemsLoop } = require('./loop');
+const { LiveProblemsLoop, shouldReverifyResolvedProblem } = require('./loop');
 const { seedAll } = require('./seed');
 const { auditProblemList } = require('./audit');
 const { TargetsRegistry } = require('./registry');
@@ -57,10 +57,12 @@ function initLiveProblems({ brainDir, memory, logger, agentName, dashboardPort, 
   const harnessNotifyUrl = `http://127.0.0.1:${bport}/api/notify`;
   const harnessDiagnoseUrl = `http://127.0.0.1:${bport}/api/diagnose`;
   const workerConnectorBaseUrl = `http://127.0.0.1:${bport}`;
+  const ownerAgent = agentName || process.env.HOME23_AGENT || 'jerry';
 
   const ctxProvider = () => ({
     memory,
     brainDir,
+    agentName: ownerAgent,
     integrations: loadActionAllowlistIntegrations(),
     harnessNotifyUrl,
     harnessDiagnoseUrl,
@@ -83,18 +85,16 @@ function initLiveProblems({ brainDir, memory, logger, agentName, dashboardPort, 
       store.reloadIfChanged();
       return store.get(id);
     },
-    async processAllNow() {
+    async processAllNow({ force = false } = {}) {
       store.reloadIfChanged();
       store.pruneResolved();
       const all = store.all();
-      const resolvedReverifyMs = 10 * 60 * 1000;
       let processed = 0;
       const changed = [];
       for (const problem of all) {
         if (problem.state === 'unverifiable') continue;
         if (problem.state === 'resolved') {
-          const lastMs = problem.lastCheckedAt ? Date.parse(problem.lastCheckedAt) : 0;
-          if (lastMs && Date.now() - lastMs < resolvedReverifyMs) continue;
+          if (!shouldReverifyResolvedProblem(problem, { force })) continue;
         }
         const before = {
           state: problem.state,

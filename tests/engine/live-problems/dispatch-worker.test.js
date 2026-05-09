@@ -24,6 +24,7 @@ test('dispatch_to_worker posts to worker connector', async () => {
     { type: 'dispatch_to_worker', args: { worker: 'systems', budgetHours: 4 } },
     {
       workerConnectorBaseUrl: `http://127.0.0.1:${port}`,
+      agentName: 'forrest',
       problem: { id: 'lp_1', title: 'host check', severity: 'warn', description: 'CPU signal' },
     }
   );
@@ -33,4 +34,5 @@ test('dispatch_to_worker posts to worker connector', async () => {
   assert.equal(result.turnId, 'wr_1');
   assert.match(body, /host check/);
   assert.match(body, /live-problems/);
+  assert.equal(JSON.parse(body).ownerAgent, 'forrest');
 });

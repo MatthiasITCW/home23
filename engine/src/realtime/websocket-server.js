@@ -459,7 +459,7 @@ class RealtimeServer {
       if (typeof liveProblems.processAllNow !== 'function') {
         return json(503, { ok: false, error: 'Immediate live-problems processing is not available' });
       }
-      const result = await liveProblems.processAllNow();
+      const result = await liveProblems.processAllNow({ force: true });
       return json(200, {
         ok: true,
         mode: 'immediate',
