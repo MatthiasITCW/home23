@@ -3,6 +3,7 @@ const { UnifiedClient } = require('../core/unified-client');
 const DEFAULT_CONSOLIDATION_MAX_NODES = 80;
 const DEFAULT_CONSOLIDATION_MAX_CHARS = 50000;
 const DEFAULT_CONSOLIDATION_MAX_CONCEPT_CHARS = 600;
+const DEFAULT_CONSOLIDATION_MAX_CLUSTERS_PER_RUN = 4;
 
 /**
  * Memory Summarizer - GPT-5.5 Version
@@ -30,6 +31,9 @@ class MemorySummarizer {
     this.consolidationMaxConceptChars = Number.isFinite(consolidation.maxConceptChars)
       ? consolidation.maxConceptChars
       : DEFAULT_CONSOLIDATION_MAX_CONCEPT_CHARS;
+    this.consolidationMaxClustersPerRun = Number.isFinite(consolidation.maxClustersPerRun)
+      ? consolidation.maxClustersPerRun
+      : DEFAULT_CONSOLIDATION_MAX_CLUSTERS_PER_RUN;
   }
 
   /**
@@ -109,7 +113,7 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
    * Consolidate memories using GPT-5.5 with web search for validation
    * OPTIMIZATION: Marks source nodes with consolidatedAt to prevent re-processing
    */
-  async consolidateMemories(memoryNetwork, similarityThreshold = 0.75) {
+  async consolidateMemories(memoryNetwork, similarityThreshold = 0.75, options = {}) {
     const nodes = Array.from(memoryNetwork.nodes.values());
     
     if (nodes.length < 10) {
@@ -119,9 +123,19 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
     const clusters = await this.clusterSimilarMemories(nodes, similarityThreshold);
     const consolidations = [];
     const consolidationTimestamp = new Date().toISOString();
+    const maxClustersPerRun = Math.max(
+      1,
+      Number.isFinite(options.maxClustersPerRun)
+        ? options.maxClustersPerRun
+        : this.consolidationMaxClustersPerRun
+    );
+    let attemptedClusters = 0;
 
     for (const cluster of clusters) {
+      if (attemptedClusters >= maxClustersPerRun) break;
+
       if (cluster.length >= 3) {
+        attemptedClusters++;
         const consolidated = await this.createConsolidatedMemoryGPT5(cluster);
         
         if (consolidated) {
@@ -150,8 +164,20 @@ Capture key insights, decisions, patterns, and learnings. Preserve important fac
     this.consolidationHistory.push({
       timestamp: new Date(),
       consolidations: consolidations.length,
-      totalMemories: nodes.length
+      totalMemories: nodes.length,
+      attemptedClusters,
+      eligibleClusters: clusters.length,
+      deferredClusters: Math.max(0, clusters.length - attemptedClusters)
     });
+
+    if (clusters.length > attemptedClusters) {
+      this.logger?.info?.('Consolidation run deferred remaining clusters', {
+        attemptedClusters,
+        eligibleClusters: clusters.length,
+        deferredClusters: clusters.length - attemptedClusters,
+        maxClustersPerRun
+      });
+    }
 
     return consolidations;
   }

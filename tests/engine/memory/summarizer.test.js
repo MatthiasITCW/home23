@@ -59,3 +59,48 @@ test('createConsolidatedMemoryGPT5 caps large clusters before sending model prom
     )
   );
 });
+
+test('consolidateMemories limits cluster work per run and records deferral', async () => {
+  process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-key';
+  const logger = makeLogger();
+  const summarizer = new MemorySummarizer({}, logger, {
+    memory: {
+      consolidation: {
+        maxClustersPerRun: 2,
+      },
+    },
+  });
+
+  const clusters = Array.from({ length: 5 }, (_, clusterIndex) =>
+    Array.from({ length: 3 }, (_, nodeIndex) => ({
+      id: `cluster-${clusterIndex}-node-${nodeIndex}`,
+      concept: `cluster ${clusterIndex} memory ${nodeIndex}`,
+      weight: nodeIndex,
+    }))
+  );
+  const nodes = clusters.flat();
+  const memoryNetwork = { nodes: new Map(nodes.map((node) => [node.id, node])) };
+  const attempted = [];
+
+  summarizer.clusterSimilarMemories = async () => clusters;
+  summarizer.createConsolidatedMemoryGPT5 = async (cluster) => {
+    attempted.push(cluster[0].id);
+    return { content: `summary ${cluster[0].id}`, reasoning: null, model: 'test-model' };
+  };
+
+  const result = await summarizer.consolidateMemories(memoryNetwork);
+
+  assert.equal(result.length, 2);
+  assert.deepEqual(attempted, ['cluster-0-node-0', 'cluster-1-node-0']);
+  assert.ok(nodes.slice(0, 6).every((node) => node.consolidatedAt));
+  assert.ok(nodes.slice(6).every((node) => !node.consolidatedAt));
+  assert.equal(summarizer.consolidationHistory.at(-1).eligibleClusters, 5);
+  assert.equal(summarizer.consolidationHistory.at(-1).attemptedClusters, 2);
+  assert.equal(summarizer.consolidationHistory.at(-1).deferredClusters, 3);
+  assert.ok(
+    logger.entries.some((entry) =>
+      entry.message === 'Consolidation run deferred remaining clusters' &&
+      entry.data.deferredClusters === 3
+    )
+  );
+});

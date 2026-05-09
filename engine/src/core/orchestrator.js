@@ -1597,6 +1597,7 @@ class Orchestrator {
         
         // Run consolidation ONCE at start of sleep session
         if (!this.sleepSession.consolidationRun) {
+          enterCyclePhase('deep_sleep_consolidation');
           this.logger.info(`🛌 Sleep Cycle ${cyclesAsleep + 1}: Running deep consolidation...`);
           const consolidationResult = await this.performDeepSleepConsolidation();
 
@@ -3301,6 +3302,7 @@ class Orchestrator {
       // 16. Periodic consolidation
       const timeSinceConsolidation = Date.now() - this.lastConsolidation.getTime();
       if (timeSinceConsolidation > 1800000) {
+        enterCyclePhase('periodic_consolidation');
         await this.performMemoryConsolidation();
       }
 
