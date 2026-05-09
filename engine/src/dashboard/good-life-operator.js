@@ -1,5 +1,12 @@
 const GOOD_LIFE_STALE_MS = 10 * 60 * 1000;
 const RECENT_RESOLUTION_MS = 30 * 60 * 1000;
+const USER_INTERVENTION_REMEDIATORS = new Set([
+  'notify_jtr',
+  'request_user_input',
+  'manual',
+  'manual_intervention',
+  'user_action',
+]);
 
 function toTimeMs(value) {
   const ms = Date.parse(value || '');
@@ -23,6 +30,33 @@ function finiteCount(value) {
   return Number.isFinite(count) ? count : null;
 }
 
+function summarizeNextRemediation(problem = {}) {
+  const plan = Array.isArray(problem.remediation) ? problem.remediation : [];
+  const index = Math.max(0, Number(problem.stepIndex || 0));
+  const step = plan[index] || null;
+  if (!step) {
+    return {
+      index,
+      total: plan.length,
+      type: null,
+      requiresUser: false,
+      text: plan.length ? 'remediation plan exhausted' : 'no remediation plan recorded',
+    };
+  }
+
+  const type = String(step.type || '').trim();
+  const requiresUser = USER_INTERVENTION_REMEDIATORS.has(type);
+  const text = step.args?.text || step.args?.message || step.args?.name || step.args?.target || type;
+  return {
+    index,
+    total: plan.length,
+    type,
+    requiresUser,
+    text,
+    cooldownMin: step.cooldownMin ?? null,
+  };
+}
+
 function buildLiveProblemSnapshot(problems = [], now = new Date()) {
   const nowMs = toNowMs(now);
   const open = [];
@@ -31,9 +65,12 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
   const resolvedJustNow = [];
   let resolved = 0;
   let unverifiable = 0;
+  let interventionRequired = 0;
 
   for (const problem of Array.isArray(problems) ? problems : []) {
     if (problem?.state === 'open' || problem?.state === 'chronic') {
+      const nextRemediation = summarizeNextRemediation(problem);
+      if (nextRemediation.requiresUser) interventionRequired += 1;
       const row = {
         id: problem.id || '',
         claim: problem.claim || '',
@@ -41,6 +78,13 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
         detail: problem.lastResult?.detail || null,
         state: problem.state,
         escalated: !!problem.escalated,
+        stepIndex: Number(problem.stepIndex || 0),
+        remediationTotal: Array.isArray(problem.remediation) ? problem.remediation.length : 0,
+        nextRemediation,
+        intervention: {
+          required: nextRemediation.requiresUser,
+          reason: nextRemediation.requiresUser ? nextRemediation.text : null,
+        },
         lastCheckedAt: problem.lastCheckedAt || null,
         lastRemediation: Array.isArray(problem.remediationLog)
           ? problem.remediationLog.slice(-1)[0] || null
@@ -82,6 +126,7 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
       chronic: chronic.length,
       resolved,
       unverifiable,
+      interventionRequired,
     },
   };
 }
@@ -324,6 +369,9 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency }) {
 
   const counts = liveProblems.counts || {};
   lines.push(`Live-problem registry: ${counts.open || 0} open, ${counts.chronic || 0} chronic`);
+  if (Number(counts.interventionRequired || 0) > 0) {
+    lines.push(`${counts.interventionRequired} live problem(s) need user intervention`);
+  }
 
   for (const lane of lanes.filter((candidate) => candidate.active)) {
     const reason = lane.reasons?.[0] || lane.status;

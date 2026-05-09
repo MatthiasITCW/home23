@@ -54,11 +54,33 @@ test('live-problem snapshot separates open, chronic, resolved, and unverifiable 
   assert.equal(snapshot.counts.chronic, 1);
   assert.equal(snapshot.counts.resolved, 1);
   assert.equal(snapshot.counts.unverifiable, 1);
+  assert.equal(snapshot.counts.interventionRequired, 0);
   assert.equal(snapshot.open[0].ageMin, 5);
   assert.equal(snapshot.chronic[0].detail, 'still failing');
   assert.equal(snapshot.resolvedJustNow[0].id, 'resolved_1');
   assert.equal(snapshot.resolved[0].id, 'resolved_1');
   assert.equal(snapshot.resolved[0].evidence.receiptId, 'ev_1');
+});
+
+test('live-problem snapshot marks current user-intervention remediation steps', () => {
+  const snapshot = buildLiveProblemSnapshot([
+    {
+      id: 'needs_jtr',
+      state: 'open',
+      claim: 'Needs a human decision',
+      openedAt: '2026-05-08T13:00:00.000Z',
+      stepIndex: 1,
+      remediation: [
+        { type: 'dispatch_to_agent', args: { budgetHours: 2 } },
+        { type: 'notify_jtr', args: { text: 'Choose whether to restart the external bridge.' } },
+      ],
+    },
+  ], NOW);
+
+  assert.equal(snapshot.counts.interventionRequired, 1);
+  assert.equal(snapshot.open[0].nextRemediation.type, 'notify_jtr');
+  assert.equal(snapshot.open[0].intervention.required, true);
+  assert.equal(snapshot.open[0].intervention.reason, 'Choose whether to restart the external bridge.');
 });
 
 test('Good Life obligation snapshot exposes active agenda rows and goals', () => {
@@ -109,7 +131,7 @@ test('Good Life operator model exposes safe current help state with evidence and
   assert.equal(model.safeToInherit, true);
   assert.equal(model.policy.mode, 'help');
   assert.equal(model.freshness.ageMin, 3);
-  assert.deepEqual(model.liveProblems.counts, { open: 0, chronic: 0, resolved: 0, unverifiable: 0 });
+  assert.deepEqual(model.liveProblems.counts, { open: 0, chronic: 0, resolved: 0, unverifiable: 0, interventionRequired: 0 });
   assert.equal(model.consistency.ok, true);
   assert.equal(model.actionCard.intent, 'help');
   assert.equal(model.latestRegulatorAction.agendaId, 'ag-gl-test');
@@ -141,6 +163,28 @@ test('Good Life operator model annotates latest routed agenda status', () => {
   assert.equal(model.latestRegulatorAction.agendaId, 'ag-gl-test');
   assert.equal(model.latestRegulatorAction.agendaStatus, 'acted_on');
   assert.equal(model.latestRegulatorAction.agendaStatusNote, 'completed in test');
+});
+
+test('Good Life operator answer surfaces live problems that need user intervention', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({ evidence: { liveProblems: { open: 1, chronic: 0, resolved: 0, unverifiable: 0, total: 1 } } }),
+    liveProblems: [
+      {
+        id: 'needs_jtr',
+        state: 'open',
+        claim: 'Needs a human decision',
+        openedAt: '2026-05-08T13:00:00.000Z',
+        stepIndex: 0,
+        remediation: [
+          { type: 'notify_jtr', args: { text: 'Pick the bridge owner.' } },
+        ],
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.liveProblems.counts.interventionRequired, 1);
+  assert.ok(model.operatorAnswer.some((line) => line.includes('need user intervention')));
 });
 
 test('Good Life operator model marks projection mismatch as conflicted and keeps direct live problems visible', () => {

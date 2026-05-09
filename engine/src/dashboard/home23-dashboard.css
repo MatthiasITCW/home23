@@ -2814,6 +2814,18 @@ body.h23-external-focus #cosmo23-refresh-btn {
   background: rgba(255,120,120,0.12);
 }
 
+.h23-goodlife-needs-user {
+  color: #ffd38a;
+  background: rgba(255,190,90,0.1);
+  border: 1px solid rgba(255,190,90,0.32);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .h23-goodlife-problem-id,
 .h23-goodlife-problem-claim {
   min-width: 0;

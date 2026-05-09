@@ -2664,6 +2664,43 @@ function goodLifeCssClass(value) {
   return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
 }
 
+const GOOD_LIFE_USER_INTERVENTION_TYPES = new Set([
+  'notify_jtr',
+  'request_user_input',
+  'manual',
+  'manual_intervention',
+  'user_action',
+]);
+
+function goodLifeNextRemediation(problem = {}) {
+  if (problem.nextRemediation) return problem.nextRemediation;
+  const plan = Array.isArray(problem.remediation) ? problem.remediation : [];
+  const index = Math.max(0, Number(problem.stepIndex || 0));
+  const step = plan[index] || null;
+  if (!step) {
+    return {
+      index,
+      total: plan.length,
+      type: null,
+      requiresUser: false,
+      text: plan.length ? 'remediation plan exhausted' : 'no remediation plan recorded',
+    };
+  }
+  const type = String(step.type || '').trim();
+  return {
+    index,
+    total: plan.length,
+    type,
+    requiresUser: GOOD_LIFE_USER_INTERVENTION_TYPES.has(type),
+    text: step.args?.text || step.args?.message || step.args?.name || step.args?.target || type,
+    cooldownMin: step.cooldownMin ?? null,
+  };
+}
+
+function goodLifeNeedsUser(problem = {}) {
+  return problem.intervention?.required === true || goodLifeNextRemediation(problem).requiresUser === true;
+}
+
 function setGoodLifeStatus(scope, operator) {
   const el = document.getElementById(goodLifeDomId('goodlife-status', scope));
   if (!el) return;
@@ -2686,6 +2723,7 @@ function renderGoodLifeProblems(operator, data) {
       <span><strong>${Number(counts.open || 0)}</strong> open</span>
       <span><strong>${Number(counts.chronic || 0)}</strong> chronic</span>
       <span><strong>${Number(counts.unverifiable || 0)}</strong> unverifiable</span>
+      <span><strong>${Number(counts.interventionRequired || 0)}</strong> need you</span>
     </div>
   `;
 
@@ -2700,6 +2738,7 @@ function renderGoodLifeProblems(operator, data) {
         <span class="h23-goodlife-problem-state ${goodLifeCssClass(row.state)}">${escapeHtml(row.state)}</span>
         <span class="h23-goodlife-problem-id">${escapeHtml(row.id)}</span>
         <span class="h23-goodlife-problem-claim">${escapeHtml(row.claim)}</span>
+        ${goodLifeNeedsUser(row) ? '<span class="h23-goodlife-needs-user">needs you</span>' : ''}
       </button>
       ${row.detail ? `<div class="h23-goodlife-problem-detail">${escapeHtml(row.detail)}</div>` : ''}
     `).join('')}
@@ -2916,7 +2955,7 @@ function renderGoodLifeTop(data) {
     <div class="h23-goodlife-top-card">
       <label>Issues</label>
       <strong>${escapeHtml(goodLifeCountsText(counts))}</strong>
-      <span>${escapeHtml(warnings[0]?.message || 'projection current')}</span>
+      <span>${Number(counts.interventionRequired || 0) > 0 ? `${Number(counts.interventionRequired || 0)} need user intervention` : escapeHtml(warnings[0]?.message || 'projection current')}</span>
     </div>
     <div class="h23-goodlife-top-card">
       <label>Freshness</label>
@@ -2953,15 +2992,20 @@ function renderGoodLifeIssueDetail(problem) {
   const last = problem.lastResult || {};
   const attempts = (problem.remediationLog || []).slice().reverse();
   const recipes = (problem.fixRecipeHistory || (problem.fixRecipe ? [problem.fixRecipe] : [])).slice().reverse();
+  const next = goodLifeNextRemediation(problem);
+  const needsUser = goodLifeNeedsUser(problem);
   return `
     <div class="h23-goodlife-detail-head">
       <span class="h23-goodlife-problem-state ${goodLifeCssClass(problem.state)}">${escapeHtml(problem.state)}</span>
       <strong>${escapeHtml(problem.id)}</strong>
+      ${needsUser ? '<span class="h23-goodlife-needs-user">needs you</span>' : ''}
     </div>
     <h3>${escapeHtml(problem.claim || '')}</h3>
     <div class="h23-goodlife-detail-grid">
       <div><label>Last verifier result</label><p>${escapeHtml(last.detail || 'not checked')}</p><small>${last.at ? escapeHtml(timeSince(new Date(last.at))) : ''}</small></div>
       <div><label>Lifecycle</label><p>${escapeHtml(problem.escalated ? 'escalated' : 'normal')} - step ${Number(problem.stepIndex || 0)} / ${(problem.remediation || []).length}</p><small>${problem.openedAt ? `opened ${escapeHtml(timeSince(new Date(problem.openedAt)))}` : ''}</small></div>
+      <div><label>Next remediation</label><p>${escapeHtml(next.type || 'none')}</p><small>${escapeHtml(next.text || '')}</small></div>
+      <div><label>User intervention</label><p>${needsUser ? 'needed' : 'not needed yet'}</p><small>${needsUser ? 'Home23 has reached a notify/manual step' : 'autonomous remediation can continue'}</small></div>
     </div>
     <div class="h23-goodlife-detail-actions">
       <button class="h23-goodlife-plain-btn" type="button" onclick="testGoodLifeVerifier('${escapeAttr(problem.id)}')">Test Verifier</button>
