@@ -25,10 +25,25 @@ test('compactActiveGoalsForSnapshot writes bounded lightweight active goal summa
     ['goal_new', {
       id: 'goal_new',
       description: 'Newer goal'.repeat(100),
+      status: 'active',
       source: 'operator',
       priority: '0.9',
       progress: '0.25',
       createdAt: '2026-05-08T11:00:00.000Z',
+    }],
+    ['goal_done', {
+      id: 'goal_done',
+      description: 'Completed goal',
+      status: 'completed',
+      progress: 1,
+      createdAt: '2026-05-08T12:00:00.000Z',
+    }],
+    ['goal_progress_done', {
+      id: 'goal_progress_done',
+      description: 'Progress-complete goal',
+      status: 'active',
+      progress: 1,
+      createdAt: '2026-05-08T13:00:00.000Z',
     }],
   ]);
 
@@ -51,6 +66,7 @@ test('persistArchivedGoalsToState patches goals without full orchestrator save',
         active: [
           ['goal_keep', { id: 'goal_keep', description: 'Keep this goal', status: 'active' }],
           ['goal_archive', { id: 'goal_archive', description: 'Archive this goal', status: 'active' }],
+          ['goal_done_in_active', { id: 'goal_done_in_active', description: 'Done but still in active map', status: 'completed', progress: 1 }],
         ],
         completed: [{ id: 'goal_done' }],
         archived: [],
@@ -62,7 +78,7 @@ test('persistArchivedGoalsToState patches goals without full orchestrator save',
     const snapshot = JSON.parse(fs.readFileSync(path.join(dir, 'brain-snapshot.json'), 'utf8'));
 
     assert.equal(result.saved, true);
-    assert.equal(state.goals.active.length, 1);
+    assert.equal(state.goals.active.length, 2);
     assert.equal(state.goals.archived.length, 1);
     assert.equal(state.goals.archived[0].archiveReason, 'test_archive');
     assert.deepEqual(snapshot.goalCounts, { active: 1, completed: 1, archived: 1 });

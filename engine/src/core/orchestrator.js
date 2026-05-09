@@ -6510,8 +6510,11 @@ class Orchestrator {
           if (typeof entries === 'object') return Object.keys(entries).length;
           return 0;
         };
+        const countActiveGoalEntries = (entries) => normalizeGoalEntries(entries)
+          .filter(isSnapshotActiveGoal)
+          .length;
         const goalCounts = {
-          active: countGoalEntries(state.goals?.active),
+          active: countActiveGoalEntries(state.goals?.active),
           completed: countGoalEntries(state.goals?.completed),
           archived: countGoalEntries(state.goals?.archived),
         };
@@ -8226,19 +8229,21 @@ class Orchestrator {
 
 function compactActiveGoalsForSnapshot(entries, limit = 12) {
   const rows = [];
-  const active = Array.isArray(entries) ? entries : [];
+  const active = normalizeGoalEntries(entries);
   for (const entry of active) {
     const goal = Array.isArray(entry) ? entry[1] : entry;
     if (!goal) continue;
+    const progress = Number.isFinite(Number(goal.progress)) ? Number(goal.progress) : null;
+    if (!isSnapshotActiveGoal(goal)) continue;
     rows.push({
       id: String(goal.id || (Array.isArray(entry) ? entry[0] : '') || ''),
       description: String(goal.description || goal.title || goal.goal || '').slice(0, 500),
-      status: goal.status || 'active',
+      status: String(goal.status || 'active').toLowerCase(),
       source: typeof goal.source === 'object'
         ? (goal.source.label || goal.source.origin || null)
         : (goal.source || null),
       priority: Number.isFinite(Number(goal.priority)) ? Number(goal.priority) : null,
-      progress: Number.isFinite(Number(goal.progress)) ? Number(goal.progress) : null,
+      progress,
       createdAt: goal.createdAt || goal.created_at || goal.created || null,
     });
   }
@@ -8246,6 +8251,21 @@ function compactActiveGoalsForSnapshot(entries, limit = 12) {
     .filter((goal) => goal.id || goal.description)
     .sort((a, b) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''))
     .slice(0, limit);
+}
+
+function normalizeGoalEntries(entries) {
+  if (!entries) return [];
+  if (Array.isArray(entries)) return entries;
+  if (entries instanceof Map) return Array.from(entries.entries());
+  if (typeof entries === 'object') return Object.entries(entries);
+  return [];
+}
+
+function isSnapshotActiveGoal(goal) {
+  if (!goal) return false;
+  const status = String(goal.status || 'active').toLowerCase();
+  const progress = Number.isFinite(Number(goal.progress)) ? Number(goal.progress) : null;
+  return status === 'active' && (progress === null || progress < 1);
 }
 
 async function persistArchivedGoalsToState(logsDir, archivedIds = [], reason = 'archive_request') {
@@ -8298,12 +8318,13 @@ async function persistArchivedGoalsToState(logsDir, archivedIds = [], reason = '
 
   const snapshot = readSnapshot(logsDir) || {};
   const completedCount = Array.isArray(state.goals.completed) ? state.goals.completed.length : 0;
+  const activeCount = compactActiveGoalsForSnapshot(nextActive, Number.POSITIVE_INFINITY).length;
   writeSnapshot(logsDir, {
     ...snapshot,
     savedAt: new Date().toISOString(),
     cycle: state.cycleCount ?? snapshot.cycle ?? 0,
     goalCounts: {
-      active: nextActive.length,
+      active: activeCount,
       completed: completedCount,
       archived: state.goals.archived.length,
     },

@@ -81,6 +81,8 @@ test('Good Life obligation snapshot exposes active agenda rows and goals', () =>
   assert.equal(snapshot.counts.activeGoals, 1);
   assert.deepEqual(snapshot.activeAgenda.map((row) => row.id), ['ag-3', 'ag-1']);
   assert.equal(snapshot.activeGoals[0].id, 'goal_1');
+  assert.equal(snapshot.latestAgendaById['ag-2'].status, 'stale');
+  assert.equal(snapshot.latestAgendaById['ag-3'].status, 'surfaced');
 });
 
 test('Good Life operator model exposes safe current help state with evidence and action card', () => {
@@ -113,6 +115,32 @@ test('Good Life operator model exposes safe current help state with evidence and
   assert.equal(model.latestRegulatorAction.agendaId, 'ag-gl-test');
   assert.equal(model.lanes.find((lane) => lane.name === 'continuity').active, true);
   assert.ok(model.operatorAnswer.some((line) => line.includes('strained continuity drift')));
+});
+
+test('Good Life operator model annotates latest routed agenda status', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    regulator: {
+      'help:continuity:strained|usefulness:watch': {
+        at: '2026-05-08T13:43:00.000Z',
+        agendaId: 'ag-gl-test',
+        mode: 'help',
+      },
+    },
+    obligations: buildGoodLifeObligationSnapshot({
+      agendaRows: [
+        { type: 'add', id: 'ag-gl-test', record: { status: 'candidate', content: 'Check thing', createdAt: '2026-05-08T13:00:00.000Z' } },
+        { type: 'status', id: 'ag-gl-test', status: 'acted_on', at: '2026-05-08T13:44:00.000Z', note: 'completed in test' },
+      ],
+      now: NOW,
+    }),
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.equal(model.latestRegulatorAction.agendaId, 'ag-gl-test');
+  assert.equal(model.latestRegulatorAction.agendaStatus, 'acted_on');
+  assert.equal(model.latestRegulatorAction.agendaStatusNote, 'completed in test');
 });
 
 test('Good Life operator model marks projection mismatch as conflicted and keeps direct live problems visible', () => {

@@ -165,9 +165,17 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, now = 
       ageMin: ageMinutes(goal.createdAt || goal.created_at || goal.created, nowMs),
     }));
 
+  const latestAgendaById = Object.fromEntries([...agenda.values()].map((row) => [row.id, {
+    status: row.status || 'candidate',
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || row.createdAt || null,
+    statusNote: row.statusNote || null,
+  }]));
+
   return {
     activeAgenda,
     activeGoals,
+    latestAgendaById,
     counts: {
       activeAgenda: activeAgenda.length,
       activeGoals: activeGoals.length,
@@ -188,6 +196,18 @@ function latestRegulatorAction(regulator = {}) {
     .filter(([key, value]) => key !== 'daily' && value && toTimeMs(value.at))
     .map(([key, value]) => ({ key, ...value }))
     .sort((a, b) => toTimeMs(b.at) - toTimeMs(a.at))[0] || null;
+}
+
+function annotateLatestRegulatorAction(action, obligations) {
+  if (!action?.agendaId) return action || null;
+  const latestAgenda = obligations?.latestAgendaById?.[action.agendaId] || null;
+  if (!latestAgenda) return action;
+  return {
+    ...action,
+    agendaStatus: latestAgenda.status || null,
+    agendaUpdatedAt: latestAgenda.updatedAt || latestAgenda.createdAt || null,
+    agendaStatusNote: latestAgenda.statusNote || null,
+  };
 }
 
 function buildLanes(state, commitments = {}) {
@@ -378,7 +398,7 @@ function buildGoodLifeOperatorModel({
   const projection = normalizeProjection(state);
   const lanes = buildLanes(state, commitments || {});
   const freshness = buildFreshness(state, commitments || {}, nowMs);
-  const latestAction = latestRegulatorAction(regulator || {});
+  const latestAction = annotateLatestRegulatorAction(latestRegulatorAction(regulator || {}), obligations);
   const consistency = buildConsistency({
     state,
     projection,
