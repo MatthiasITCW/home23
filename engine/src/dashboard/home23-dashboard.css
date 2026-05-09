@@ -2814,6 +2814,13 @@ body.h23-external-focus #cosmo23-refresh-btn {
   background: rgba(255,120,120,0.12);
 }
 
+.h23-goodlife-problem-state.healthy,
+.h23-goodlife-problem-state.clear,
+.h23-goodlife-problem-state.resolved {
+  color: #9ee8bf;
+  background: rgba(112, 211, 162, 0.12);
+}
+
 .h23-goodlife-needs-user {
   color: #ffd38a;
   background: rgba(255,190,90,0.1);
@@ -3104,6 +3111,25 @@ body.h23-external-focus #cosmo23-refresh-btn {
   gap: 8px;
 }
 
+.h23-goodlife-clear-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: var(--text-secondary);
+}
+
+.h23-goodlife-overlay-detail .h23-goodlife-clear-state h3 {
+  margin: 0 0 5px;
+}
+
+.h23-goodlife-clear-state p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 .h23-goodlife-overlay-detail h3 {
   margin: 10px 0 14px;
   color: var(--text-primary);
@@ -3256,6 +3282,20 @@ body.h23-external-focus #cosmo23-refresh-btn {
   .h23-goodlife-overlay-panel {
     width: 96vw;
     max-height: 92vh;
+  }
+
+  .h23-goodlife-overlay-body {
+    overflow-y: auto;
+  }
+
+  .h23-goodlife-overlay-workspace {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .h23-goodlife-overlay-list,
+  .h23-goodlife-overlay-detail {
+    overflow: visible;
   }
 }
 

@@ -2858,6 +2858,8 @@ function goodLifeProblemsFor(data, states) {
   return (data?.liveProblems?.problems || [])
     .filter((problem) => wanted.has(problem.state))
     .sort((a, b) => {
+      const interventionRank = Number(goodLifeNeedsUser(b)) - Number(goodLifeNeedsUser(a));
+      if (interventionRank !== 0) return interventionRank;
       const rank = { chronic: 0, open: 1, unverifiable: 2, resolved: 3 };
       const stateRank = (rank[a.state] ?? 9) - (rank[b.state] ?? 9);
       if (stateRank !== 0) return stateRank;
@@ -2994,9 +2996,35 @@ function renderGoodLifeTabs(data) {
   return tabs.map(([tab, label]) => `<button class="h23-goodlife-tab ${goodLifeOverlayState.tab === tab ? 'active' : ''}" type="button" onclick="switchGoodLifeTab('${tab}')">${escapeHtml(label)}</button>`).join('');
 }
 
-function renderGoodLifeIssueDetail(problem) {
+function renderGoodLifeIssueEmptyDetail(data) {
+  const operator = data?.operator || {};
+  const counts = operator.liveProblems?.counts || {};
+  const detail = operator.detail || {};
+  const workCounts = detail.work?.obligations?.counts || {};
+  const activeWork = Number(workCounts.activeAgenda || 0) + Number(workCounts.activeGoals || 0);
+  const resolved = Number(detail.resolutions?.totalResolved || counts.resolved || 0);
+  const lanes = (operator.lanes || []).filter((lane) => lane.active || lane.status !== 'healthy').slice(0, 4);
+  return `
+    <div class="h23-goodlife-clear-state">
+      <span class="h23-goodlife-problem-state healthy">clear</span>
+      <div>
+        <h3>No active Good Life issues</h3>
+        <p>Live-problem registry is clear. Home23 does not need user intervention for this agent right now.</p>
+      </div>
+    </div>
+    <div class="h23-goodlife-detail-grid">
+      <div><label>Open Problems</label><p>${Number(counts.open || 0)} open / ${Number(counts.chronic || 0)} chronic</p><small>${Number(counts.unverifiable || 0)} unverifiable</small></div>
+      <div><label>User Intervention</label><p>${Number(counts.interventionRequired || 0)} needed</p><small>${Number(counts.interventionRequired || 0) > 0 ? 'review the highlighted issue rows' : 'autonomous remediation is not blocked'}</small></div>
+      <div><label>Recent Resolutions</label><p>${resolved}</p><small>open the Resolutions tab for evidence receipts and fix recipes</small></div>
+      <div><label>Active Work</label><p>${activeWork}</p><small>open the Work tab for routed agenda and goal obligations</small></div>
+    </div>
+    <section><h4>Watched Lanes</h4>${lanes.length ? lanes.map((lane) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(lane.name)}</strong><span>${escapeHtml((lane.reasons || []).join(' - ') || lane.status || '')}</span><small>${escapeHtml(lane.status || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">All lanes currently report healthy or non-blocking status.</div>'}</section>
+  `;
+}
+
+function renderGoodLifeIssueDetail(problem, data) {
   if (!problem) {
-    return '<div class="h23-goodlife-empty h23-goodlife-pad">Select an issue to see verifier, attempts, and evidence.</div>';
+    return renderGoodLifeIssueEmptyDetail(data);
   }
   const last = problem.lastResult || {};
   const attempts = (problem.remediationLog || []).slice().reverse();
@@ -3151,7 +3179,7 @@ function renderGoodLifeOverlay() {
       goodLifeOverlayState.selectedProblemId = problems[0]?.id || null;
     }
     listHtml = renderGoodLifeProblemList(problems);
-    detailHtml = renderGoodLifeIssueDetail(problems.find((problem) => problem.id === goodLifeOverlayState.selectedProblemId));
+    detailHtml = renderGoodLifeIssueDetail(problems.find((problem) => problem.id === goodLifeOverlayState.selectedProblemId), data);
   } else if (goodLifeOverlayState.tab === 'work') {
     listHtml = renderGoodLifeWorkList(data);
     detailHtml = renderGoodLifeWorkDetail(data);
