@@ -2910,10 +2910,11 @@ function updateGoodLifeTile(data, scope = 'home') {
   const latest = operator?.latestRegulatorAction;
   const workCounts = operator?.detail?.work?.obligations?.counts || {};
   const activeWork = Number(workCounts.activeAgenda || 0) + Number(workCounts.activeGoals || 0);
-  const latestStatus = latest?.agendaStatus ? ` (${latest.agendaStatus})` : '';
-  const action = latest?.agendaId
+  const latestActive = latest?.agendaId && goodLifeAgendaStatusIsActive(latest.agendaStatus);
+  const latestStatus = latestActive && latest?.agendaStatus ? ` (${latest.agendaStatus})` : '';
+  const action = latestActive
     ? `active work ${activeWork}; latest routed ${latest.agendaId}${latestStatus}`
-    : `active work ${activeWork}`;
+    : `active work ${activeWork}; no active routed work`;
   const evaluatedAt = operator?.freshness?.evaluatedAt || state.evaluatedAt;
   const freshness = evaluatedAt ? `evaluated ${timeSince(new Date(evaluatedAt))}` : 'freshness unknown';
   setText(id('goodlife-meta'), `${freshness} - ${action}`);
@@ -2961,6 +2962,18 @@ function goodLifeProblemsFor(data, states) {
 
 function goodLifeCountsText(counts = {}) {
   return `${Number(counts.open || 0)} open / ${Number(counts.chronic || 0)} chronic / ${Number(counts.unverifiable || 0)} unverifiable`;
+}
+
+function goodLifeAgendaStatusIsActive(status) {
+  return ['candidate', 'surfaced', 'acknowledged'].includes(String(status || '').toLowerCase());
+}
+
+function goodLifeLatestRoutedText(latest = {}, activeWork = 0) {
+  if (latest?.at && goodLifeAgendaStatusIsActive(latest.agendaStatus)) {
+    const status = latest.agendaStatus ? ` - ${escapeHtml(latest.agendaStatus)}` : '';
+    return `latest routed ${escapeHtml(timeSince(new Date(latest.at)))}${status}`;
+  }
+  return activeWork > 0 ? 'active routed work needs review' : 'no active routed work';
 }
 
 function renderGoodLifeJson(value) {
@@ -3066,7 +3079,7 @@ function renderGoodLifeTop(data) {
       <div class="h23-goodlife-top-card">
         <label>Active Work</label>
         <strong>${activeWork}</strong>
-        <span>${latest.at ? `latest routed ${escapeHtml(timeSince(new Date(latest.at)))}${latest.agendaStatus ? ` - ${escapeHtml(latest.agendaStatus)}` : ''}` : 'no routed agenda action'}</span>
+        <span>${goodLifeLatestRoutedText(latest, activeWork)}</span>
       </div>
     </div>
     ${answerLines.length ? `<div class="h23-goodlife-operator-answer-panel">
