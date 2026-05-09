@@ -259,6 +259,7 @@ function classifyAgendaReview(row = {}) {
   const sourceSignal = String(row.sourceSignal || '').toLowerCase();
   const tags = Array.isArray(row.topicTags) ? row.topicTags.map((tag) => String(tag || '').toLowerCase()) : [];
   const isGoodLife = sourceSignal === 'good-life' || tags.some((tag) => tag === 'good-life' || tag.startsWith('good-life:'));
+  const suggestedWorker = row.workerRoute || suggestAgendaWorker(row, { isGoodLife, tags, sourceSignal });
 
   if (isGoodLife && !row.workerRoute && ageMin != null && ageMin >= GOOD_LIFE_AGENDA_REVIEW_MIN) {
     return {
@@ -267,6 +268,7 @@ function classifyAgendaReview(row = {}) {
       severity: 'watch',
       reason: `Good Life agenda row is ${Math.round(ageMin / 60)}h old and has no worker route`,
       next: 'dismiss it if live Good Life state has moved on; otherwise route it through a worker with fresh evidence',
+      suggestedWorker,
     };
   }
 
@@ -277,6 +279,7 @@ function classifyAgendaReview(row = {}) {
       severity: 'watch',
       reason: `acknowledged agenda row is still active after ${Math.round(ageMin / 60)}h`,
       next: 'dismiss it if it no longer represents current work',
+      suggestedWorker,
     };
   }
 
@@ -287,6 +290,7 @@ function classifyAgendaReview(row = {}) {
       severity: 'watch',
       reason: `agenda row has stayed active for ${Math.round(ageMin / 60)}h`,
       next: 'run the routed worker if still current; dismiss it if stale',
+      suggestedWorker,
     };
   }
 
@@ -296,7 +300,42 @@ function classifyAgendaReview(row = {}) {
     severity: 'ok',
     reason: null,
     next: null,
+    suggestedWorker: row.workerRoute || null,
   };
+}
+
+function suggestAgendaWorker(row = {}, context = {}) {
+  const text = `${row.content || ''} ${(row.topicTags || []).join(' ')}`.toLowerCase();
+  if (row.workerRoute?.worker) return row.workerRoute;
+  if (context.isGoodLife && /repair|recover|viability|friction|engine|process|pm2|host|cpu|memory pressure/.test(text)) {
+    return {
+      worker: 'systems',
+      reason: 'legacy Good Life repair/recovery row needs current host and process evidence',
+      inferred: true,
+    };
+  }
+  if (/memory|context|handoff|canonical|consolidat|coherence|brain/.test(text)) {
+    return {
+      worker: 'memory',
+      reason: 'stale agenda row needs memory, context, or handoff inspection',
+      inferred: true,
+    };
+  }
+  if (/cron|fresh|stale|ingest|pipeline|health|api|sensor|data|dashboard|output/.test(text)) {
+    return {
+      worker: 'freshness',
+      reason: 'stale agenda row needs freshness and visible-output evidence',
+      inferred: true,
+    };
+  }
+  if (context.isGoodLife) {
+    return {
+      worker: 'freshness',
+      reason: 'legacy Good Life row needs a bounded evidence check before further action',
+      inferred: true,
+    };
+  }
+  return null;
 }
 
 function latestRegulatorAction(regulator = {}) {

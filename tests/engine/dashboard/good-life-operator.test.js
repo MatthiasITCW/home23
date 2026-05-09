@@ -160,8 +160,43 @@ test('Good Life obligation snapshot flags stale active agenda rows for operator 
   assert.equal(snapshot.activeAgenda.length, 2);
   assert.equal(snapshot.activeAgenda[0].review.recommended, true);
   assert.match(snapshot.activeAgenda[0].review.reason, /Good Life agenda row/);
+  assert.equal(snapshot.activeAgenda[0].review.suggestedWorker.worker, 'systems');
+  assert.equal(snapshot.activeAgenda[0].review.suggestedWorker.inferred, true);
   assert.equal(snapshot.activeAgenda[1].review.recommended, true);
   assert.match(snapshot.activeAgenda[1].review.reason, /acknowledged agenda row/);
+});
+
+test('Good Life obligation snapshot suggests workers for stale legacy agenda topics', () => {
+  const snapshot = buildGoodLifeObligationSnapshot({
+    agendaRows: [
+      {
+        type: 'add',
+        id: 'ag-old-memory',
+        record: {
+          status: 'surfaced',
+          content: 'Audit persistent context copies across workspaces and consolidate canonical memory',
+          sourceSignal: 'anomaly',
+          topicTags: ['system', 'memory'],
+          createdAt: '2026-05-07T11:30:00.000Z',
+        },
+      },
+      {
+        type: 'add',
+        id: 'ag-old-cron',
+        record: {
+          status: 'surfaced',
+          content: 'Verify Pi API cron job is fetching recent running data',
+          sourceSignal: 'anomaly',
+          topicTags: ['cron', 'data ingestion'],
+          createdAt: '2026-05-07T11:30:00.000Z',
+        },
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(snapshot.activeAgenda[0].review.suggestedWorker.worker, 'memory');
+  assert.equal(snapshot.activeAgenda[1].review.suggestedWorker.worker, 'freshness');
 });
 
 test('Good Life operator model exposes safe current help state with evidence and action card', () => {

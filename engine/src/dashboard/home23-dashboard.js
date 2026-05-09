@@ -3092,6 +3092,7 @@ function buildGoodLifeWorkerPrompt(problem) {
 
 function compactGoodLifeAgendaForWorker(item) {
   if (!item) return {};
+  const route = effectiveGoodLifeAgendaWorkerRoute(item);
   return {
     id: item.id,
     status: item.status,
@@ -3102,8 +3103,14 @@ function compactGoodLifeAgendaForWorker(item) {
     updatedAt: item.updatedAt,
     ageMin: item.ageMin,
     temporalContext: item.temporalContext,
-    workerRoute: item.workerRoute,
+    workerRoute: route,
+    originalWorkerRoute: item.workerRoute || null,
+    review: item.review || null,
   };
+}
+
+function effectiveGoodLifeAgendaWorkerRoute(item) {
+  return item?.workerRoute || item?.review?.suggestedWorker || null;
 }
 
 function buildGoodLifeAgendaWorkerPrompt(item) {
@@ -3112,7 +3119,7 @@ function buildGoodLifeAgendaWorkerPrompt(item) {
   return [
     `Good Life routed work for ${scopeLabel}.`,
     '',
-    'Inspect this Good Life agenda item with current evidence. Use the recommended worker lane as the starting point, verify the relevant files/endpoints when safe, and return a receipt with pass/fail/blocked evidence and the smallest concrete next action.',
+    'Inspect this Good Life agenda item with current evidence. Use the recommended or inferred worker lane as the starting point, verify the relevant files/endpoints when safe, and return a receipt with pass/fail/blocked evidence and the smallest concrete next action.',
     '',
     'Guardrails: do not use global PM2 stop/delete, do not discard local changes, do not restart unrelated services, and do not claim resolution without verifier evidence.',
     '',
@@ -3147,7 +3154,7 @@ function renderGoodLifeWorkDetail(data) {
     item.workerRoute?.worker ? `worker: ${item.workerRoute.worker}` : null,
   ].filter(Boolean).join(' - ');
   const agendaActions = (item) => `<div class="h23-goodlife-mini-actions">
-    ${item.workerRoute?.worker ? `<button type="button" onclick="runGoodLifeAgendaWorkerCheck('${escapeAttr(item.id || '')}')">Run ${escapeHtml(item.workerRoute.worker)}</button>` : ''}
+    ${effectiveGoodLifeAgendaWorkerRoute(item)?.worker ? `<button type="button" onclick="runGoodLifeAgendaWorkerCheck('${escapeAttr(item.id || '')}')">Run ${escapeHtml(effectiveGoodLifeAgendaWorkerRoute(item).worker)}</button>` : ''}
     <button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'acknowledged')">Acknowledge</button>
     <button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'stale')">Dismiss</button>
   </div>`;
@@ -3460,7 +3467,8 @@ async function runGoodLifeAgendaWorkerCheck(agendaId) {
     setText('goodlife-overlay-action-status', 'Select an active Good Life work item first.');
     return;
   }
-  const workerName = item.workerRoute?.worker;
+  const workerRoute = effectiveGoodLifeAgendaWorkerRoute(item);
+  const workerName = workerRoute?.worker;
   if (!workerName) {
     setText('goodlife-overlay-action-status', 'This Good Life work item does not have a recommended worker route.');
     return;
@@ -3481,7 +3489,7 @@ async function runGoodLifeAgendaWorkerCheck(agendaId) {
           surface: 'good-life',
           scope: goodLifeOverlayState.scope,
           agendaId,
-          workerRoute: item.workerRoute,
+          workerRoute,
         },
       }),
     });
