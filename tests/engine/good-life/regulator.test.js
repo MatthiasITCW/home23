@@ -69,6 +69,42 @@ test('GoodLifeRegulator routes recover policy through agenda and motor cortex', 
   assert.equal(acted[0].context.actor, 'good-life-regulator');
 });
 
+test('GoodLifeRegulator stales older Good Life agenda rows when AgendaStore is ready', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  const added = [];
+  const staleUpdates = [];
+  const regulator = new GoodLifeRegulator({
+    brainDir: dir,
+    getAgendaStore: () => ({
+      list(filter) {
+        assert.deepEqual(filter.status, ['candidate', 'surfaced', 'acknowledged']);
+        return [
+          { id: 'ag-good-life-old', status: 'candidate', sourceSignal: 'good-life', topicTags: ['good-life'] },
+          { id: 'ag-other', status: 'candidate', sourceSignal: 'anomaly', topicTags: ['cron'] },
+        ];
+      },
+      updateStatus(id, status, opts) {
+        staleUpdates.push({ id, status, opts });
+        return { id, status };
+      },
+      add(params) {
+        added.push(params);
+        return { id: 'ag-good-life-new', content: params.content, status: 'candidate' };
+      },
+    }),
+  });
+
+  const result = await regulator.handleObservation(recoverObservation());
+
+  assert.equal(result.status, 'queued_no_motor');
+  assert.equal(staleUpdates.length, 1);
+  assert.equal(staleUpdates[0].id, 'ag-good-life-old');
+  assert.equal(staleUpdates[0].status, 'stale');
+  assert.equal(staleUpdates[0].opts.actor, 'good-life-regulator');
+  assert.equal(staleUpdates[0].opts.skipReconcile, true);
+  assert.equal(added[0].temporalContext.staledPriorGoodLifeAgenda, 1);
+});
+
 test('GoodLifeRegulator appends agenda event when AgendaStore is not ready', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
   const regulator = new GoodLifeRegulator({ brainDir: dir, throttleMs: 1 });

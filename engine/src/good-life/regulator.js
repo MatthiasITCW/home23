@@ -45,9 +45,11 @@ class GoodLifeRegulator {
     const agendaStore = this.getAgendaStore();
     let record = null;
     if (agendaStore?.add) {
+      const now = new Date().toISOString();
+      const staledPrior = this._stalePriorGoodLifeAgendaStore(agendaStore, now);
       record = agendaStore.add({
         sourceThoughtId: obs.traceId || obs.sourceRef || null,
-        sourceCycleSessionId: `good-life:${evaluation.evaluatedAt || new Date().toISOString()}`,
+        sourceCycleSessionId: `good-life:${evaluation.evaluatedAt || now}`,
         content: agenda.content,
         kind: agenda.kind,
         topicTags: agenda.topicTags,
@@ -59,6 +61,7 @@ class GoodLifeRegulator {
           lanes: agenda.lanes,
           usefulnessContract: usefulness,
           workerRoute: agenda.workerRoute,
+          staledPriorGoodLifeAgenda: staledPrior,
         },
       });
     } else {
@@ -268,6 +271,30 @@ class GoodLifeRegulator {
       return staleRows.length;
     } catch (err) {
       this.logger.warn?.('[good-life] agenda stale sweep failed:', err?.message || err);
+      return 0;
+    }
+  }
+
+  _stalePriorGoodLifeAgendaStore(agendaStore, now = new Date().toISOString()) {
+    try {
+      if (!agendaStore?.list || !agendaStore?.updateStatus) return 0;
+      const rows = agendaStore.list({ status: ['candidate', 'surfaced', 'acknowledged'], limit: 200 }) || [];
+      let staled = 0;
+      for (const row of rows) {
+        const tags = Array.isArray(row.topicTags) ? row.topicTags : [];
+        const isGoodLife = row.sourceSignal === 'good-life' || tags.includes('good-life');
+        if (!isGoodLife || !row.id) continue;
+        const updated = agendaStore.updateStatus(row.id, 'stale', {
+          actor: 'good-life-regulator',
+          note: 'superseded by newer Good Life regulator action',
+          at: now,
+          skipReconcile: true,
+        });
+        if (updated) staled += 1;
+      }
+      return staled;
+    } catch (err) {
+      this.logger.warn?.('[good-life] agenda-store stale sweep failed:', err?.message || err);
       return 0;
     }
   }
