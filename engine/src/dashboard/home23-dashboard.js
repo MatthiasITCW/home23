@@ -3064,6 +3064,7 @@ function renderGoodLifeFleetSummary() {
   const repairing = statuses.filter((item) => item.status.state === 'repairing');
   const review = statuses.filter((item) => item.status.state === 'review');
   const working = statuses.filter((item) => item.status.state === 'working');
+  const unknown = statuses.filter((item) => item.status.state === 'unknown');
   const headline = needsUser.length
     ? `${needsUser.length} agent${needsUser.length === 1 ? '' : 's'} need jtr`
     : repairing.length
@@ -3072,7 +3073,9 @@ function renderGoodLifeFleetSummary() {
         ? `${review.length} agent${review.length === 1 ? '' : 's'} need review`
         : working.length
           ? `${working.length} agent${working.length === 1 ? '' : 's'} working autonomously`
-          : 'All agents clear or monitoring';
+          : unknown.length
+            ? `${unknown.length} agent${unknown.length === 1 ? '' : 's'} status unknown`
+            : 'All agents clear or monitoring';
   el.innerHTML = `
     <div class="h23-goodlife-fleet-head">
       <span>Fleet</span>

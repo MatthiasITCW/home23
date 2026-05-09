@@ -663,6 +663,7 @@ test('Good Life operator model builds end-user detail sections for drill-down na
     ],
     ledgerTail: [
       { at: '2026-05-08T13:40:00.000Z', event: 'good_life.evaluated', summary: 'help mode', evidence: { heavy: 'x'.repeat(10_000) } },
+      { schema: 'home23.good-life.v1', evaluatedAt: '2026-05-08T13:42:00.000Z', policy: { mode: 'learn' }, summary: 'learn mode' },
     ],
     now: NOW,
   });
@@ -680,6 +681,8 @@ test('Good Life operator model builds end-user detail sections for drill-down na
   assert.equal(model.detail.insights.activeCommitments[0].id, 'continuity');
   assert.equal(model.detail.insights.trendMetrics.pendingAgenda, 145);
   assert.equal(model.detail.insights.ledgerTail[0].event, 'good_life.evaluated');
+  assert.equal(model.detail.insights.ledgerTail[0].at, '2026-05-08T13:42:00.000Z');
+  assert.equal(model.detail.insights.ledgerTail[0].mode, 'learn');
   assert.equal(model.detail.insights.ledgerTail[0].evidence, undefined);
   assert.equal(model.ledgerTail[0].evidence, undefined);
 });

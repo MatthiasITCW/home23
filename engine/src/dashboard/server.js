@@ -5180,14 +5180,18 @@ Be specific, actionable, and maintain research continuity.`;
           activeGoals: Array.isArray(value.activeGoals) ? value.activeGoals : [],
           counts: value.counts || { activeAgenda: 0, activeGoals: 0 },
         } : null;
-        const compactGoodLifeLedgerEntry = (entry = {}) => ({
-          at: entry.at || entry.timestamp || null,
-          event: entry.event || entry.type || null,
-          mode: entry.mode || entry.policy?.mode || null,
-          summary: String(entry.summary || entry.message || entry.policy?.reason || '').replace(/\s+/g, ' ').trim().slice(0, 220),
-          problemId: entry.problemId || entry.evidence?.problemId || null,
-          agendaId: entry.agendaId || entry.evidence?.agendaId || null,
-        });
+        const compactGoodLifeLedgerEntry = (entry = {}) => {
+          const isGoodLifeEvaluation = entry.schema === 'home23.good-life.v1'
+            || entry.state?.schema === 'home23.good-life.v1';
+          return {
+            at: entry.at || entry.timestamp || entry.evaluatedAt || entry.state?.evaluatedAt || null,
+            event: entry.event || entry.type || (isGoodLifeEvaluation ? 'good_life.evaluated' : null),
+            mode: entry.mode || entry.policy?.mode || null,
+            summary: String(entry.summary || entry.message || entry.policy?.reason || entry.state?.summary || '').replace(/\s+/g, ' ').trim().slice(0, 220),
+            problemId: entry.problemId || entry.evidence?.problemId || null,
+            agendaId: entry.agendaId || entry.evidence?.agendaId || null,
+          };
+        };
         const state = readJson('good-life-state.json');
         const commitments = readJson('good-life-commitments.json');
         const trends = readJson('good-life-trends-current.json');

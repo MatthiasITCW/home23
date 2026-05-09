@@ -767,11 +767,13 @@ function compactText(value, max = 160) {
 }
 
 function compactLedgerEntry(entry = {}) {
+  const isGoodLifeEvaluation = entry.schema === 'home23.good-life.v1'
+    || entry.state?.schema === 'home23.good-life.v1';
   return {
-    at: entry.at || entry.timestamp || null,
-    event: entry.event || entry.type || null,
+    at: entry.at || entry.timestamp || entry.evaluatedAt || entry.state?.evaluatedAt || null,
+    event: entry.event || entry.type || (isGoodLifeEvaluation ? 'good_life.evaluated' : null),
     mode: entry.mode || entry.policy?.mode || null,
-    summary: compactText(entry.summary || entry.message || entry.policy?.reason || '', 220),
+    summary: compactText(entry.summary || entry.message || entry.policy?.reason || entry.state?.summary || '', 220),
     problemId: entry.problemId || entry.evidence?.problemId || null,
     agendaId: entry.agendaId || entry.evidence?.agendaId || null,
   };
