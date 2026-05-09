@@ -2808,6 +2808,115 @@ body.h23-external-focus #cosmo23-refresh-btn {
   background: rgba(112,211,162,0.16);
 }
 
+.h23-goodlife-fleet {
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(255,255,255,0.035);
+}
+
+.h23-goodlife-fleet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.h23-goodlife-fleet-head span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.h23-goodlife-fleet-head strong {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.h23-goodlife-fleet-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.h23-goodlife-fleet-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.7fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 8px 9px;
+  color: var(--text-primary);
+  background: rgba(0,0,0,0.14);
+  text-align: left;
+  cursor: pointer;
+}
+
+.h23-goodlife-fleet-row:hover {
+  border-color: rgba(140,190,255,0.55);
+  background: rgba(255,255,255,0.07);
+}
+
+.h23-goodlife-fleet-row span,
+.h23-goodlife-fleet-row strong,
+.h23-goodlife-fleet-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h23-goodlife-fleet-row span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.h23-goodlife-fleet-row strong {
+  justify-self: end;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  text-transform: uppercase;
+  background: rgba(255,255,255,0.08);
+}
+
+.h23-goodlife-fleet-row small {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.h23-goodlife-fleet-row.needs-user,
+.h23-goodlife-fleet-row.critical {
+  border-color: rgba(255,120,120,0.55);
+}
+
+.h23-goodlife-fleet-row.repairing,
+.h23-goodlife-fleet-row.review,
+.h23-goodlife-fleet-row.attention {
+  border-color: rgba(255,190,90,0.45);
+}
+
+.h23-goodlife-fleet-row.working {
+  border-color: rgba(120,170,255,0.4);
+}
+
+.h23-goodlife-fleet-row.clear,
+.h23-goodlife-fleet-row.healthy {
+  border-color: rgba(120,220,160,0.35);
+}
+
+.h23-goodlife-fleet-empty {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .h23-goodlife-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 1fr);

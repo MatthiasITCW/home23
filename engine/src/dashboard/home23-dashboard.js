@@ -29,6 +29,7 @@ let homeTileCustomState = new Map();
 let tileActionDialogState = null;
 let homeTileBroadcast = null;
 const goodLifeSurfaceState = new Map();
+const goodLifeFleetState = new Map();
 let goodLifeOverlayState = {
   scope: 'home',
   tab: 'issues',
@@ -2214,6 +2215,9 @@ function goodLifeDomId(base, scope = 'home') {
 
 function renderGoodLifeTile(scope = 'home', title = 'Good Life') {
   const id = (base) => goodLifeDomId(base, scope);
+  const fleetHtml = scope === 'home'
+    ? '<div class="h23-goodlife-fleet" id="goodlife-fleet-summary"></div>'
+    : '';
   return `
     <div class="h23-tile h23-tile-goodlife">
       <div class="h23-tile-header">
@@ -2228,6 +2232,7 @@ function renderGoodLifeTile(scope = 'home', title = 'Good Life') {
         <div class="h23-goodlife-status unknown" id="${id('goodlife-status')}">UNKNOWN</div>
       </div>
       <div class="h23-goodlife-brief" id="${id('goodlife-brief')}"></div>
+      ${fleetHtml}
       <div class="h23-goodlife-grid">
         <section class="h23-goodlife-section">
           <div class="h23-goodlife-section-title">Why</div>
@@ -2666,7 +2671,7 @@ async function loadHomeTiles() {
   }).catch(() => { /* best-effort */ });
 
   const stateUrl = `${base || ''}/api/state`;
-  const [engineHealth, summary, feederData, thoughtData, dreamData, systemState, goodLifeData] = await Promise.all([
+  const [engineHealth, summary, feederData, thoughtData, dreamData, systemState, goodLifeData, goodLifeFleetData] = await Promise.all([
     fetchEngineHealth(primaryAgent).catch(() => null),
     apiFetch(`${base}/api/home/summary`, { timeoutMs: 4000 }).catch(() => null),
     apiFetch('/home23/feeder-status', { timeoutMs: 4000 }).catch(() => null),
@@ -2676,6 +2681,7 @@ async function loadHomeTiles() {
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null),
     apiFetch(`${base}/api/good-life`, { timeoutMs: 4000 }).catch(() => null),
+    loadGoodLifeFleet({ updateTiles: false }).catch(() => null),
   ]);
 
   if (summary) {
@@ -2702,6 +2708,7 @@ async function loadHomeTiles() {
 
   if (feederData) updateFeederTile(feederData);
   if (goodLifeData) updateGoodLifeTile(goodLifeData);
+  if (goodLifeFleetData) renderGoodLifeFleetSummary();
 
   if (thoughtData) {
     const thoughts = thoughtData.thoughts || thoughtData.journal || thoughtData || [];
@@ -2864,6 +2871,11 @@ function updateGoodLifeTile(data, scope = 'home') {
   if (data) {
     data._scope = scope;
     goodLifeSurfaceState.set(scope, data);
+    const agent = goodLifeAgentForScope(scope);
+    if (agent) {
+      goodLifeFleetState.set(scope, { agent, scope, data });
+      renderGoodLifeFleetSummary();
+    }
   }
   if (!state) {
     setText(id('goodlife-policy'), 'No Good Life state yet');
@@ -2944,6 +2956,110 @@ async function loadGoodLifeForScope(scope = 'home') {
   const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: 5000 }).catch(() => null);
   if (data) updateGoodLifeTile(data, scope);
   return data;
+}
+
+async function loadGoodLifeFleet({ updateTiles = true } = {}) {
+  const configuredAgents = Array.isArray(agents) && agents.length
+    ? agents
+    : [primaryAgent].filter(Boolean);
+  const rows = await Promise.all(configuredAgents.filter(Boolean).map(async (agent) => {
+    const scope = agent.name === primaryAgent?.name ? 'home' : `agent-${agent.name}`;
+    const base = apiBase(agent);
+    const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: 5000 }).catch(() => null);
+    const row = { agent, scope, data };
+    goodLifeFleetState.set(scope, row);
+    if (data && updateTiles) updateGoodLifeTile(data, scope);
+    return row;
+  }));
+  renderGoodLifeFleetSummary();
+  return rows;
+}
+
+function goodLifeFleetAgentName(row = {}) {
+  return row.agent?.displayName || row.agent?.name || goodLifeLabelForScope(row.scope || 'home');
+}
+
+function goodLifeFleetRank(row = {}) {
+  const operator = row.data?.operator || {};
+  const brief = operator.operatorBrief || {};
+  const work = operator.work || operator.detail?.work?.summary || {};
+  const counts = operator.liveProblems?.counts || {};
+  if (!row.data) return 10;
+  if (brief.needsUser || Number(counts.interventionRequired || 0) > 0 || work.status === 'needs-user') return 0;
+  if (['critical', 'needs-user'].includes(brief.severity)) return 1;
+  if (brief.severity === 'repairing' || Number(counts.open || 0) + Number(counts.chronic || 0) > 0) return 2;
+  if (work.status === 'review' || Number(work.agendaNeedingReview || 0) + Number(work.goalsNeedingReview || 0) > 0) return 3;
+  if (brief.severity === 'working' || work.status === 'working' || Number(work.activeTotal || 0) > 0) return 4;
+  if (brief.severity === 'attention' || operator.status === 'conflicted' || operator.status === 'stale') return 5;
+  return 6;
+}
+
+function goodLifeFleetStatus(row = {}) {
+  const operator = row.data?.operator || {};
+  const brief = operator.operatorBrief || {};
+  const work = operator.work || operator.detail?.work?.summary || {};
+  const counts = operator.liveProblems?.counts || {};
+  if (!row.data) {
+    return { state: 'unknown', label: 'Unknown', text: 'Good Life API unavailable' };
+  }
+  if (brief.needsUser || Number(counts.interventionRequired || 0) > 0 || work.status === 'needs-user') {
+    return { state: 'needs-user', label: 'Needs jtr', text: brief.next || work.statusText || 'manual decision required' };
+  }
+  if (brief.severity === 'repairing' || Number(counts.open || 0) + Number(counts.chronic || 0) > 0) {
+    return { state: 'repairing', label: 'Repairing', text: brief.next || 'autonomous repair is running' };
+  }
+  if (work.status === 'review' || Number(work.agendaNeedingReview || 0) + Number(work.goalsNeedingReview || 0) > 0) {
+    return { state: 'review', label: 'Review', text: work.statusText || brief.next || 'operator review recommended' };
+  }
+  if (brief.severity === 'working' || work.status === 'working' || Number(work.activeTotal || 0) > 0) {
+    return { state: 'working', label: 'Working', text: work.statusText || brief.next || 'autonomous work active' };
+  }
+  if (brief.severity === 'attention' || operator.status === 'conflicted' || operator.status === 'stale') {
+    return { state: 'attention', label: 'Attention', text: brief.next || brief.why || 'operator warning present' };
+  }
+  return { state: 'clear', label: 'Clear', text: brief.next || 'no user intervention needed' };
+}
+
+function renderGoodLifeFleetSummary() {
+  const el = document.getElementById('goodlife-fleet-summary');
+  if (!el) return;
+  const rows = [...goodLifeFleetState.values()]
+    .sort((a, b) => {
+      const rank = goodLifeFleetRank(a) - goodLifeFleetRank(b);
+      if (rank !== 0) return rank;
+      return goodLifeFleetAgentName(a).localeCompare(goodLifeFleetAgentName(b));
+    });
+  if (!rows.length) {
+    el.innerHTML = '<div class="h23-goodlife-fleet-empty">Loading agent fleet status...</div>';
+    return;
+  }
+  const statuses = rows.map((row) => ({ row, status: goodLifeFleetStatus(row) }));
+  const needsUser = statuses.filter((item) => item.status.state === 'needs-user');
+  const repairing = statuses.filter((item) => item.status.state === 'repairing');
+  const review = statuses.filter((item) => item.status.state === 'review');
+  const working = statuses.filter((item) => item.status.state === 'working');
+  const headline = needsUser.length
+    ? `${needsUser.length} agent${needsUser.length === 1 ? '' : 's'} need jtr`
+    : repairing.length
+      ? `${repairing.length} agent${repairing.length === 1 ? '' : 's'} repairing`
+      : review.length
+        ? `${review.length} agent${review.length === 1 ? '' : 's'} need review`
+        : working.length
+          ? `${working.length} agent${working.length === 1 ? '' : 's'} working autonomously`
+          : 'All agents clear or monitoring';
+  el.innerHTML = `
+    <div class="h23-goodlife-fleet-head">
+      <span>Fleet</span>
+      <strong>${escapeHtml(headline)}</strong>
+    </div>
+    <div class="h23-goodlife-fleet-list">
+      ${statuses.map(({ row, status }) => `<button class="h23-goodlife-fleet-row ${goodLifeCssClass(status.state)}" type="button" onclick="openGoodLifeOperator('${escapeAttr(row.scope || 'home')}')">
+        <span>${escapeHtml(goodLifeFleetAgentName(row))}</span>
+        <strong>${escapeHtml(status.label)}</strong>
+        <small>${escapeHtml(status.text)}</small>
+      </button>`).join('')}
+    </div>
+  `;
 }
 
 function goodLifeProblemsFor(data, states) {
