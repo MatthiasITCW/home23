@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   compactActiveGoalsForSnapshot,
   getEmergencyCoordinatorWorkState,
+  shouldRunEmergencyCoordinatorReview,
   buildForceOutputMissionSpec,
   persistArchivedGoalsToState,
 } = require('../../../engine/src/core/orchestrator.js');
@@ -121,6 +122,26 @@ test('emergency coordinator work state separates force-output goals from general
   assert.equal(workState.activeGoalCount, 2);
   assert.equal(workState.activeForceOutputGoalCount, 1);
   assert.equal(workState.activeGeneralGoalCount, 1);
+});
+
+test('emergency coordinator review waits for idle work to persist beyond cooldown', () => {
+  assert.equal(shouldRunEmergencyCoordinatorReview({
+    activeGeneralGoalCount: 3,
+    activeAgents: 0,
+    cyclesSinceLastReview: 2,
+  }, 10), false);
+
+  assert.equal(shouldRunEmergencyCoordinatorReview({
+    activeGeneralGoalCount: 3,
+    activeAgents: 0,
+    cyclesSinceLastReview: 10,
+  }, 10), true);
+
+  assert.equal(shouldRunEmergencyCoordinatorReview({
+    activeGeneralGoalCount: 3,
+    activeAgents: 1,
+    cyclesSinceLastReview: 50,
+  }, 10), false);
 });
 
 test('buildForceOutputMissionSpec creates direct document mission for digest goal', () => {

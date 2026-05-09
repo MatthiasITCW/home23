@@ -477,6 +477,7 @@ modelAssignments:
 coordinator:
   enabled: true
   reviewCyclePeriod: 50
+  emergencyReviewMinCycles: 10
   model: gpt-5.5
   reasoningEffort: low
   maxTokens: 3000
@@ -513,6 +514,13 @@ coordinator:
     containerTimeout: 600000
     maxContainersPerReview: 1
     autoCleanup: true
+  insightCuration:
+    maxRawInsights: 120
+    maxAgentReviewFiles: 5
+    maxThoughtInsights: 80
+    scoringBatchSize: 20
+    scoringParallelBatches: 1
+    scoringRequestTimeoutMs: 30000
 execution:
   baseInterval: 90
   backend: local

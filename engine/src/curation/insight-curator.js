@@ -17,6 +17,11 @@ function extractResponseText(response) {
   return '';
 }
 
+function finitePositive(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 /**
  * InsightCurator
  * 
@@ -42,6 +47,16 @@ class InsightCurator {
     this.minActionabilityScore = 6; // 0-10 scale
     this.minBusinessValueScore = 6;
     this.topNInsights = 20; // Extract top 20 for consultant review
+    this.curationConfig = this.config?.coordinator?.insightCuration || {};
+    this.maxRawInsights = finitePositive(this.curationConfig.maxRawInsights, 120);
+    this.maxAgentReviewFiles = finitePositive(this.curationConfig.maxAgentReviewFiles, 5);
+    this.maxThoughtInsights = finitePositive(this.curationConfig.maxThoughtInsights, 80);
+    this.scoringBatchSize = finitePositive(this.curationConfig.scoringBatchSize, 20);
+    this.scoringParallelBatches = finitePositive(this.curationConfig.scoringParallelBatches, 1);
+    this.scoringRequestTimeoutMs = finitePositive(
+      this.curationConfig.scoringRequestTimeoutMs,
+      finitePositive(this.config?.timeouts?.curationRequestTimeoutMs, 30000)
+    );
     
     // Safe configuration access with defaults (handles missing config from loaded state)
     this.curationMode = this.getCurationMode();
@@ -52,7 +67,10 @@ class InsightCurator {
       this.logger.info('InsightCurator initialized', {
         mode: this.curationMode,
         enabled: this.curationEnabled,
-        hasConfig: !!this.config?.coordinator?.insightCuration
+        hasConfig: !!this.config?.coordinator?.insightCuration,
+        maxRawInsights: this.maxRawInsights,
+        scoringParallelBatches: this.scoringParallelBatches,
+        scoringRequestTimeoutMs: this.scoringRequestTimeoutMs
       });
     }
   }
@@ -185,7 +203,40 @@ class InsightCurator {
       priority: 7
     })));
 
-    return insights;
+    return this.selectCurationInputs(insights);
+  }
+
+  selectCurationInputs(insights) {
+    const seen = new Set();
+    const ranked = [...insights]
+      .filter((insight) => insight?.content && String(insight.content).trim().length > 0)
+      .sort((a, b) => {
+        const priorityDelta = (b.priority || 0) - (a.priority || 0);
+        if (priorityDelta !== 0) return priorityDelta;
+        return (b.cycle || 0) - (a.cycle || 0);
+      });
+
+    const selected = [];
+    for (const insight of ranked) {
+      const fingerprint = String(insight.content)
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .slice(0, 180);
+      if (seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
+      selected.push(insight);
+      if (selected.length >= this.maxRawInsights) break;
+    }
+
+    if (this.logger?.info && selected.length < insights.length) {
+      this.logger.info('Curation inputs bounded', {
+        collected: insights.length,
+        selected: selected.length,
+        maxRawInsights: this.maxRawInsights
+      });
+    }
+
+    return selected;
   }
 
   /**
@@ -199,7 +250,7 @@ class InsightCurator {
       const files = await fs.readdir(coordinatorDir);
       const reviewFiles = files.filter(f => f.startsWith('review_') && f.endsWith('.md'));
 
-      for (const file of reviewFiles) {
+      for (const file of reviewFiles.sort().slice(-this.maxAgentReviewFiles)) {
         const content = await fs.readFile(path.join(coordinatorDir, file), 'utf-8');
         
         // Extract cycle number
@@ -344,7 +395,7 @@ class InsightCurator {
       }
     }
 
-    return thoughts;
+    return thoughts.slice(-this.maxThoughtInsights);
   }
 
   /**
@@ -361,8 +412,8 @@ class InsightCurator {
     
     // Score in batches to reduce API calls
     // Increased from 10 to 20 for faster processing (fewer API calls)
-    const batchSize = options.batchSize || 20;
-    const parallelBatches = options.parallel || 3; // Process 3 batches in parallel
+    const batchSize = finitePositive(options.batchSize, this.scoringBatchSize);
+    const parallelBatches = finitePositive(options.parallel, this.scoringParallelBatches);
     
     // Split insights into batches
     const batches = [];
@@ -403,8 +454,9 @@ Return ONLY a JSON array: [{"index": 1, "actionability": X, "specificity": X, "n
           const response = await this.gpt5.generate({
             model: this.config.models?.curatorModel || 'gpt-5.4-mini',
             input: scoringPrompt,
-            maxTokens: 6000, // Increased from 2000 - novelty evaluation needs thorough analysis
-            reasoningEffort: 'low'
+            maxTokens: 2500,
+            reasoningEffort: 'low',
+            requestTimeoutMs: this.scoringRequestTimeoutMs
           });
 
           // Parse scores from response content
@@ -1292,4 +1344,3 @@ ${strategicValue.length > 0 ? strategicValue.map((item, idx) => `
 }
 
 module.exports = { InsightCurator };
-

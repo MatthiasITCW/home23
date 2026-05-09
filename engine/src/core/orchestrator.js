@@ -99,6 +99,15 @@ function getEmergencyCoordinatorWorkState(goalsSystem, agentExecutor, cycleCount
   };
 }
 
+function shouldRunEmergencyCoordinatorReview(workState, minCycles = 10) {
+  const requiredCycles = Number.isFinite(Number(minCycles)) && Number(minCycles) > 0
+    ? Number(minCycles)
+    : 10;
+  return workState.activeGeneralGoalCount > 0 &&
+    workState.activeAgents === 0 &&
+    workState.cyclesSinceLastReview >= requiredCycles;
+}
+
 function buildForceOutputMissionSpec(goal, cycleCount) {
   if (!goal) return null;
   const fileCriteria = Array.isArray(goal.doneWhen?.criteria)
@@ -1504,9 +1513,15 @@ class Orchestrator {
         // work causes emergency reviews to fire on an otherwise empty board.
         // Force-output goals are concrete digest deliverables and are routed
         // directly above; the strategic review is too expensive for that path.
-        // Wait 2 cycles before triggering (gives system brief chance to self-organize)
-        // Prevents immediate spam while being responsive to idle state
-        if (activeGeneralGoalCount > 0 && activeAgents === 0 && cyclesSinceLastReview >= 2) {
+        // Emergency review is still an expensive full strategic review. Keep it
+        // as a backstop after the system has stayed idle for several cycles,
+        // not as a near-continuous path whenever ordinary goals exist.
+        const emergencyReviewMinCycles = this.config.coordinator?.emergencyReviewMinCycles || 10;
+        if (shouldRunEmergencyCoordinatorReview({
+          activeGeneralGoalCount,
+          activeAgents,
+          cyclesSinceLastReview,
+        }, emergencyReviewMinCycles)) {
           enterCyclePhase('emergency_coordinator_review');
           this.logger.info('🚨 Emergency coordinator review triggered', {
             reason: 'System idle with goals but no active agents',
@@ -1516,6 +1531,7 @@ class Orchestrator {
             totalGoalHistory,
             activeAgents,
             cyclesSinceLastReview,
+            emergencyReviewMinCycles,
             nextScheduledReview: this.coordinator.lastReviewCycle + this.coordinator.reviewInterval
           });
           
@@ -8627,6 +8643,7 @@ module.exports = {
   Orchestrator,
   compactActiveGoalsForSnapshot,
   getEmergencyCoordinatorWorkState,
+  shouldRunEmergencyCoordinatorReview,
   buildForceOutputMissionSpec,
   persistArchivedGoalsToState,
   shouldAddWorkspaceFeederFallback,
