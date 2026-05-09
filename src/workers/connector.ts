@@ -29,6 +29,10 @@ export interface WorkerRunSummary {
 
 const STALE_RUNNING_RUN_MS = 6 * 60 * 60 * 1000;
 
+export interface WorkerRunListOptions {
+  ownerAgent?: string;
+}
+
 export interface WorkerHandlerDeps {
   projectRoot: string;
   ctx?: ToolContext;
@@ -81,7 +85,8 @@ function isStaleRunningRun(startedAt: string | null, nowMs = Date.now()): boolea
   return Number.isFinite(startedMs) && nowMs - startedMs > STALE_RUNNING_RUN_MS;
 }
 
-function listRunSummaries(projectRoot: string): WorkerRunSummary[] {
+function listRunSummaries(projectRoot: string, options: WorkerRunListOptions = {}): WorkerRunSummary[] {
+  const ownerAgent = options.ownerAgent?.trim();
   const runs: WorkerRunSummary[] = [];
   for (const worker of listWorkers(projectRoot)) {
     const runsDir = path.join(worker.rootPath, 'runs');
@@ -92,7 +97,7 @@ function listRunSummaries(projectRoot: string): WorkerRunSummary[] {
       const receiptPath = path.join(runPath, 'receipt.json');
       if (existsSync(receiptPath)) {
         const receipt = readWorkerReceipt(receiptPath);
-        runs.push({
+        const summary: WorkerRunSummary = {
           runId: receipt.runId,
           worker: receipt.worker,
           ownerAgent: receipt.ownerAgent,
@@ -106,11 +111,12 @@ function listRunSummaries(projectRoot: string): WorkerRunSummary[] {
           summary: receipt.summary,
           runPath,
           receiptPath
-        });
+        };
+        if (!ownerAgent || summary.ownerAgent === ownerAgent) runs.push(summary);
       } else {
         const startedAt = runStartedAtFromPath(entry.name, runPath);
         const stale = isStaleRunningRun(startedAt);
-        runs.push({
+        const summary: WorkerRunSummary = {
           runId: entry.name,
           worker: worker.name,
           ownerAgent: worker.ownerAgent,
@@ -122,7 +128,8 @@ function listRunSummaries(projectRoot: string): WorkerRunSummary[] {
             : undefined,
           runPath,
           stale
-        });
+        };
+        if (!ownerAgent || summary.ownerAgent === ownerAgent) runs.push(summary);
       }
     }
   }
@@ -170,8 +177,8 @@ export function createWorkerHandlers(deps: WorkerHandlerDeps) {
         metadata: body.metadata
       });
     },
-    async listRuns() {
-      return { runs: listRunSummaries(deps.projectRoot) };
+    async listRuns(options: WorkerRunListOptions = {}) {
+      return { runs: listRunSummaries(deps.projectRoot, options) };
     },
     async getRun(runId: string) {
       const run = listRunSummaries(deps.projectRoot).find(item => item.runId === runId);
@@ -210,8 +217,9 @@ export function createWorkerRouter(deps: WorkerHandlerDeps): express.Router {
   router.get('/api/workers/templates', async (_req, res) => {
     try { res.json(await handlers.listTemplates()); } catch (err) { res.status(500).json({ error: String(err instanceof Error ? err.message : err) }); }
   });
-  router.get('/api/workers/runs', async (_req, res) => {
-    try { res.json(await handlers.listRuns()); } catch (err) { res.status(500).json({ error: String(err instanceof Error ? err.message : err) }); }
+  router.get('/api/workers/runs', async (req, res) => {
+    const ownerAgent = typeof req.query.ownerAgent === 'string' ? req.query.ownerAgent : undefined;
+    try { res.json(await handlers.listRuns({ ownerAgent })); } catch (err) { res.status(500).json({ error: String(err instanceof Error ? err.message : err) }); }
   });
   router.get('/api/workers/runs/:runId', async (req, res) => {
     try { res.json(await handlers.getRun(req.params.runId)); } catch (err) { res.status(404).json({ error: String(err instanceof Error ? err.message : err) }); }

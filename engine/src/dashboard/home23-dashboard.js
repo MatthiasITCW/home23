@@ -1942,6 +1942,7 @@ function renderWorkerRuns() {
       <span class="h23-worker-run-main">
         <strong>${escapeHtml(run.worker)}</strong>
         <span>${escapeHtml(run.summary || run.runId)}</span>
+        <small>owner ${escapeHtml(run.ownerAgent || 'house')}</small>
       </span>
       <span class="h23-worker-run-side">
         <span class="h23-worker-status ${workerStatusClass(run.status)}">${escapeHtml(run.status || 'running')}</span>

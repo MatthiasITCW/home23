@@ -166,3 +166,55 @@ test('worker handlers mark old receiptless runs as stale instead of running', as
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('worker handlers can filter run summaries by owner agent', async () => {
+  const root = path.join(tmpdir(), `home23-worker-connector-owner-${process.pid}-${Date.now()}`);
+  try {
+    const workerRoot = path.join(root, 'instances', 'workers', 'systems');
+    mkdirSync(path.join(workerRoot, 'runs', 'wr_jerry'), { recursive: true });
+    mkdirSync(path.join(workerRoot, 'runs', 'wr_forrest'), { recursive: true });
+    writeFileSync(path.join(workerRoot, 'worker.yaml'), [
+      'kind: worker',
+      'name: systems',
+      'displayName: Systems',
+      'ownerAgent: jerry',
+      'class: ops',
+      'purpose: Diagnose host issues',
+      '',
+    ].join('\n'));
+    for (const [runId, ownerAgent] of [['wr_jerry', 'jerry'], ['wr_forrest', 'forrest']]) {
+      writeFileSync(path.join(workerRoot, 'runs', runId, 'receipt.json'), `${JSON.stringify({
+        schema: 'home23.worker-run.v1',
+        runId,
+        worker: 'systems',
+        ownerAgent,
+        requestedBy: 'api',
+        startedAt: '2026-05-09T15:00:00.000Z',
+        finishedAt: ownerAgent === 'jerry' ? '2026-05-09T15:01:00.000Z' : '2026-05-09T15:02:00.000Z',
+        status: 'no_change',
+        verifierStatus: 'pass',
+        summary: `${ownerAgent} check`,
+        actions: [],
+        evidence: [],
+        artifacts: [],
+        memoryCandidates: [],
+      }, null, 2)}\n`);
+    }
+
+    const handlers = createWorkerHandlers({
+      projectRoot: root,
+      listWorkers: () => [],
+      listTemplates: () => [],
+      runWorker: async () => { throw new Error('not used'); },
+    });
+
+    const allRuns = await handlers.listRuns();
+    const forrestRuns = await handlers.listRuns({ ownerAgent: 'forrest' });
+    assert.deepEqual(allRuns.runs.map(run => run.ownerAgent).sort(), ['forrest', 'jerry']);
+    assert.equal(forrestRuns.runs.length, 1);
+    assert.equal(forrestRuns.runs[0].runId, 'wr_forrest');
+    assert.equal(forrestRuns.runs[0].ownerAgent, 'forrest');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

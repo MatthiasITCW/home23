@@ -4047,6 +4047,7 @@ body.h23-external-focus #cosmo23-refresh-btn {
 .h23-worker-meta,
 .h23-worker-purpose,
 .h23-worker-run-main span,
+.h23-worker-run-main small,
 .h23-worker-run-side time {
   color: var(--text-muted);
   font-size: 0.78rem;
