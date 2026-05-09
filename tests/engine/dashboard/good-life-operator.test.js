@@ -424,6 +424,34 @@ test('Good Life operator brief names clear state and latest resolution receipt',
   });
 });
 
+test('Good Life operator answer names latest verified resolution in clear state', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [
+      {
+        id: 'weather_sensor_fresh',
+        state: 'resolved',
+        claim: 'Weather tile sensor refreshing within last 30 min',
+        resolvedAt: '2026-05-08T13:44:00.000Z',
+        lastResult: { detail: 'weather sensor timestamp passed freshness check' },
+        fixRecipe: {
+          summary: 'Weather freshness passed after republishing the tile-backed sensor.',
+          verifierStatus: 'pass',
+        },
+        evidence: {
+          receiptId: 'ev_weather',
+          receiptPath: 'instances/jerry/brain/evidence/live-problems/weather.evidence.json',
+        },
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Latest verified resolution: Weather freshness passed')));
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Resolution verifier: weather sensor timestamp passed freshness check')));
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Resolution receipt: ev_weather')));
+});
+
 test('Good Life operator model treats old evaluations as stale even if counts agree', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({ evaluatedAt: '2026-05-08T12:00:00.000Z' }),

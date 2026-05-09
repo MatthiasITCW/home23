@@ -790,11 +790,35 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
   }
 
   const counts = liveProblems.counts || {};
-  lines.push(`Live-problem registry: ${counts.open || 0} open, ${counts.chronic || 0} chronic`);
-  if (Number(counts.interventionRequired || 0) > 0) {
+  const openCount = Number(counts.open || 0);
+  const chronicCount = Number(counts.chronic || 0);
+  const interventionCount = Number(counts.interventionRequired || 0);
+  lines.push(`Live-problem registry: ${openCount} open, ${chronicCount} chronic`);
+  if (interventionCount > 0) {
     lines.push(`${counts.interventionRequired} live problem(s) need user intervention`);
   }
   lines.push(...summarizeTopLiveProblem(liveProblems));
+
+  if (openCount === 0 && chronicCount === 0 && interventionCount === 0) {
+    const latestResolution = Array.isArray(liveProblems.resolved) ? liveProblems.resolved[0] || null : null;
+    if (latestResolution) {
+      const fixed = latestResolution.fixRecipe?.summary
+        || latestResolution.claim
+        || latestResolution.id
+        || 'recent repair';
+      lines.push(`Latest verified resolution: ${compactText(fixed, 180)}`);
+      const verifier = latestResolution.lastResult?.detail
+        || latestResolution.fixRecipe?.verifierStatus
+        || latestResolution.evidence?.result
+        || null;
+      if (verifier) {
+        lines.push(`Resolution verifier: ${compactText(verifier, 180)}`);
+      }
+      if (latestResolution.evidence?.receiptId || latestResolution.evidence?.receiptPath) {
+        lines.push(`Resolution receipt: ${latestResolution.evidence.receiptId || latestResolution.evidence.receiptPath}`);
+      }
+    }
+  }
 
   if (work?.activeTotal > 0) {
     const reviewParts = [];
