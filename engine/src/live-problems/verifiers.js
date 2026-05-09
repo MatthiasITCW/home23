@@ -393,7 +393,9 @@ function parseLogTimestamp(line, now = new Date()) {
  *   windowMinutes?: 30,
  *   maxCount?: 0,
  *   minCount?: null,
- *   maxLines?: 5000
+ *   maxLines?: 5000,
+ *   contextPattern?: "\\[cycle-phase\\] timeout context",
+ *   contextWindowLines?: 3
  * }
  */
 verifiers.log_recent_count = async function logRecentCount(args = {}) {
@@ -409,6 +411,14 @@ verifiers.log_recent_count = async function logRecentCount(args = {}) {
     re = new RegExp(pattern);
   } catch (err) {
     return { ok: false, detail: `invalid pattern: ${err.message}` };
+  }
+  let contextRe = null;
+  if (args.contextPattern) {
+    try {
+      contextRe = new RegExp(args.contextPattern);
+    } catch (err) {
+      return { ok: false, detail: `invalid contextPattern: ${err.message}` };
+    }
   }
 
   const windowMin = Number.isFinite(args.windowMinutes) ? args.windowMinutes : 60;
@@ -428,6 +438,22 @@ verifiers.log_recent_count = async function logRecentCount(args = {}) {
     let timestamped = 0;
     let firstMatch = null;
     let lastMatch = null;
+    const contextWindowLines = Math.max(0, Math.min(args.contextWindowLines || 3, 20));
+
+    const summarizeContext = (line) => {
+      const jsonStart = line.indexOf('{');
+      if (jsonStart === -1) return line.slice(0, 180);
+      try {
+        const parsed = JSON.parse(line.slice(jsonStart));
+        const parts = [];
+        if (parsed.phase) parts.push(`phase=${parsed.phase}`);
+        if (Number.isFinite(parsed.phaseElapsedMs)) parts.push(`phaseElapsedMs=${parsed.phaseElapsedMs}`);
+        if (Number.isFinite(parsed.elapsedMs)) parts.push(`elapsedMs=${parsed.elapsedMs}`);
+        return parts.length ? parts.join(' ') : line.slice(0, 180);
+      } catch {
+        return line.slice(0, 180);
+      }
+    };
 
     for (let i = start; i < lines.length; i++) {
       const line = lines[i];
@@ -443,15 +469,30 @@ verifiers.log_recent_count = async function logRecentCount(args = {}) {
         ts: new Date(tsMs).toISOString(),
         line: line.slice(0, 180),
       };
+      if (contextRe) {
+        for (let j = i + 1; j <= Math.min(lines.length - 1, i + contextWindowLines); j++) {
+          const contextLine = lines[j];
+          if (!contextLine) continue;
+          if (!contextRe.test(contextLine)) {
+            contextRe.lastIndex = 0;
+            continue;
+          }
+          contextRe.lastIndex = 0;
+          item.contextLine = contextLine.slice(0, 240);
+          item.contextSummary = summarizeContext(contextLine);
+          break;
+        }
+      }
       if (!firstMatch) firstMatch = item;
       lastMatch = item;
     }
 
     const ok = hasMin ? matchCount >= minCount : matchCount <= maxCount;
     const threshold = hasMin ? `need ${minCount}` : `limit ${maxCount}`;
+    const contextDetail = lastMatch?.contextSummary ? `; latest context ${lastMatch.contextSummary}` : '';
     return {
       ok,
-      detail: `${matchCount} matching log entries in last ${windowMin}m (${threshold}); scanned ${scanned}`,
+      detail: `${matchCount} matching log entries in last ${windowMin}m (${threshold}); scanned ${scanned}${contextDetail}`,
       observed: { matchCount, windowMin, maxCount, minCount, scanned, timestamped, firstMatch, lastMatch },
     };
   } catch (err) {

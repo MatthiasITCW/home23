@@ -154,6 +154,8 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
         args: {
           path: engineErrPath,
           pattern: '\\[TimeoutManager\\] Cycle timeout exceeded',
+          contextPattern: '\\[cycle-phase\\] timeout context',
+          contextWindowLines: 2,
           windowMinutes: 30,
           maxCount: 0,
           maxLines: 3000,

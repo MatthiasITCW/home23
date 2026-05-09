@@ -66,6 +66,33 @@ test('log_recent_count fails when recent bracketed log matches exceed maxCount',
   assert.match(result.detail, /limit 0/);
 });
 
+test('log_recent_count includes nearby timeout phase context when configured', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verifier-log-context-'));
+  const file = path.join(dir, 'engine-err.log');
+  const now = new Date();
+  fs.writeFileSync(file, [
+    `[${hhmmss(now)}] ERROR: [TimeoutManager] Cycle timeout exceeded {"cycle":12,"timeoutMs":300000,"elapsedMs":301000}`,
+    `[${hhmmss(now)}] ERROR: [cycle-phase] timeout context {"cycle":12,"elapsedMs":301000,"phase":"state_save","phaseElapsedMs":53007}`,
+    '',
+  ].join('\n'));
+
+  const result = await runVerifier({
+    type: 'log_recent_count',
+    args: {
+      path: file,
+      pattern: '\\[TimeoutManager\\] Cycle timeout exceeded',
+      contextPattern: '\\[cycle-phase\\] timeout context',
+      contextWindowLines: 2,
+      windowMinutes: 30,
+      maxCount: 0,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /latest context phase=state_save phaseElapsedMs=53007 elapsedMs=301000/);
+  assert.equal(result.observed.lastMatch.contextSummary, 'phase=state_save phaseElapsedMs=53007 elapsedMs=301000');
+});
+
 test('log_recent_count ignores matches outside the configured window', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verifier-log-'));
   const file = path.join(dir, 'engine-err.log');
