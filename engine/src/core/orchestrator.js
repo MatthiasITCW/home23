@@ -388,11 +388,25 @@ class Orchestrator {
           archivedIds,
           skippedIds,
         };
-        const receiptPath = path.join(controlDir, `archive-goals-applied-${Date.now()}.json`);
-        fsSync.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2));
-        fsSync.rmSync(requestPath, { force: true });
+        let persisted = archived === 0;
         if (archived > 0) {
-          await this.saveState();
+          const saveResult = await persistArchivedGoalsToState(this.logsDir, archivedIds, reason);
+          receipt.saveResult = saveResult || null;
+          persisted = saveResult?.saved !== false;
+        }
+        receipt.persisted = persisted;
+        const receiptPath = path.join(
+          controlDir,
+          `archive-goals-${persisted ? 'applied' : 'failed'}-${Date.now()}.json`
+        );
+        fsSync.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2));
+        if (persisted) {
+          fsSync.rmSync(requestPath, { force: true });
+        } else {
+          this.logger?.error?.('[archive-goals] state save failed; request retained for retry', {
+            requestPath,
+            receiptPath,
+          });
         }
         this.logger?.info?.('[archive-goals] complete', receipt);
       }
@@ -6501,12 +6515,14 @@ class Orchestrator {
           completed: countGoalEntries(state.goals?.completed),
           archived: countGoalEntries(state.goals?.archived),
         };
+        const activeGoalSummaries = compactActiveGoalsForSnapshot(state.goals?.active);
         writeSnapshot(this.logsDir, {
           savedAt: new Date().toISOString(),
           cycle: this.cycleCount,
           nodeCount: totalNodes,
           edgeCount: expectedEdges,
           goalCounts,
+          activeGoalSummaries,
           fileSize: saveResult.size || 0,
           memorySource: sidecarsWritten ? 'sidecar' : 'inline',
           ...(sidecarsWritten && {
@@ -8208,4 +8224,99 @@ class Orchestrator {
   }
 }
 
-module.exports = { Orchestrator };
+function compactActiveGoalsForSnapshot(entries, limit = 12) {
+  const rows = [];
+  const active = Array.isArray(entries) ? entries : [];
+  for (const entry of active) {
+    const goal = Array.isArray(entry) ? entry[1] : entry;
+    if (!goal) continue;
+    rows.push({
+      id: String(goal.id || (Array.isArray(entry) ? entry[0] : '') || ''),
+      description: String(goal.description || goal.title || goal.goal || '').slice(0, 500),
+      status: goal.status || 'active',
+      source: typeof goal.source === 'object'
+        ? (goal.source.label || goal.source.origin || null)
+        : (goal.source || null),
+      priority: Number.isFinite(Number(goal.priority)) ? Number(goal.priority) : null,
+      progress: Number.isFinite(Number(goal.progress)) ? Number(goal.progress) : null,
+      createdAt: goal.createdAt || goal.created_at || goal.created || null,
+    });
+  }
+  return rows
+    .filter((goal) => goal.id || goal.description)
+    .sort((a, b) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''))
+    .slice(0, limit);
+}
+
+async function persistArchivedGoalsToState(logsDir, archivedIds = [], reason = 'archive_request') {
+  const ids = new Set((archivedIds || []).map((id) => String(id)));
+  if (!logsDir || ids.size === 0) return { saved: true, archived: 0, reason: 'nothing_to_persist' };
+
+  const { StateCompression } = require('./state-compression');
+  const { readSnapshot, writeSnapshot } = require('./brain-snapshot');
+  const statePath = path.join(logsDir, 'state.json');
+  const state = await StateCompression.loadCompressed(statePath);
+  const goals = state.goals || {};
+  const active = Array.isArray(goals.active) ? goals.active : [];
+  const archivedMap = new Map(
+    (Array.isArray(goals.archived) ? goals.archived : [])
+      .filter((goal) => goal?.id)
+      .map((goal) => [goal.id, goal])
+  );
+  const nextActive = [];
+  const archivedNow = [];
+  const archivedAt = new Date().toISOString();
+
+  for (const entry of active) {
+    const entryId = Array.isArray(entry) ? String(entry[0]) : String(entry?.id || '');
+    const goal = Array.isArray(entry) ? entry[1] : entry;
+    const goalId = String(goal?.id || entryId || '');
+    if (ids.has(goalId) && goal) {
+      const archivedGoal = {
+        ...goal,
+        id: goalId,
+        status: 'archived',
+        archivedAt,
+        archiveReason: reason,
+      };
+      archivedMap.set(goalId, archivedGoal);
+      archivedNow.push(goalId);
+    } else {
+      nextActive.push(entry);
+    }
+  }
+
+  state.goals = {
+    ...goals,
+    active: nextActive,
+    archived: Array.from(archivedMap.values()),
+  };
+  await StateCompression.saveCompressed(statePath, state, {
+    compress: true,
+    pretty: false,
+  });
+
+  const snapshot = readSnapshot(logsDir) || {};
+  const completedCount = Array.isArray(state.goals.completed) ? state.goals.completed.length : 0;
+  writeSnapshot(logsDir, {
+    ...snapshot,
+    savedAt: new Date().toISOString(),
+    cycle: state.cycleCount ?? snapshot.cycle ?? 0,
+    goalCounts: {
+      active: nextActive.length,
+      completed: completedCount,
+      archived: state.goals.archived.length,
+    },
+    activeGoalSummaries: compactActiveGoalsForSnapshot(nextActive),
+  });
+
+  return {
+    saved: true,
+    archived: archivedNow.length,
+    active: nextActive.length,
+    archivedTotal: state.goals.archived.length,
+    method: 'goals_state_patch',
+  };
+}
+
+module.exports = { Orchestrator, compactActiveGoalsForSnapshot, persistArchivedGoalsToState };

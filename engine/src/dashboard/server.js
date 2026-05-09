@@ -5055,9 +5055,13 @@ Be specific, actionable, and maintain research continuity.`;
           problems: liveProblemList,
           snapshot: buildLiveProblemSnapshot(liveProblemList),
         };
+        const brainSnapshot = readJson('brain-snapshot.json');
+        const snapshotGoals = Array.isArray(brainSnapshot?.activeGoalSummaries)
+          ? { active: brainSnapshot.activeGoalSummaries.map((goal) => [goal.id, goal]) }
+          : null;
         const obligations = buildGoodLifeObligationSnapshot({
           agendaRows: readJsonl('agenda.jsonl'),
-          goals: null,
+          goals: snapshotGoals,
         });
         const runtime = await this.getHome23RuntimeHealth(req.query?.agent);
         res.json({
