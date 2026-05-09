@@ -2963,7 +2963,7 @@ function renderGoodLifeWorkList(data) {
       text: item.content || '',
       age: [
         item.ageMin != null ? `${item.ageMin}m` : '',
-        item.workerRoute?.worker ? `worker ${item.workerRoute.worker}` : '',
+        effectiveGoodLifeAgendaWorkerRoute(item)?.worker ? `worker ${effectiveGoodLifeAgendaWorkerRoute(item).worker}` : '',
       ].filter(Boolean).join(' - '),
     })),
     ...goals.map((goal) => ({
@@ -3204,6 +3204,7 @@ function renderGoodLifeWorkDetail(data) {
   const agenda = obligations.activeAgenda || [];
   const goals = obligations.activeGoals || [];
   const reviewAgenda = agenda.filter((item) => item.review?.recommended);
+  const reviewGoals = goals.filter((goal) => goal.id && goal.review?.recommended);
   const recentWorkerRuns = goodLifeWorkerRunsForScope(goodLifeOverlayState.scope);
   const agendaMeta = (item) => [
     item.status,
@@ -3225,7 +3226,7 @@ function renderGoodLifeWorkDetail(data) {
     </div>
     <section><h4>Active Agenda</h4>${reviewAgenda.length ? `<div class="h23-goodlife-section-actions"><button type="button" onclick="dismissGoodLifeAgendaReviewRows()">Dismiss ${reviewAgenda.length} review row${reviewAgenda.length === 1 ? '' : 's'}</button></div>` : ''}${agenda.length ? agenda.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.id || 'agenda')}</strong><span>${escapeHtml(item.content || '')}</span><small>${escapeHtml(agendaMeta(item))}</small>${item.review?.recommended ? `<p><strong>Review:</strong> ${escapeHtml(item.review.reason || 'operator review recommended')}${item.review.next ? ` - ${escapeHtml(item.review.next)}` : ''}</p>` : ''}${agendaActions(item)}</div>`).join('') : '<div class="h23-goodlife-empty">No active agenda rows</div>'}</section>
     <section><h4>Recent Worker Receipts</h4>${recentWorkerRuns.length ? recentWorkerRuns.map((run) => `<div class="h23-goodlife-evidence-row h23-goodlife-worker-run-row"><strong>${escapeHtml(run.worker || 'worker')}</strong><span>${escapeHtml(run.summary || run.runId || '')}</span><small>${escapeHtml([formatWorkerRunSource(run), formatWorkerTime(run.finishedAt || run.startedAt)].filter(Boolean).join(' - '))}</small><div class="h23-goodlife-mini-actions"><span class="h23-worker-status ${workerStatusClass(run.status)}">${escapeHtml(run.status || 'running')}</span><span class="h23-worker-status ${workerStatusClass(run.verifierStatus)}">${escapeHtml(run.verifierStatus || 'unknown')}</span><button type="button" onclick="openGoodLifeWorkerReceipt('${escapeAttr(run.runId || '')}')">Open Receipt</button></div></div>`).join('') : '<div class="h23-goodlife-empty">No Good Life worker receipts yet</div>'}${renderGoodLifeWorkerReceiptDetail()}</section>
-    <section><h4>Active Goals</h4>${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p><div class="h23-goodlife-mini-actions"><button type="button" onclick="archiveGoodLifeGoal('${escapeAttr(goal.id || '')}')">Archive Goal</button></div>` : ''}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
+    <section><h4>Active Goals</h4>${reviewGoals.length ? `<div class="h23-goodlife-section-actions"><button type="button" onclick="archiveGoodLifeGoalReviewRows()">Archive ${reviewGoals.length} review goal${reviewGoals.length === 1 ? '' : 's'}</button></div>` : ''}${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p><div class="h23-goodlife-mini-actions"><button type="button" onclick="archiveGoodLifeGoal('${escapeAttr(goal.id || '')}')">Archive Goal</button></div>` : ''}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
     <section><h4>Active Commitments</h4>${activeCommitments.length ? activeCommitments.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml((item.reasons || []).join(' - ') || item.status || '')}</span><small>${escapeHtml(item.lane || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active commitments</div>'}</section>
   `;
 }
@@ -3480,6 +3481,45 @@ async function archiveGoodLifeGoal(goalId) {
     setText('goodlife-overlay-action-status', `${goalId} archived.`);
   } catch (err) {
     setText('goodlife-overlay-action-status', `Goal archive failed: ${err.message}`);
+  }
+}
+
+async function archiveGoodLifeGoalReviewRows() {
+  const data = goodLifeSurfaceState.get(goodLifeOverlayState.scope);
+  const goals = data?.operator?.detail?.work?.obligations?.activeGoals || [];
+  const reviewGoals = goals.filter((goal) => goal?.id && goal.review?.recommended);
+  if (!reviewGoals.length) {
+    setText('goodlife-overlay-action-status', 'No Good Life goals need operator review.');
+    return;
+  }
+
+  const confirmed = window.confirm(`Archive ${reviewGoals.length} reviewed Good Life goal${reviewGoals.length === 1 ? '' : 's'}? This removes stale goals from the active list without marking them completed.`);
+  if (!confirmed) return;
+
+  const base = goodLifeBaseForScope(goodLifeOverlayState.scope);
+  setText('goodlife-overlay-action-status', `Archiving ${reviewGoals.length} reviewed goal${reviewGoals.length === 1 ? '' : 's'}...`);
+  let updated = 0;
+  try {
+    for (const goal of reviewGoals) {
+      const res = await fetch(`${base}/api/goals/${encodeURIComponent(goal.id)}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor: 'good-life-operator',
+          reason: `bulk archived from Good Life operator review: ${goal.review?.reason || 'operator review recommended'}`,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.ok === false) throw new Error(result.error || `HTTP ${res.status}`);
+      updated += 1;
+    }
+    await loadGoodLifeForScope(goodLifeOverlayState.scope);
+    renderGoodLifeOverlay();
+    setText('goodlife-overlay-action-status', `${updated} reviewed goal${updated === 1 ? '' : 's'} archived.`);
+  } catch (err) {
+    await loadGoodLifeForScope(goodLifeOverlayState.scope).catch(() => {});
+    renderGoodLifeOverlay();
+    setText('goodlife-overlay-action-status', `Archived ${updated}/${reviewGoals.length}; failed: ${err.message}`);
   }
 }
 

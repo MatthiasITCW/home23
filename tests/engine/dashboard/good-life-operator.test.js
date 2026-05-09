@@ -480,7 +480,45 @@ test('Good Life operator answer includes active work and review-needed goals', (
 
   assert.equal(model.work.activeGoals, 1);
   assert.equal(model.work.goalsNeedingReview, 1);
-  assert.ok(model.operatorAnswer.some((line) => line.includes('Active work: 1; 1 goal(s) need operator review; top goal goal_force')));
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Active work: 1; 1 goal(s) need operator review; top review goal goal_force')));
+});
+
+test('Good Life operator answer names reviewed goal before first active goal', () => {
+  const obligations = buildGoodLifeObligationSnapshot({
+    goals: {
+      active: [
+        ['goal_recent', {
+          id: 'goal_recent',
+          description: 'Recently created active goal',
+          status: 'active',
+          source: { origin: 'follow_up', label: 'follow-up' },
+          progress: 0,
+          createdAt: '2026-05-09T14:50:00.000Z',
+        }],
+        ['goal_force', {
+          id: 'goal_force',
+          description: 'Produce outputs/digest-6382.md',
+          status: 'active',
+          source: { origin: 'force-output', label: 'force-output' },
+          progress: 0,
+          createdAt: '2026-05-07T23:00:00.000Z',
+        }],
+      ],
+    },
+    now: NOW,
+  });
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    obligations,
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.equal(model.work.activeGoals, 2);
+  assert.equal(model.work.goalsNeedingReview, 1);
+  const line = model.operatorAnswer.find((entry) => entry.includes('goal(s) need operator review'));
+  assert.match(line, /top review goal goal_force/);
+  assert.doesNotMatch(line, /top goal goal_recent/);
 });
 
 test('Good Life operator answer includes agenda rows needing review', () => {

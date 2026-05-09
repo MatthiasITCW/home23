@@ -391,6 +391,7 @@ function summarizeWork(obligations = {}) {
     interventionRequired: agendaNeedingUser.length,
     topAgenda: activeAgenda[0] || null,
     topGoal: activeGoals[0] || null,
+    topReviewGoal: goalsNeedingReview[0] || null,
     agendaReviewRows: agendaNeedingReview.slice(0, 5),
     reviewRows: goalsNeedingReview.slice(0, 5),
   };
@@ -533,7 +534,9 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
     if (work.goalsNeedingReview > 0) reviewParts.push(`${work.goalsNeedingReview} goal(s) need operator review`);
     const reviewText = reviewParts.length ? `; ${reviewParts.join('; ')}` : '';
     const agendaText = work.topAgenda?.id ? `; top agenda ${work.topAgenda.id}` : '';
-    const goalText = work.topGoal?.id ? `; top goal ${work.topGoal.id}` : '';
+    const goalText = work.topReviewGoal?.id
+      ? `; top review goal ${work.topReviewGoal.id}`
+      : (work.topGoal?.id ? `; top goal ${work.topGoal.id}` : '');
     lines.push(`Active work: ${work.activeTotal}${reviewText}${agendaText}${goalText}`);
   }
 
