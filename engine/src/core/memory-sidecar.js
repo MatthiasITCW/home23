@@ -33,10 +33,12 @@ const pipelineAsync = promisify(pipeline);
 
 const NODES_FILE = 'memory-nodes.jsonl.gz';
 const EDGES_FILE = 'memory-edges.jsonl.gz';
+const MEMORY_DELTA_FILE = 'memory-delta.jsonl';
 const DEFAULT_GZIP_LEVEL = zlib.constants.Z_BEST_SPEED;
 
 function nodesPath(brainDir) { return path.join(brainDir, NODES_FILE); }
 function edgesPath(brainDir) { return path.join(brainDir, EDGES_FILE); }
+function memoryDeltaPath(brainDir) { return path.join(brainDir, MEMORY_DELTA_FILE); }
 
 function uniqueTmpPath(outPath) {
   const suffix = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
@@ -138,10 +140,69 @@ async function readJsonlGz(inPath, onRecord) {
 async function writeMemorySidecars(brainDir, memory, options = {}) {
   const nodesResult = await writeJsonlGz(nodesPath(brainDir), iterateNodes(memory), options);
   const edgesResult = await writeJsonlGz(edgesPath(brainDir), iterateEdges(memory), options);
+  try { fs.rmSync(memoryDeltaPath(brainDir), { force: true }); } catch {}
   return {
     nodes: { file: NODES_FILE, count: nodesResult.count, bytes: nodesResult.bytes },
     edges: { file: EDGES_FILE, count: edgesResult.count, bytes: edgesResult.bytes },
   };
+}
+
+async function appendMemoryDelta(brainDir, changes = {}) {
+  const p = memoryDeltaPath(brainDir);
+  const lines = [];
+  for (const node of changes.nodes || []) {
+    lines.push(JSON.stringify({ op: 'upsert_node', record: node }));
+  }
+  for (const edge of changes.edges || []) {
+    lines.push(JSON.stringify({ op: 'upsert_edge', record: edge }));
+  }
+  for (const id of changes.removedNodeIds || []) {
+    lines.push(JSON.stringify({ op: 'remove_node', id }));
+  }
+  for (const key of changes.removedEdgeKeys || []) {
+    lines.push(JSON.stringify({ op: 'remove_edge', key }));
+  }
+
+  if (lines.length === 0) {
+    return { count: 0, bytes: fs.existsSync(p) ? fs.statSync(p).size : 0 };
+  }
+
+  await fs.promises.mkdir(brainDir, { recursive: true });
+  await fs.promises.appendFile(p, lines.join('\n') + '\n', 'utf8');
+  return { count: lines.length, bytes: fs.statSync(p).size };
+}
+
+async function readMemoryDeltas(brainDir, handlers = {}) {
+  const p = memoryDeltaPath(brainDir);
+  if (!fs.existsSync(p)) {
+    return { count: 0, parseErrors: 0 };
+  }
+
+  const source = fs.createReadStream(p, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: source, crlfDelay: Infinity });
+  let count = 0;
+  let parseErrors = 0;
+
+  for await (const line of rl) {
+    if (!line) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.op === 'upsert_node') {
+        handlers.onNode?.(entry.record);
+      } else if (entry.op === 'upsert_edge') {
+        handlers.onEdge?.(entry.record);
+      } else if (entry.op === 'remove_node') {
+        handlers.onRemoveNode?.(entry.id);
+      } else if (entry.op === 'remove_edge') {
+        handlers.onRemoveEdge?.(entry.key);
+      }
+      count++;
+    } catch {
+      parseErrors++;
+    }
+  }
+
+  return { count, parseErrors };
 }
 
 /**
@@ -199,8 +260,12 @@ module.exports = {
   iterateEdges,
   NODES_FILE,
   EDGES_FILE,
+  MEMORY_DELTA_FILE,
   DEFAULT_GZIP_LEVEL,
   nodesPath,
   edgesPath,
+  memoryDeltaPath,
   uniqueTmpPath,
+  appendMemoryDelta,
+  readMemoryDeltas,
 };

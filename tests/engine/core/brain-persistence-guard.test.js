@@ -7,7 +7,7 @@ import {
   evaluateSaveSafety,
   resolveKnownGoodNodeCount,
 } from '../../../engine/src/core/brain-persistence-guard.js';
-import { writeMemorySidecars } from '../../../engine/src/core/memory-sidecar.js';
+import { appendMemoryDelta, writeMemorySidecars } from '../../../engine/src/core/memory-sidecar.js';
 import { StateCompression } from '../../../engine/src/core/state-compression.js';
 
 test('resolveKnownGoodNodeCount prefers brain-snapshot count', async () => {
@@ -33,6 +33,27 @@ test('resolveKnownGoodNodeCount counts memory sidecar before empty small-shape s
   });
 
   assert.equal(result.count, 125);
+  assert.equal(result.source, 'memory-sidecar');
+});
+
+test('resolveKnownGoodNodeCount applies sidecar deltas when snapshot is missing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'brain-guard-delta-'));
+  const statePath = join(dir, 'state.json');
+  await writeMemorySidecars(dir, {
+    nodes: [{ id: 'n1' }, { id: 'n2' }],
+    edges: [],
+  });
+  await appendMemoryDelta(dir, {
+    nodes: [{ id: 'n3' }, { id: 'n4' }],
+    removedNodeIds: ['n1'],
+  });
+  await StateCompression.saveCompressed(statePath, { memory: { nodes: [], edges: [] } });
+
+  const result = await resolveKnownGoodNodeCount(dir, statePath, {
+    readSnapshot: () => null,
+  });
+
+  assert.equal(result.count, 3);
   assert.equal(result.source, 'memory-sidecar');
 });
 

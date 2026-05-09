@@ -25,6 +25,11 @@ class NetworkMemory {
     this.nextClusterId = 1;
     this.nodeIdFormat = 'numeric'; // 'numeric' or 'string' - detected from loaded state
     this.nodeIdPrefix = null; // For string IDs (e.g., "fa7572")
+    this.persistenceRevision = 0;
+    this.dirtyNodeIds = new Set();
+    this.dirtyEdgeKeys = new Set();
+    this.deletedNodeIds = new Set();
+    this.deletedEdgeKeys = new Set();
     
     // Initialize tokenizer for token-aware truncation
     try {
@@ -359,6 +364,7 @@ class NetworkMemory {
       concept: conceptText.substring(0, 50),
       cluster: node.cluster 
     });
+    this.markNodeDirty(node.id);
     
     return node;
   }
@@ -370,12 +376,17 @@ class NetworkMemory {
   removeNode(nodeId) {
     if (!this.nodes.has(nodeId)) return false;
     this.nodes.delete(nodeId);
+    this.deletedNodeIds.add(nodeId);
+    this.dirtyNodeIds.delete(nodeId);
     // Remove edges referencing this node
     for (const [key, edge] of this.edges) {
-      if (edge.from === nodeId || edge.to === nodeId) {
+      if (edge.from === nodeId || edge.to === nodeId || edge.source === nodeId || edge.target === nodeId) {
         this.edges.delete(key);
+        this.deletedEdgeKeys.add(key);
+        this.dirtyEdgeKeys.delete(key);
       }
     }
+    this.persistenceRevision += 1;
     return true;
   }
 
@@ -442,6 +453,7 @@ class NetworkMemory {
       if (type !== 'associative' && existing.type !== type) {
         existing.type = type;
       }
+      this.markEdgeDirty(edgeKey);
       return;
     }
 
@@ -464,6 +476,99 @@ class NetworkMemory {
       created: new Date(),
       accessed: new Date()
     });
+    this.markEdgeDirty(edgeKey);
+  }
+
+  markNodeDirty(nodeId) {
+    this.dirtyNodeIds.add(nodeId);
+    this.deletedNodeIds.delete(nodeId);
+    this.persistenceRevision += 1;
+  }
+
+  markEdgeDirty(edgeKey) {
+    this.dirtyEdgeKeys.add(edgeKey);
+    this.deletedEdgeKeys.delete(edgeKey);
+    this.persistenceRevision += 1;
+  }
+
+  hasPersistenceChanges() {
+    return this.dirtyNodeIds.size > 0 ||
+      this.dirtyEdgeKeys.size > 0 ||
+      this.deletedNodeIds.size > 0 ||
+      this.deletedEdgeKeys.size > 0;
+  }
+
+  getPersistenceChanges() {
+    const serializeNode = (node) => ({
+      id: node.id,
+      concept: node.concept,
+      tag: node.tag,
+      embedding: node.embedding,
+      weight: node.weight,
+      activation: node.activation,
+      cluster: node.cluster,
+      accessCount: node.accessCount,
+      created: node.created,
+      accessed: node.accessed,
+      type: node.type,
+      tags: node.tags,
+      metadata: node.metadata,
+      asserted_at: node.asserted_at,
+      asserted_cycle: node.asserted_cycle,
+      superseded_by: node.superseded_by,
+      confidence_decay: node.confidence_decay,
+      status: node.status,
+      consolidatedAt: node.consolidatedAt
+    });
+    const serializeEdge = ([key, edge]) => {
+      let source = edge.source;
+      let target = edge.target;
+      if (source === undefined || target === undefined) {
+        const parts = key.split('->');
+        source = isNaN(parts[0]) ? parts[0] : Number(parts[0]);
+        target = isNaN(parts[1]) ? parts[1] : Number(parts[1]);
+      }
+      return {
+        source,
+        target,
+        weight: edge.weight,
+        type: edge.type,
+        created: edge.created,
+        accessed: edge.accessed
+      };
+    };
+
+    const nodes = Array.from(this.dirtyNodeIds)
+      .map((id) => this.nodes.get(id))
+      .filter(Boolean)
+      .map(serializeNode);
+    const edges = Array.from(this.dirtyEdgeKeys)
+      .map((key) => {
+        const edge = this.edges.get(key);
+        return edge ? serializeEdge([key, edge]) : null;
+      })
+      .filter(Boolean);
+    const changes = {
+      nodes,
+      edges,
+      removedNodeIds: Array.from(this.deletedNodeIds),
+      removedEdgeKeys: Array.from(this.deletedEdgeKeys),
+      revision: this.persistenceRevision,
+    };
+    return changes;
+  }
+
+  consumePersistenceChanges() {
+    const changes = this.getPersistenceChanges();
+    this.markPersistenceClean();
+    return changes;
+  }
+
+  markPersistenceClean() {
+    this.dirtyNodeIds.clear();
+    this.dirtyEdgeKeys.clear();
+    this.deletedNodeIds.clear();
+    this.deletedEdgeKeys.clear();
   }
 
   /**

@@ -6608,7 +6608,16 @@ class Orchestrator {
       // the monolithic save path. Large brains must fail closed instead of
       // trying to JSON.stringify memory inline and hitting V8's max string
       // length during shutdown or a hot save.
-      const { writeMemorySidecars } = require('./memory-sidecar');
+      const {
+        appendMemoryDelta,
+        edgesPath,
+        memoryDeltaPath,
+        nodesPath,
+        sidecarsExist,
+        writeMemorySidecars,
+      } = require('./memory-sidecar');
+      const { readSnapshot } = require('./brain-snapshot');
+      const fsSync = require('fs');
       let sidecarsWritten = null;
       const origNodes = state.memory?.nodes;
       const origEdges = state.memory?.edges;
@@ -6618,20 +6627,68 @@ class Orchestrator {
         level: this.config?.persistence?.memorySidecarGzipLevel,
       };
 
+      const buildExistingSidecarMetadata = (mode, deltaResult = null) => ({
+        mode,
+        nodes: {
+          file: 'memory-nodes.jsonl.gz',
+          count: expectedNodes,
+          bytes: fsSync.existsSync(nodesPath(this.logsDir)) ? fsSync.statSync(nodesPath(this.logsDir)).size : 0,
+          mode,
+        },
+        edges: {
+          file: 'memory-edges.jsonl.gz',
+          count: expectedEdges,
+          bytes: fsSync.existsSync(edgesPath(this.logsDir)) ? fsSync.statSync(edgesPath(this.logsDir)).size : 0,
+          mode,
+        },
+        delta: deltaResult ? {
+          file: 'memory-delta.jsonl',
+          entries: deltaResult.count,
+          bytes: deltaResult.bytes,
+        } : (fsSync.existsSync(memoryDeltaPath(this.logsDir)) ? {
+          file: 'memory-delta.jsonl',
+          entries: 0,
+          bytes: fsSync.statSync(memoryDeltaPath(this.logsDir)).size,
+        } : null),
+      });
+
       if (expectedNodes > 0 || expectedEdges > 0) {
         try {
-          sidecarsWritten = await writeMemorySidecars(this.logsDir, state.memory, sidecarWriteOptions);
-          // Post-write invariant: the sidecars must contain exactly the
-          // counts we just tried to save. If they don't, abort the swap
-          // and fall through to the legacy monolithic save.
-          if (sidecarsWritten.nodes.count !== expectedNodes ||
-              sidecarsWritten.edges.count !== expectedEdges) {
-            this.logger.warn('Memory sidecar count mismatch — keeping inline arrays in state.json.gz', {
-              expectedNodes, wroteNodes: sidecarsWritten.nodes.count,
-              expectedEdges, wroteEdges: sidecarsWritten.edges.count,
-            });
-            sidecarsWritten = null;
+          const snapshot = readSnapshot(this.logsDir);
+          const fullRewriteIntervalMs = this.config?.persistence?.memorySidecarFullRewriteIntervalMs ?? (6 * 3600 * 1000);
+          const lastFullSavedAt = snapshot?.fullSidecarSavedAt || snapshot?.savedAt || null;
+          const sidecarAgeMs = lastFullSavedAt ? Date.now() - Date.parse(lastFullSavedAt) : Infinity;
+          const mustRewriteFullSidecars = !sidecarsExist(this.logsDir) ||
+            !Number.isFinite(sidecarAgeMs) ||
+            sidecarAgeMs >= fullRewriteIntervalMs;
+
+          if (mustRewriteFullSidecars) {
+            sidecarsWritten = await writeMemorySidecars(this.logsDir, state.memory, sidecarWriteOptions);
+            // Post-write invariant: the sidecars must contain exactly the
+            // counts we just tried to save. If they don't, abort the swap
+            // and fall through to the legacy monolithic save.
+            if (sidecarsWritten.nodes.count !== expectedNodes ||
+                sidecarsWritten.edges.count !== expectedEdges) {
+              this.logger.warn('Memory sidecar count mismatch — keeping inline arrays in state.json.gz', {
+                expectedNodes, wroteNodes: sidecarsWritten.nodes.count,
+                expectedEdges, wroteEdges: sidecarsWritten.edges.count,
+              });
+              sidecarsWritten = null;
+            } else {
+              this.memory?.markPersistenceClean?.();
+              sidecarsWritten.mode = 'full';
+            }
           } else {
+            let deltaResult = null;
+            if (this.memory?.hasPersistenceChanges?.()) {
+              const changes = this.memory.getPersistenceChanges();
+              deltaResult = await appendMemoryDelta(this.logsDir, changes);
+              this.memory.markPersistenceClean?.();
+            }
+            sidecarsWritten = buildExistingSidecarMetadata(deltaResult ? 'delta' : 'reused', deltaResult);
+          }
+
+          if (sidecarsWritten) {
             // Swap the arrays out of the state object for the upcoming
             // monolithic save. The original references stay live in
             // this.memory so running cycles don't notice.
@@ -6689,9 +6746,14 @@ class Orchestrator {
         compressed: saveResult.compressed,
         size: `${(saveResult.size / (1024 * 1024)).toFixed(2)}MB`,
         sidecars: sidecarsWritten
-          ? { nodes: sidecarsWritten.nodes.count, edges: sidecarsWritten.edges.count,
+          ? { mode: sidecarsWritten.mode || 'full',
+              nodes: sidecarsWritten.nodes.count, edges: sidecarsWritten.edges.count,
               nodesMB: +(sidecarsWritten.nodes.bytes / 1048576).toFixed(2),
-              edgesMB: +(sidecarsWritten.edges.bytes / 1048576).toFixed(2) }
+              edgesMB: +(sidecarsWritten.edges.bytes / 1048576).toFixed(2),
+              ...(sidecarsWritten.delta && {
+                deltaEntries: sidecarsWritten.delta.entries,
+                deltaKB: +(sidecarsWritten.delta.bytes / 1024).toFixed(1),
+              }) }
           : 'inline (fallback)',
         ...(saveResult.ratio && { compressionRatio: saveResult.ratio })
       });
@@ -6725,6 +6787,7 @@ class Orchestrator {
           archived: countGoalEntries(state.goals?.archived),
         };
         const activeGoalSummaries = compactActiveGoalsForSnapshot(state.goals?.active);
+        const priorSnapshot = readSnapshot(this.logsDir);
         writeSnapshot(this.logsDir, {
           savedAt: new Date().toISOString(),
           cycle: this.cycleCount,
@@ -6734,9 +6797,17 @@ class Orchestrator {
           activeGoalSummaries,
           fileSize: saveResult.size || 0,
           memorySource: sidecarsWritten ? 'sidecar' : 'inline',
+          fullSidecarSavedAt: sidecarsWritten?.mode === 'full'
+            ? new Date().toISOString()
+            : (priorSnapshot?.fullSidecarSavedAt || priorSnapshot?.savedAt || null),
           ...(sidecarsWritten && {
             nodesSidecarBytes: sidecarsWritten.nodes.bytes,
             edgesSidecarBytes: sidecarsWritten.edges.bytes,
+            sidecarMode: sidecarsWritten.mode || 'full',
+            ...(sidecarsWritten.delta && {
+              memoryDeltaBytes: sidecarsWritten.delta.bytes,
+              memoryDeltaEntries: sidecarsWritten.delta.entries,
+            }),
           }),
         });
       } catch { /* advisory — ignore */ }
@@ -6903,7 +6974,7 @@ class Orchestrator {
       // If the sidecars don't exist yet (pre-migration brain), the
       // inline path below handles it — legacy behavior unchanged.
       try {
-        const { sidecarsExist, readMemorySidecars } = require('./memory-sidecar');
+        const { sidecarsExist, readMemorySidecars, readMemoryDeltas } = require('./memory-sidecar');
         if (state?.memory && sidecarsExist(this.logsDir)) {
           this.logger?.info?.('Loading memory from sidecar files (Tier 2)');
           // Replace any (empty/stub) inline arrays on state.memory with
@@ -6916,13 +6987,35 @@ class Orchestrator {
             onNode: (n) => { inlineNodes.push(n); },
             onEdge: (e) => { inlineEdges.push(e); },
           });
-          state.memory.nodes = inlineNodes;
-          state.memory.edges = inlineEdges;
+          const nodeMap = new Map(inlineNodes.map((node) => [node.id, node]));
+          const edgeKeyFor = (edge) => {
+            const source = edge.source ?? edge.from;
+            const target = edge.target ?? edge.to;
+            return [source, target].sort((a, b) => String(a).localeCompare(String(b))).join('->');
+          };
+          const edgeMap = new Map(inlineEdges.map((edge) => [edgeKeyFor(edge), edge]));
+          const deltaResult = await readMemoryDeltas(this.logsDir, {
+            onNode: (node) => { if (node?.id !== undefined) nodeMap.set(node.id, node); },
+            onEdge: (edge) => { if (edge) edgeMap.set(edgeKeyFor(edge), edge); },
+            onRemoveNode: (id) => {
+              nodeMap.delete(id);
+              for (const [key, edge] of edgeMap) {
+                const source = edge.source ?? edge.from;
+                const target = edge.target ?? edge.to;
+                if (source === id || target === id) edgeMap.delete(key);
+              }
+            },
+            onRemoveEdge: (key) => { edgeMap.delete(key); },
+          });
+          state.memory.nodes = Array.from(nodeMap.values());
+          state.memory.edges = Array.from(edgeMap.values());
           this.logger?.info?.('Memory sidecars loaded', {
             nodes: result.nodes.count,
             edges: result.edges.count,
+            deltaEntries: deltaResult.count,
             nodeParseErrors: result.nodes.parseErrors,
             edgeParseErrors: result.edges.parseErrors,
+            deltaParseErrors: deltaResult.parseErrors,
           });
         }
       } catch (err) {
@@ -7112,6 +7205,7 @@ class Orchestrator {
             clusters: this.memory.clusters.size,
             nodesWithEmbeddings
           });
+          this.memory.markPersistenceClean?.();
         }
       }
 

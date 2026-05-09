@@ -7,8 +7,12 @@ const test = require('node:test');
 
 const {
   DEFAULT_GZIP_LEVEL,
+  MEMORY_DELTA_FILE,
+  appendMemoryDelta,
   readJsonlGz,
+  readMemoryDeltas,
   writeJsonlGz,
+  writeMemorySidecars,
 } = require('../../../engine/src/core/memory-sidecar');
 
 test('writeJsonlGz supports overlapping writes to the same output path', async () => {
@@ -34,4 +38,46 @@ test('writeJsonlGz supports overlapping writes to the same output path', async (
 
 test('writeJsonlGz defaults to speed-oriented gzip for hot engine saves', () => {
   assert.equal(DEFAULT_GZIP_LEVEL, 1);
+});
+
+test('memory deltas append and replay node and edge mutations', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'memory-sidecar-delta-'));
+
+  await appendMemoryDelta(dir, {
+    nodes: [{ id: 'n1', concept: 'first' }],
+    edges: [{ source: 'n1', target: 'n2', weight: 0.4, type: 'test' }],
+  });
+  await appendMemoryDelta(dir, {
+    nodes: [{ id: 'n1', concept: 'updated' }],
+    removedNodeIds: ['n3'],
+    removedEdgeKeys: ['n3->n4'],
+  });
+
+  const seen = { nodes: [], edges: [], removedNodes: [], removedEdges: [] };
+  const result = await readMemoryDeltas(dir, {
+    onNode: (node) => seen.nodes.push(node),
+    onEdge: (edge) => seen.edges.push(edge),
+    onRemoveNode: (id) => seen.removedNodes.push(id),
+    onRemoveEdge: (key) => seen.removedEdges.push(key),
+  });
+
+  assert.equal(result.count, 5);
+  assert.equal(result.parseErrors, 0);
+  assert.deepEqual(seen.nodes.map((node) => node.concept), ['first', 'updated']);
+  assert.deepEqual(seen.edges.map((edge) => edge.source), ['n1']);
+  assert.deepEqual(seen.removedNodes, ['n3']);
+  assert.deepEqual(seen.removedEdges, ['n3->n4']);
+});
+
+test('full sidecar rewrite clears pending memory delta journal', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'memory-sidecar-compact-'));
+  await appendMemoryDelta(dir, { nodes: [{ id: 'n1', concept: 'delta' }] });
+  assert.equal(fs.existsSync(path.join(dir, MEMORY_DELTA_FILE)), true);
+
+  await writeMemorySidecars(dir, {
+    nodes: [{ id: 'n1', concept: 'base' }],
+    edges: [],
+  });
+
+  assert.equal(fs.existsSync(path.join(dir, MEMORY_DELTA_FILE)), false);
 });

@@ -1,13 +1,24 @@
 const { readSnapshot } = require('./brain-snapshot');
-const { readJsonlGz, nodesPath, sidecarsExist } = require('./memory-sidecar');
+const { readJsonlGz, readMemoryDeltas, nodesPath, sidecarsExist } = require('./memory-sidecar');
 const { StateCompression } = require('./state-compression');
 
 async function countSidecarNodes(brainDir) {
-  let count = 0;
-  await readJsonlGz(nodesPath(brainDir), () => {
-    count += 1;
+  const nodeIds = new Set();
+  let anonymousCount = 0;
+  await readJsonlGz(nodesPath(brainDir), (node) => {
+    if (node?.id !== undefined) nodeIds.add(node.id);
+    else anonymousCount += 1;
   });
-  return count;
+  await readMemoryDeltas(brainDir, {
+    onNode: (node) => {
+      if (node?.id !== undefined) nodeIds.add(node.id);
+      else anonymousCount += 1;
+    },
+    onRemoveNode: (id) => {
+      nodeIds.delete(id);
+    },
+  });
+  return nodeIds.size + anonymousCount;
 }
 
 async function resolveKnownGoodNodeCount(brainDir, statePath, options = {}) {

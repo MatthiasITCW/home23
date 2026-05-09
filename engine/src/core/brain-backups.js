@@ -31,6 +31,9 @@ const BACKUP_FILES = [
   'memory-edges.jsonl.gz',
   'brain-snapshot.json',
 ];
+const OPTIONAL_BACKUP_FILES = [
+  'memory-delta.jsonl',
+];
 const DEFAULT_RETENTION = 5;
 const DEFAULT_INTERVAL_HOURS = 1;
 
@@ -106,8 +109,9 @@ async function maybeBackup(brainDir, opts = {}) {
 
   let bytes = 0;
   try {
-    for (const f of BACKUP_FILES) {
+    for (const f of [...BACKUP_FILES, ...OPTIONAL_BACKUP_FILES]) {
       const src = path.join(brainDir, f);
+      if (!fs.existsSync(src)) continue;
       const dst = path.join(tmpDir, f);
       fs.copyFileSync(src, dst);
       bytes += fs.statSync(dst).size;
@@ -142,4 +146,4 @@ async function maybeBackup(brainDir, opts = {}) {
   return { created: true, backupName, pruned, sizeMB: +(bytes / 1048576).toFixed(1) };
 }
 
-module.exports = { maybeBackup, listBackups, BACKUPS_DIR, BACKUP_FILES };
+module.exports = { maybeBackup, listBackups, BACKUPS_DIR, BACKUP_FILES, OPTIONAL_BACKUP_FILES };

@@ -72,3 +72,22 @@ test('addNode preserves temporal metadata through exportGraph', async () => {
   assert.equal(node.status, 'completed');
   assert.equal(node.metadata.goalId, 'g1');
 });
+
+test('persistence changes capture node, edge, and removal mutations', async () => {
+  const memory = makeMemory();
+  const first = await memory.addNode('first durable memory', 'test', [1, 0]);
+  const second = await memory.addNode('second durable memory', 'test', [1, 0]);
+  memory.addEdge(first.id, second.id, 0.25, 'manual');
+
+  const initial = memory.consumePersistenceChanges();
+  assert.ok(initial.nodes.some((node) => node.id === first.id));
+  assert.ok(initial.nodes.some((node) => node.id === second.id));
+  assert.ok(initial.edges.some((edge) => edge.source === first.id || edge.target === first.id));
+  assert.equal(memory.hasPersistenceChanges(), false);
+
+  memory.removeNode(first.id);
+  const removed = memory.consumePersistenceChanges();
+  assert.deepEqual(removed.removedNodeIds, [first.id]);
+  assert.ok(removed.removedEdgeKeys.length >= 1);
+  assert.equal(memory.hasPersistenceChanges(), false);
+});
