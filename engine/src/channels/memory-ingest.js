@@ -27,6 +27,7 @@ const CHANNEL_CAPS = Object.freeze({
   zero_context_audit: 0.20,
   good_life:          0.88,
 });
+const DEFAULT_MAX_OBJECTS = 2500;
 
 function applyChannelCap(method, confidence) {
   const cap = CHANNEL_CAPS[method];
@@ -35,12 +36,16 @@ function applyChannelCap(method, confidence) {
 }
 
 class MemoryIngest {
-  constructor({ brainDir, logger }) {
+  constructor({ brainDir, logger, maxObjects = null }) {
     if (!brainDir) throw new Error('MemoryIngest requires brainDir');
     this.brainDir = brainDir;
     this.logger = logger || console;
     this.objectsPath = path.join(brainDir, 'memory-objects.json');
+    this.archivePath = path.join(brainDir, 'memory-objects.archive.jsonl');
     this.receiptsPath = path.join(brainDir, 'crystallization-receipts.jsonl');
+    this.maxObjects = maxObjects !== null && maxObjects !== undefined && Number.isFinite(Number(maxObjects))
+      ? Number(maxObjects)
+      : Number(process.env.HOME23_MEMORY_OBJECTS_ACTIVE_LIMIT || DEFAULT_MAX_OBJECTS);
     this._opChain = Promise.resolve();
     this._lockOptions = {
       stale: 30_000,
@@ -114,6 +119,76 @@ class MemoryIngest {
       staleness_policy: {},
       reuse_count: existing?.reuse_count ?? 0,
     };
+  }
+
+  compactActiveStoreForWrite(store, onArchive = null) {
+    if (!Array.isArray(store?.objects) || this.maxObjects <= 0 || store.objects.length <= this.maxObjects) {
+      return store;
+    }
+
+    const sorted = store.objects
+      .slice()
+      .sort((a, b) => {
+        const aMs = Date.parse(a.updated_at || a.created_at || 0) || 0;
+        const bMs = Date.parse(b.updated_at || b.created_at || 0) || 0;
+        return aMs - bMs;
+      });
+    const archiveCount = Math.max(0, sorted.length - this.maxObjects);
+    const archived = sorted.slice(0, archiveCount);
+    const kept = sorted.slice(archiveCount);
+    for (const object of archived) onArchive?.(object);
+    return { ...store, objects: kept };
+  }
+
+  _archiveObjects(objects = []) {
+    if (!objects.length) return;
+    try {
+      const lines = objects.map((object) => JSON.stringify({
+        archived_at: new Date().toISOString(),
+        object,
+      })).join('\n') + '\n';
+      fs.appendFileSync(this.archivePath, lines);
+    } catch (err) {
+      this.logger.warn?.('[memory-ingest] archive append failed:', err?.message || err);
+    }
+  }
+
+  async compactActiveStore({ reason = 'manual' } = {}) {
+    if (!fs.existsSync(this.objectsPath)) return { archived: 0, active: 0 };
+
+    let result = { archived: 0, active: 0 };
+    await lockfile.lock(this.objectsPath, this._lockOptions)
+      .then(async (release) => {
+        try {
+          const store = this._loadSafe();
+          const archived = [];
+          const compacted = this.compactActiveStoreForWrite(store, (object) => archived.push(object));
+          if (!archived.length) {
+            result = {
+              archived: 0,
+              active: Array.isArray(compacted.objects) ? compacted.objects.length : 0,
+            };
+            return;
+          }
+          this._archiveObjects(archived);
+          fs.writeFileSync(this.objectsPath, JSON.stringify(compacted));
+          result = { archived: archived.length, active: compacted.objects.length };
+          this.logger.info?.('[memory-ingest] compacted active memory object store', {
+            archived: result.archived,
+            active: result.active,
+            maxObjects: this.maxObjects,
+            reason,
+          });
+        } finally {
+          await release();
+        }
+      })
+      .catch((err) => {
+        this.logger.warn?.('[memory-ingest] compaction failed:', err?.message || err);
+        throw err;
+      });
+
+    return result;
   }
 
   /**
@@ -200,7 +275,17 @@ class MemoryIngest {
           } else {
             store.objects.push(mo);
           }
-          fs.writeFileSync(this.objectsPath, JSON.stringify(store));
+          const archived = [];
+          const compacted = this.compactActiveStoreForWrite(store, (object) => archived.push(object));
+          this._archiveObjects(archived);
+          if (archived.length > 1) {
+            this.logger.info?.('[memory-ingest] compacted active memory object store', {
+              archived: archived.length,
+              active: compacted.objects.length,
+              maxObjects: this.maxObjects,
+            });
+          }
+          fs.writeFileSync(this.objectsPath, JSON.stringify(compacted));
           written = mo;
         } finally {
           await release();

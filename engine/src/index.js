@@ -769,6 +769,7 @@ async function main() {
     // can coexist as a reader/writer on the same file.
     const { MemoryIngest } = require('./channels/memory-ingest.js');
     const memoryIngest = new MemoryIngest({ brainDir: runtimeRoot, logger });
+    await memoryIngest.compactActiveStore({ reason: 'startup' });
     channelBus.on('crystallize', async ({ observation, draft }) => {
       try { await memoryIngest.writeFromObservation(observation, draft); }
       catch (err) { logger.warn?.('[memory-ingest] write failed from bus:', err?.message || err); }
