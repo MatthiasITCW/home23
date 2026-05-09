@@ -7463,6 +7463,89 @@ class Orchestrator {
     };
   }
 
+  async cleanupTelemetryForShutdown() {
+    if (!this.telemetry || typeof this.telemetry.cleanup !== 'function') return;
+
+    const timeoutMs = this.config.shutdownTelemetryTimeoutMs || 5000;
+    let timeoutId = null;
+    const cleanupPromise = this.telemetry.cleanup()
+      .then(() => ({ status: 'ok' }))
+      .catch(error => ({ status: 'error', error }));
+
+    const timeoutPromise = new Promise(resolve => {
+      timeoutId = setTimeout(() => resolve({ status: 'timeout' }), timeoutMs);
+    });
+
+    const result = await Promise.race([cleanupPromise, timeoutPromise]);
+    if (timeoutId) clearTimeout(timeoutId);
+
+    if (result.status === 'timeout') {
+      this.logger.warn('[Telemetry] Cleanup timed out during shutdown; continuing with clean state already persisted', {
+        timeoutMs,
+      });
+      cleanupPromise.catch(() => {});
+      return;
+    }
+
+    if (result.status === 'error') {
+      this.logger.warn('[Telemetry] Cleanup failed during shutdown; continuing with clean state already persisted', {
+        error: result.error?.message || String(result.error),
+      });
+    }
+  }
+
+  async hasDurableStateArtifact() {
+    const candidates = [
+      path.join(this.logsDir, 'state.json.gz'),
+      path.join(this.logsDir, 'state.json'),
+    ];
+    for (const candidate of candidates) {
+      try {
+        await fs.access(candidate);
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+
+  async saveStateForShutdown() {
+    const timeoutMs = this.config.shutdownSaveTimeoutMs || 60000;
+    let timeoutId = null;
+    const savePromise = this.saveState()
+      .then(result => ({ status: 'ok', result }))
+      .catch(error => ({ status: 'error', error }));
+
+    const timeoutPromise = new Promise(resolve => {
+      timeoutId = setTimeout(() => resolve({ status: 'timeout' }), timeoutMs);
+    });
+
+    const outcome = await Promise.race([savePromise, timeoutPromise]);
+    if (timeoutId) clearTimeout(timeoutId);
+
+    if (outcome.status === 'ok') {
+      return outcome.result || { saved: true };
+    }
+
+    if (outcome.status === 'error') {
+      this.logger.error('Shutdown state save failed', {
+        error: outcome.error?.message || String(outcome.error),
+      });
+      return { saved: false, reason: 'shutdown_save_failed' };
+    }
+
+    const hasDurableState = await this.hasDurableStateArtifact();
+    this.logger.warn('Shutdown state save timed out', {
+      timeoutMs,
+      hasDurableState,
+    });
+    savePromise.catch(() => {});
+
+    if (hasDurableState) {
+      return { saved: 'existing', reason: 'shutdown_save_timeout_existing_state' };
+    }
+    return { saved: false, reason: 'shutdown_save_timeout_no_state' };
+  }
+
   async stop() {
     this.logger.info('Stopping GPT-5.5 system...');
     this.running = false;
@@ -7516,9 +7599,18 @@ class Orchestrator {
       // Shutdown handler will save state, cleanup resources, etc.
       // Don't call process.exit here - let handler do it
       // For manual stop (not signal), just save state
-      await this.saveState();
-      await this.telemetry.cleanup();
-      await this.crashRecovery.markCleanShutdown();
+      const saveResult = await this.saveStateForShutdown();
+      this.shutdownStateHandled = true;
+      this.shutdownStateResult = saveResult;
+      if (saveResult?.saved === false) {
+        this.logger.warn('Shutdown state save was refused; leaving crash recovery marker dirty', {
+          reason: saveResult.reason,
+        });
+      } else {
+        await this.crashRecovery.markCleanShutdown();
+        this.shutdownCleanMarked = true;
+      }
+      await this.cleanupTelemetryForShutdown();
     } else {
       // Fallback to original behavior
       await this.saveState();

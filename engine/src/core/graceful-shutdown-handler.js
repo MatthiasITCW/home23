@@ -197,15 +197,25 @@ class GracefulShutdownHandler {
         await this.orchestrator.stop();
       }
 
-      // Step 2: Save final state
-      this.logger.info('[GracefulShutdown] Dumping final state...');
-      const dumpResult = await this.dumpState();
+      // Step 2: Save final state unless orchestrator.stop() already handled it.
+      let dumpResult = this.orchestrator.shutdownStateResult || null;
+      if (this.orchestrator.shutdownStateHandled) {
+        this.logger.info('[GracefulShutdown] Final state already handled by orchestrator stop', {
+          result: dumpResult?.saved ?? null,
+          reason: dumpResult?.reason || null,
+        });
+      } else {
+        this.logger.info('[GracefulShutdown] Dumping final state...');
+        dumpResult = await this.dumpState();
+      }
 
       // Step 3: Mark clean shutdown (for crash recovery)
       if (dumpResult?.saved === false) {
         this.logger.warn('[GracefulShutdown] Final state was not saved; leaving shutdown dirty for crash recovery', {
           reason: dumpResult.reason,
         });
+      } else if (this.orchestrator.shutdownCleanMarked) {
+        this.logger.info('[GracefulShutdown] Clean shutdown already marked by orchestrator stop');
       } else if (this.orchestrator.crashRecovery) {
         this.logger.info('[GracefulShutdown] Marking clean shutdown...');
         await this.orchestrator.crashRecovery.markCleanShutdown();

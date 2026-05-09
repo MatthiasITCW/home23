@@ -9,6 +9,7 @@ const yaml = require('js-yaml');
 
 const HOME23 = __dirname;
 const ENGINE = path.join(HOME23, 'engine');
+const ENGINE_KILL_TIMEOUT_MS = 210000;
 
 function loadYaml(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -53,6 +54,7 @@ module.exports = {
       filter_env: ['HOME23_AGENT', 'INSTANCE_ID', 'DASHBOARD_PORT', 'COSMO_DASHBOARD_PORT', 'REALTIME_PORT', 'MCP_HTTP_PORT', 'COSMO_RUNTIME_DIR', 'COSMO_WORKSPACE_PATH'],
       node_args: '--expose-gc --max-old-space-size=4096',
       max_memory_restart: '5G',
+      kill_timeout: ENGINE_KILL_TIMEOUT_MS,
       autorestart: true, watch: false, merge_logs: true,
       out_file: path.join(HOME23, 'instances', 'jerry', 'logs') + '/engine-out.log',
       error_file: path.join(HOME23, 'instances', 'jerry', 'logs') + '/engine-err.log',
@@ -92,6 +94,7 @@ module.exports = {
       filter_env: ['HOME23_AGENT', 'INSTANCE_ID', 'DASHBOARD_PORT', 'COSMO_DASHBOARD_PORT', 'REALTIME_PORT', 'MCP_HTTP_PORT', 'COSMO_RUNTIME_DIR', 'COSMO_WORKSPACE_PATH'],
       node_args: '--expose-gc --max-old-space-size=4096',
       max_memory_restart: '5G',
+      kill_timeout: ENGINE_KILL_TIMEOUT_MS,
       autorestart: true, watch: false, merge_logs: true,
       out_file: path.join(HOME23, 'instances', 'forrest', 'logs') + '/engine-out.log',
       error_file: path.join(HOME23, 'instances', 'forrest', 'logs') + '/engine-err.log',

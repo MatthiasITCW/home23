@@ -75,6 +75,7 @@ export function generateEcosystem(home23Root) {
   lines.push(``);
   lines.push(`const HOME23 = __dirname;`);
   lines.push(`const ENGINE = path.join(HOME23, 'engine');`);
+  lines.push(`const ENGINE_KILL_TIMEOUT_MS = 210000;`);
   lines.push(``);
   lines.push(`function loadYaml(filePath) {`);
   lines.push(`  if (!fs.existsSync(filePath)) return {};`);
@@ -133,6 +134,7 @@ export function generateEcosystem(home23Root) {
     // 174c76c (Step: engine OOM fix). 768MB caused a restart loop at ~7k nodes.
     lines.push(`      node_args: '--expose-gc --max-old-space-size=4096',`);
     lines.push(`      max_memory_restart: '5G',`);
+    lines.push(`      kill_timeout: ENGINE_KILL_TIMEOUT_MS,`);
     lines.push(`      autorestart: true, watch: false, merge_logs: true,`);
     lines.push(`      out_file: ${logsDir} + '/engine-out.log',`);
     lines.push(`      error_file: ${logsDir} + '/engine-err.log',`);
