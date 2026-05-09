@@ -60,6 +60,27 @@ test('document feeder ignores volatile cron status snapshots by default', () => 
   );
 });
 
+test('document feeder ignores live active session snapshots but keeps durable transcripts', () => {
+  const feeder = makeFeeder();
+
+  assert.equal(
+    feeder._shouldIgnorePath('/tmp/home23/instances/jerry/workspace/sessions/active-dashboard-jerry-1778341794681.md'),
+    true
+  );
+  assert.equal(
+    feeder._shouldIgnorePath('/tmp/home23/instances/jerry/workspace/sessions/active-diagnose_thoughts_flowing.md'),
+    true
+  );
+  assert.equal(
+    feeder._shouldIgnorePath('/tmp/home23/instances/jerry/workspace/sessions/session-2026-05-09T16-12-55.md'),
+    false
+  );
+  assert.equal(
+    feeder._shouldIgnorePath('/tmp/home23/instances/jerry/workspace/sessions/backfill-dashboard-jerry-1776275538903.md'),
+    false
+  );
+});
+
 test('document feeder skips oversized files before reading or compiling', async () => {
   const logs = [];
   const feeder = makeFeeder({ maxFileBytes: 5 }, logs);

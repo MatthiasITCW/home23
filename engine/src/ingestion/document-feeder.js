@@ -500,6 +500,10 @@ class DocumentFeeder {
   _isVolatileOperationalArtifact(candidatePath) {
     const normalized = String(candidatePath).replace(/\\/g, '/');
     const basename = path.basename(normalized);
+    if (normalized.includes('/workspace/sessions/')) {
+      return /^active-.+\.md$/i.test(basename);
+    }
+
     if (!normalized.includes('/workspace/cron/')) return false;
     return new Set([
       'catalog.json',
