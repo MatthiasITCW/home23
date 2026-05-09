@@ -701,3 +701,62 @@ test('Good Life operator answer exposes latest recommended worker route', () => 
     worker: 'systems',
   });
 });
+
+test('Good Life operator marks superseded repair agenda for review when registry is clear', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      policy: {
+        mode: 'learn',
+        reason: 'no critical drift; pursue learning progress while staying useful',
+        actionCard: {
+          intent: 'learn',
+          expectedOutcome: 'new learning-progress evidence is produced and grounded',
+          stopCondition: 'finding is crystallized or discarded with evidence',
+        },
+      },
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 13, unverifiable: 0, total: 13 },
+      },
+    }),
+    obligations: {
+      activeAgenda: [{
+        id: 'ag-repair-old',
+        status: 'candidate',
+        content: 'Diagnose Good Life repair drift',
+        sourceSignal: 'good-life',
+        topicTags: ['good-life', 'good-life:repair', 'worker:systems'],
+        temporalContext: {
+          policy: 'repair',
+          workerRoute: {
+            worker: 'systems',
+            reason: 'system viability needs host/process evidence',
+          },
+        },
+        workerRoute: {
+          worker: 'systems',
+          reason: 'system viability needs host/process evidence',
+        },
+      }],
+      activeGoals: [],
+      latestAgendaById: {
+        'ag-repair-old': { status: 'candidate', updatedAt: NOW },
+      },
+      counts: { activeAgenda: 1, activeGoals: 0 },
+    },
+    liveProblems: [],
+    now: NOW,
+  });
+
+  const row = model.detail.work.obligations.activeAgenda[0];
+  assert.equal(model.work.agendaNeedingReview, 1);
+  assert.equal(row.review.recommended, true);
+  assert.match(row.review.reason, /superseded by current learn mode/);
+  assert.ok(model.operatorAnswer.some((line) => line.includes('1 agenda row(s) need review')));
+  assert.deepEqual(model.operatorBrief.target, {
+    tab: 'work',
+    id: 'ag-repair-old',
+    label: 'Review Work',
+    worker: null,
+  });
+  assert.match(model.operatorBrief.next, /superseded by current learn mode/);
+});

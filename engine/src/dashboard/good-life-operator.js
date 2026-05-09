@@ -397,6 +397,53 @@ function summarizeWork(obligations = {}) {
   };
 }
 
+function isGoodLifeAgendaRow(row = {}) {
+  const tags = Array.isArray(row.topicTags) ? row.topicTags.map((tag) => String(tag || '').toLowerCase()) : [];
+  return String(row.sourceSignal || '').toLowerCase() === 'good-life'
+    || tags.some((tag) => tag === 'good-life' || tag.startsWith('good-life:'));
+}
+
+function agendaPolicy(row = {}) {
+  return String(row.temporalContext?.policy || row.policy || '').toLowerCase();
+}
+
+function annotateObligationsForCurrentGoodLife(obligations = {}, { policy, liveProblems } = {}) {
+  const activeAgenda = Array.isArray(obligations.activeAgenda) ? obligations.activeAgenda : [];
+  const activeProblems = Number(liveProblems?.counts?.open || 0) + Number(liveProblems?.counts?.chronic || 0);
+  const currentMode = String(policy?.mode || '').toLowerCase();
+  const annotatedAgenda = activeAgenda.map((row) => {
+    const rowPolicy = agendaPolicy(row);
+    const isSupersededRepair = isGoodLifeAgendaRow(row)
+      && activeProblems === 0
+      && ['repair', 'recover'].includes(rowPolicy)
+      && !['repair', 'recover'].includes(currentMode);
+    if (!isSupersededRepair || row.review?.recommended) return row;
+    return {
+      ...row,
+      review: {
+        recommended: true,
+        required: false,
+        severity: 'watch',
+        reason: `Good Life ${rowPolicy} row is superseded by current ${currentMode || 'non-repair'} mode with no open live problems`,
+        next: 'dismiss it if the live registry is still clear; run the worker only if fresh evidence says repair is still needed',
+        suggestedWorker: row.workerRoute || null,
+      },
+    };
+  });
+
+  return {
+    ...obligations,
+    activeAgenda: annotatedAgenda,
+    counts: {
+      ...(obligations.counts || {}),
+      activeAgenda: annotatedAgenda.length,
+      activeGoals: Array.isArray(obligations.activeGoals)
+        ? obligations.activeGoals.length
+        : Number(obligations.counts?.activeGoals || 0),
+    },
+  };
+}
+
 function annotateLatestRegulatorAction(action, obligations) {
   if (!action?.agendaId) return action || null;
   const latestAgenda = obligations?.latestAgendaById?.[action.agendaId] || null;
@@ -680,7 +727,9 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     status = 'Working';
     headline = `${work.activeTotal} active Good Life work item${work.activeTotal === 1 ? '' : 's'}`;
     why = policy?.reason || 'Good Life has routed work but no active live problem.';
-    if (latestAction?.workerRoute?.worker) {
+    if (work.topAgenda?.review?.recommended) {
+      next = `Review: ${compactText(work.topAgenda.review.reason || 'operator review recommended', 140)}`;
+    } else if (latestAction?.workerRoute?.worker) {
       next = `Worker route: ${latestAction.workerRoute.worker}${latestAction.workerRoute.reason ? ` - ${compactText(latestAction.workerRoute.reason, 140)}` : ''}`;
     } else if (work.topAgenda?.id) {
       next = `Top agenda: ${work.topAgenda.id}`;
@@ -688,8 +737,10 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     target = {
       tab: 'work',
       id: work.topAgenda?.id || work.topGoal?.id || null,
-      label: latestAction?.workerRoute?.worker ? `Open ${latestAction.workerRoute.worker}` : 'Review Work',
-      worker: latestAction?.workerRoute?.worker || null,
+      label: work.topAgenda?.review?.recommended
+        ? 'Review Work'
+        : (latestAction?.workerRoute?.worker ? `Open ${latestAction.workerRoute.worker}` : 'Review Work'),
+      worker: work.topAgenda?.review?.recommended ? null : (latestAction?.workerRoute?.worker || null),
     };
   } else if (latestResolution) {
     headline = 'No active issues after recent repairs';
@@ -836,8 +887,12 @@ function buildGoodLifeOperatorModel({
   const projection = normalizeProjection(state);
   const lanes = buildLanes(state, commitments || {});
   const freshness = buildFreshness(state, commitments || {}, nowMs);
-  const latestAction = annotateLatestRegulatorAction(latestRegulatorAction(regulator || {}), obligations);
-  const work = summarizeWork(obligations || {});
+  const currentObligations = annotateObligationsForCurrentGoodLife(obligations || {}, {
+    policy,
+    liveProblems: directLiveProblems,
+  });
+  const latestAction = annotateLatestRegulatorAction(latestRegulatorAction(regulator || {}), currentObligations);
+  const work = summarizeWork(currentObligations || {});
   const consistency = buildConsistency({
     state,
     projection,
@@ -877,7 +932,7 @@ function buildGoodLifeOperatorModel({
     regulator: regulator || {},
     liveProblems: directLiveProblems,
     ledgerTail,
-    obligations,
+    obligations: currentObligations,
   });
   model.work = work;
   model.operatorAnswer = buildOperatorAnswer({
