@@ -67,10 +67,21 @@ function summarizeGoals(goals) {
   let open = 0;
   let complete = 0;
   for (const g of Array.isArray(list) ? list : []) {
-    if (g?.status === 'complete' || g?.completed) complete++;
-    else open++;
+    if (isOpenGoal(g)) open++;
+    else complete++;
   }
   return { open, complete, total: open + complete };
+}
+
+function isOpenGoal(goal) {
+  if (!goal) return false;
+  const status = String(goal.status || 'active').toLowerCase();
+  if (['completed', 'complete', 'archived', 'cancelled', 'canceled', 'resolved'].includes(status)) {
+    return false;
+  }
+  if (goal.completed || goal.completedAt || goal.completed_at) return false;
+  const progress = Number.isFinite(Number(goal.progress)) ? Number(goal.progress) : null;
+  return progress === null || progress < 1;
 }
 
 function summarizeAgenda(runtimeRoot) {

@@ -161,6 +161,39 @@ test('goals API payload avoids full state memory hydration', async () => {
   }
 });
 
+test('goals API filters completed goals left in active storage', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home23-dashboard-goals-'));
+  fs.writeFileSync(
+    path.join(dir, 'state.json.gz'),
+    zlib.gzipSync(JSON.stringify({
+      goals: {
+        active: [
+          ['goal_active', { id: 'goal_active', description: 'current work', status: 'active', progress: 0.4 }],
+          ['goal_done', { id: 'goal_done', description: 'done but still stored active', status: 'completed', progress: 0.925, completedAt: Date.now() }],
+          ['goal_progress_done', { id: 'goal_progress_done', description: 'done by progress', status: 'active', progress: 1 }],
+        ],
+        completed: [],
+        archived: [],
+      },
+    }))
+  );
+
+  const server = Object.create(DashboardServer.prototype);
+  server.logsDir = dir;
+  server.logger = console;
+  server._stateScalarsCache = null;
+
+  try {
+    const goals = await server.loadGoals();
+
+    assert.equal(goals.source, 'state');
+    assert.deepEqual(goals.counts, { active: 1, completed: 0, archived: 0 });
+    assert.deepEqual(goals.active.map(([id]) => id), ['goal_active']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('goals API payload falls back to brain snapshot summaries', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home23-dashboard-goals-'));
   fs.writeFileSync(
@@ -187,4 +220,18 @@ test('goals API payload falls back to brain snapshot summaries', async () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('Good Life snapshot goals trust active summaries over stale snapshot active count', () => {
+  const server = Object.create(DashboardServer.prototype);
+
+  const goals = server._goodLifeSnapshotGoals({
+    goalCounts: { active: 1, completed: 34, archived: 5 },
+    activeGoalSummaries: [],
+  });
+
+  assert.deepEqual(goals, {
+    active: [],
+    counts: { active: 0, completed: 34, archived: 5 },
+  });
 });

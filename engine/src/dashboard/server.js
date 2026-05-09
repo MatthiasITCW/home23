@@ -754,7 +754,8 @@ class DashboardServer {
     const labelPrefix = target.agentName
       ? target.agentName.charAt(0).toUpperCase() + target.agentName.slice(1)
       : 'Agent';
-    const timeoutMs = 5000;
+    const slowMs = 5000;
+    const timeoutMs = 12000;
     const checks = [
       {
         id: 'engine',
@@ -776,13 +777,16 @@ class DashboardServer {
           headers: { accept: 'application/json' },
           signal: AbortSignal.timeout(timeoutMs),
         });
+        const latencyMs = Date.now() - startedAt;
         return {
           id: check.id,
           label: check.label,
           url: check.url,
           ok: response.ok,
           status: response.status,
-          latencyMs: Date.now() - startedAt,
+          latencyMs,
+          slow: response.ok && latencyMs > slowMs,
+          slowThresholdMs: slowMs,
           error: response.ok ? null : `HTTP ${response.status}`,
         };
       } catch (error) {
@@ -5204,12 +5208,7 @@ Be specific, actionable, and maintain research continuity.`;
           snapshot: buildLiveProblemSnapshot(liveProblemList),
         };
         const brainSnapshot = readJson('brain-snapshot.json');
-        const snapshotGoals = Array.isArray(brainSnapshot?.activeGoalSummaries)
-          ? {
-              active: brainSnapshot.activeGoalSummaries.map((goal) => [goal.id, goal]),
-              counts: brainSnapshot.goalCounts || null,
-            }
-          : null;
+        const snapshotGoals = this._goodLifeSnapshotGoals(brainSnapshot);
         const obligations = buildGoodLifeObligationSnapshot({
           agendaRows: readJsonl('agenda.jsonl'),
           goals: snapshotGoals,
@@ -9452,9 +9451,10 @@ You are empowered to explore and understand. The user trusts you to discover the
   }
 
   _normalizeGoalsPayload(goals = {}, source = null) {
-    const active = goals.active ?? (Array.isArray(goals.goals)
+    const rawActive = goals.active ?? (Array.isArray(goals.goals)
       ? goals.goals.filter((goal) => goal?.status === 'active')
       : []);
+    const active = this._filterActiveGoalEntries(rawActive);
     const completed = goals.completed ?? [];
     const archived = goals.archived ?? [];
     return {
@@ -9959,12 +9959,51 @@ You are empowered to explore and understand. The user trusts you to discover the
     }
   }
 
+  _goodLifeSnapshotGoals(brainSnapshot) {
+    if (!Array.isArray(brainSnapshot?.activeGoalSummaries)) return null;
+    const activeSummaries = brainSnapshot.activeGoalSummaries;
+    const counts = brainSnapshot.goalCounts || {};
+    return {
+      active: activeSummaries.map((goal) => [goal.id, goal]),
+      counts: {
+        ...counts,
+        active: activeSummaries.length,
+      },
+    };
+  }
+
   _countGoalEntries(entries) {
     if (!entries) return 0;
     if (Array.isArray(entries)) return entries.length;
     if (entries instanceof Map) return entries.size;
     if (typeof entries === 'object') return Object.keys(entries).length;
     return 0;
+  }
+
+  _filterActiveGoalEntries(entries) {
+    if (!entries) return [];
+    if (Array.isArray(entries)) {
+      return entries.filter((entry) => this._isActiveGoalEntry(entry));
+    }
+    if (entries instanceof Map) {
+      return Array.from(entries.entries()).filter((entry) => this._isActiveGoalEntry(entry));
+    }
+    if (typeof entries === 'object') {
+      return Object.entries(entries).filter((entry) => this._isActiveGoalEntry(entry));
+    }
+    return [];
+  }
+
+  _isActiveGoalEntry(entry) {
+    const goal = Array.isArray(entry) ? entry[1] : entry;
+    if (!goal) return false;
+    const status = String(goal.status || 'active').toLowerCase();
+    if (['completed', 'complete', 'archived', 'cancelled', 'canceled', 'resolved'].includes(status)) {
+      return false;
+    }
+    if (goal.completed || goal.completedAt || goal.completed_at) return false;
+    const progress = Number.isFinite(Number(goal.progress)) ? Number(goal.progress) : null;
+    return progress === null || progress < 1;
   }
 
   /**

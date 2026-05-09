@@ -751,6 +751,12 @@ function buildConsistency({ state, projection, liveProblems, obligations, hasObl
         severity: isEngineTimeout ? 'warning' : 'critical',
         message: `${service.label || service.id || 'Runtime service'} is unavailable: ${service.error || 'ping failed'}`,
       });
+    } else if (service?.slow === true) {
+      warnings.push({
+        code: `runtime_${service.id || 'service'}_slow`,
+        severity: 'warning',
+        message: `${service.label || service.id || 'Runtime service'} is slow: ${service.latencyMs}ms health check exceeds ${service.slowThresholdMs || 5000}ms`,
+      });
     }
   }
 

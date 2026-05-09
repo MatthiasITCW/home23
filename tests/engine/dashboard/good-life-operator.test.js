@@ -616,6 +616,30 @@ test('Good Life operator model reports engine admin timeout without overriding c
   assert.ok(model.operatorAnswer.some((line) => line.includes('Forrest engine admin is unavailable')));
 });
 
+test('Good Life operator model reports slow runtime services without calling them unavailable', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [],
+    runtime: {
+      ok: true,
+      services: [
+        { id: 'engine', label: 'Forrest engine realtime', ok: true, status: 200, latencyMs: 6200, slow: true, slowThresholdMs: 5000 },
+        { id: 'harness', label: 'Forrest harness bridge', ok: true, status: 200, latencyMs: 12 },
+      ],
+    },
+    now: NOW,
+  });
+
+  const warning = model.consistency.warnings.find((item) => item.code === 'runtime_engine_slow');
+  assert.equal(model.status, 'current');
+  assert.equal(model.operatorBrief.status, 'Attention');
+  assert.equal(model.safeToInherit, false);
+  assert.equal(warning?.severity, 'warning');
+  assert.match(warning?.message || '', /slow/);
+  assert.equal(model.consistency.warnings.some((item) => item.code === 'runtime_engine_unavailable'), false);
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Forrest engine realtime is slow')));
+});
+
 test('Good Life operator model builds end-user detail sections for drill-down navigation', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({

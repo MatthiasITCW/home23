@@ -60,3 +60,26 @@ test('Good Life agenda summary counts latest item status, not raw JSONL events',
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('Good Life goal summary does not count completed goals still present in active storage as open', () => {
+  const goals = {
+    getGoals() {
+      return [
+        { id: 'goal-active', status: 'active', progress: 0.25 },
+        { id: 'goal-completed-status', status: 'completed', progress: 0.925, completedAt: Date.now() },
+        { id: 'goal-complete-status', status: 'complete' },
+        { id: 'goal-completed-flag', status: 'active', completed: true },
+        { id: 'goal-progress-done', status: 'active', progress: 1 },
+        { id: 'goal-archived', status: 'archived' },
+      ];
+    },
+  };
+
+  const snapshot = buildGoodLifeSnapshot({ runtimeRoot: '', goals });
+
+  assert.deepEqual(snapshot.goals, {
+    open: 1,
+    complete: 5,
+    total: 6,
+  });
+});
