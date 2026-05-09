@@ -7,6 +7,7 @@ const USER_INTERVENTION_REMEDIATORS = new Set([
   'manual_intervention',
   'user_action',
 ]);
+const WORK_REVIEW_GOAL_AGE_MIN = 12 * 60;
 
 function toTimeMs(value) {
   const ms = Date.parse(value || '');
@@ -199,16 +200,25 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, now = 
   const activeGoals = normalizeActiveGoals(goals)
     .sort((a, b) => toTimeMs(b.createdAt || b.created) - toTimeMs(a.createdAt || a.created))
     .slice(0, 12)
-    .map((goal) => ({
-      id: goal.id || '',
-      description: goal.description || goal.title || goal.goal || '',
-      status: goal.status || 'active',
-      source: goal.source?.label || goal.source?.origin || goal.source || null,
-      priority: goal.priority ?? null,
-      progress: goal.progress ?? null,
-      createdAt: goal.createdAt || goal.created_at || goal.created || null,
-      ageMin: ageMinutes(goal.createdAt || goal.created_at || goal.created, nowMs),
-    }));
+    .map((goal) => {
+      const createdAt = goal.createdAt || goal.created_at || goal.created || null;
+      const ageMin = ageMinutes(createdAt, nowMs);
+      const source = goal.source?.label || goal.source?.origin || goal.source || null;
+      const row = {
+        id: goal.id || '',
+        description: goal.description || goal.title || goal.goal || '',
+        status: goal.status || 'active',
+        source,
+        priority: goal.priority ?? null,
+        progress: goal.progress ?? null,
+        createdAt,
+        ageMin,
+      };
+      return {
+        ...row,
+        review: classifyGoalReview(row),
+      };
+    });
 
   const latestAgendaById = Object.fromEntries([...agenda.values()].map((row) => [row.id, {
     status: row.status || 'candidate',
@@ -241,6 +251,53 @@ function latestRegulatorAction(regulator = {}) {
     .filter(([key, value]) => key !== 'daily' && value && toTimeMs(value.at))
     .map(([key, value]) => ({ key, ...value }))
     .sort((a, b) => toTimeMs(b.at) - toTimeMs(a.at))[0] || null;
+}
+
+function classifyGoalReview(goal = {}) {
+  const ageMin = finiteCount(goal.ageMin);
+  const progress = Number(goal.progress || 0);
+  const source = String(goal.source || '').toLowerCase();
+  if (source === 'force-output' && ageMin != null && ageMin >= WORK_REVIEW_GOAL_AGE_MIN && progress <= 0) {
+    return {
+      recommended: true,
+      required: false,
+      severity: 'watch',
+      reason: `force-output goal has no observable progress after ${Math.round(ageMin / 60)}h`,
+      next: 'keep it if the digest is still useful; dismiss or archive it if it is stale back-pressure',
+    };
+  }
+  if (ageMin != null && ageMin >= 24 * 60 && progress <= 0) {
+    return {
+      recommended: true,
+      required: false,
+      severity: 'watch',
+      reason: `active goal has no observable progress after ${Math.round(ageMin / 60)}h`,
+      next: 'review whether the goal still represents useful work',
+    };
+  }
+  return {
+    recommended: false,
+    required: false,
+    severity: 'ok',
+    reason: null,
+    next: null,
+  };
+}
+
+function summarizeWork(obligations = {}) {
+  const activeAgenda = Array.isArray(obligations.activeAgenda) ? obligations.activeAgenda : [];
+  const activeGoals = Array.isArray(obligations.activeGoals) ? obligations.activeGoals : [];
+  const goalsNeedingReview = activeGoals.filter((goal) => goal.review?.recommended);
+  const agendaNeedingUser = activeAgenda.filter((row) => row.intervention?.required);
+  return {
+    activeAgenda: activeAgenda.length,
+    activeGoals: activeGoals.length,
+    activeTotal: activeAgenda.length + activeGoals.length,
+    goalsNeedingReview: goalsNeedingReview.length,
+    interventionRequired: agendaNeedingUser.length,
+    topGoal: activeGoals[0] || null,
+    reviewRows: goalsNeedingReview.slice(0, 5),
+  };
 }
 
 function annotateLatestRegulatorAction(action, obligations) {
@@ -362,7 +419,7 @@ function buildConsistency({ state, projection, liveProblems, freshness, runtime 
   };
 }
 
-function buildOperatorAnswer({ state, lanes, liveProblems, consistency }) {
+function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work }) {
   const lines = [];
   if (state?.summary || state?.policy?.reason) {
     lines.push(state.summary || state.policy.reason);
@@ -372,6 +429,14 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency }) {
   lines.push(`Live-problem registry: ${counts.open || 0} open, ${counts.chronic || 0} chronic`);
   if (Number(counts.interventionRequired || 0) > 0) {
     lines.push(`${counts.interventionRequired} live problem(s) need user intervention`);
+  }
+
+  if (work?.activeTotal > 0) {
+    const reviewText = work.goalsNeedingReview > 0
+      ? `; ${work.goalsNeedingReview} goal(s) need operator review`
+      : '';
+    const goalText = work.topGoal?.id ? `; top goal ${work.topGoal.id}` : '';
+    lines.push(`Active work: ${work.activeTotal}${reviewText}${goalText}`);
   }
 
   for (const lane of lanes.filter((candidate) => candidate.active)) {
@@ -410,6 +475,7 @@ function buildDetailSections({ commitments, trends, regulator, liveProblems, led
       dailyActions,
       daily: regulator?.daily || null,
       obligations: obligations || { activeAgenda: [], activeGoals: [], counts: { activeAgenda: 0, activeGoals: 0 } },
+      summary: summarizeWork(obligations || {}),
     },
     resolutions: {
       recent: (Array.isArray(liveProblems.resolved) ? liveProblems.resolved : []).slice(0, 12),
@@ -448,6 +514,7 @@ function buildGoodLifeOperatorModel({
   const lanes = buildLanes(state, commitments || {});
   const freshness = buildFreshness(state, commitments || {}, nowMs);
   const latestAction = annotateLatestRegulatorAction(latestRegulatorAction(regulator || {}), obligations);
+  const work = summarizeWork(obligations || {});
   const consistency = buildConsistency({
     state,
     projection,
@@ -473,6 +540,7 @@ function buildGoodLifeOperatorModel({
     lanes,
     actionCard,
     liveProblems: directLiveProblems,
+    work,
     projection,
     runtime,
     consistency,
@@ -488,11 +556,13 @@ function buildGoodLifeOperatorModel({
     ledgerTail,
     obligations,
   });
+  model.work = work;
   model.operatorAnswer = buildOperatorAnswer({
     state,
     lanes,
     liveProblems: directLiveProblems,
     consistency,
+    work,
   });
   return model;
 }

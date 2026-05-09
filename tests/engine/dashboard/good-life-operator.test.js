@@ -103,8 +103,31 @@ test('Good Life obligation snapshot exposes active agenda rows and goals', () =>
   assert.equal(snapshot.counts.activeGoals, 1);
   assert.deepEqual(snapshot.activeAgenda.map((row) => row.id), ['ag-3', 'ag-1']);
   assert.equal(snapshot.activeGoals[0].id, 'goal_1');
+  assert.equal(snapshot.activeGoals[0].review.recommended, false);
   assert.equal(snapshot.latestAgendaById['ag-2'].status, 'stale');
   assert.equal(snapshot.latestAgendaById['ag-3'].status, 'surfaced');
+});
+
+test('Good Life obligation snapshot flags stale force-output goals for operator review', () => {
+  const snapshot = buildGoodLifeObligationSnapshot({
+    goals: {
+      active: [
+        ['goal_force', {
+          id: 'goal_force',
+          description: 'Produce outputs/digest-6382.md',
+          status: 'active',
+          source: { origin: 'force-output', label: 'force-output' },
+          progress: 0,
+          createdAt: '2026-05-07T23:00:00.000Z',
+        }],
+      ],
+    },
+    now: NOW,
+  });
+
+  assert.equal(snapshot.activeGoals[0].review.recommended, true);
+  assert.equal(snapshot.activeGoals[0].review.required, false);
+  assert.match(snapshot.activeGoals[0].review.reason, /force-output goal/);
 });
 
 test('Good Life operator model exposes safe current help state with evidence and action card', () => {
@@ -355,9 +378,38 @@ test('Good Life operator model builds end-user detail sections for drill-down na
   assert.equal(model.detail.work.dailyActions[0].agendaId, 'ag-new');
   assert.equal(model.detail.work.obligations.activeAgenda[0].id, 'ag-visible');
   assert.equal(model.detail.work.obligations.activeGoals[0].id, 'goal-visible');
+  assert.equal(model.detail.work.summary.activeTotal, 2);
   assert.equal(model.detail.resolutions.recent[0].id, 'resolved_1');
   assert.equal(model.detail.resolutions.recent[0].evidence.receiptId, 'ev_resolved_1');
   assert.equal(model.detail.insights.activeCommitments[0].id, 'continuity');
   assert.equal(model.detail.insights.trendMetrics.pendingAgenda, 145);
   assert.equal(model.detail.insights.ledgerTail[0].event, 'good_life.evaluated');
+});
+
+test('Good Life operator answer includes active work and review-needed goals', () => {
+  const obligations = buildGoodLifeObligationSnapshot({
+    goals: {
+      active: [
+        ['goal_force', {
+          id: 'goal_force',
+          description: 'Produce outputs/digest-6382.md',
+          status: 'active',
+          source: { origin: 'force-output', label: 'force-output' },
+          progress: 0,
+          createdAt: '2026-05-07T23:00:00.000Z',
+        }],
+      ],
+    },
+    now: NOW,
+  });
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    obligations,
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.equal(model.work.activeGoals, 1);
+  assert.equal(model.work.goalsNeedingReview, 1);
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Active work: 1; 1 goal(s) need operator review; top goal goal_force')));
 });

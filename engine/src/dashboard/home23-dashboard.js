@@ -2906,10 +2906,10 @@ function renderGoodLifeWorkList(data) {
       age: item.ageMin != null ? `${item.ageMin}m` : '',
     })),
     ...goals.map((goal) => ({
-      badge: goal.status || 'goal',
+      badge: goal.review?.recommended ? 'review' : (goal.status || 'goal'),
       title: goal.id || 'goal',
       text: goal.description || '',
-      age: goal.ageMin != null ? `${goal.ageMin}m` : '',
+      age: [goal.ageMin != null ? `${goal.ageMin}m` : '', goal.review?.recommended ? 'review' : ''].filter(Boolean).join(' - '),
     })),
   ];
   if (!rows.length && !actions.length) return '<div class="h23-goodlife-empty h23-goodlife-pad">No routed work or active obligations</div>';
@@ -3078,7 +3078,7 @@ function renderGoodLifeWorkDetail(data) {
       <div><label>Risk</label><p>${escapeHtml([card.riskTier != null ? `risk ${card.riskTier}` : null, card.reversible ? 'reversible' : null, card.evidenceRequired ? 'evidence required' : null].filter(Boolean).join(', ') || 'not recorded')}</p></div>
     </div>
     <section><h4>Active Agenda</h4>${agenda.length ? agenda.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.id || 'agenda')}</strong><span>${escapeHtml(item.content || '')}</span><small>${escapeHtml([item.status, item.ageMin != null ? `${item.ageMin}m` : null].filter(Boolean).join(' - '))}</small><div class="h23-goodlife-mini-actions"><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'acknowledged')">Acknowledge</button><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'stale')">Dismiss</button></div></div>`).join('') : '<div class="h23-goodlife-empty">No active agenda rows</div>'}</section>
-    <section><h4>Active Goals</h4>${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null].filter(Boolean).join(' - '))}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
+    <section><h4>Active Goals</h4>${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p>` : ''}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
     <section><h4>Active Commitments</h4>${activeCommitments.length ? activeCommitments.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml((item.reasons || []).join(' - ') || item.status || '')}</span><small>${escapeHtml(item.lane || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active commitments</div>'}</section>
   `;
 }
