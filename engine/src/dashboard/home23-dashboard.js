@@ -2931,12 +2931,57 @@ function renderGoodLifeIssueDetail(problem) {
     </div>
     <div class="h23-goodlife-detail-actions">
       <button class="h23-goodlife-plain-btn" type="button" onclick="testGoodLifeVerifier('${escapeAttr(problem.id)}')">Test Verifier</button>
+      <button class="h23-goodlife-plain-btn" type="button" onclick="runGoodLifeWorkerCheck('${escapeAttr(problem.id)}')">Run Worker Check</button>
     </div>
     <section><h4>Verifier</h4>${renderGoodLifeJson(problem.verifier)}</section>
     <section><h4>Remediation Plan</h4>${renderGoodLifeJson(problem.remediation || [])}</section>
     <section><h4>Recent Attempts</h4>${attempts.length ? attempts.map((attempt) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(attempt.type || 'attempt')}</strong><span>${escapeHtml(attempt.outcome || '')}</span><small>${escapeHtml(attempt.detail || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No attempts recorded</div>'}</section>
     <section><h4>Fix Recipes</h4>${recipes.length ? recipes.map((recipe) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(recipe.verifierStatus || recipe.dispatchOutcome || 'recipe')}</strong><span>${escapeHtml(recipe.summary || '')}</span><small>${recipe.at ? escapeHtml(timeSince(new Date(recipe.at))) : ''}</small></div>`).join('') : '<div class="h23-goodlife-empty">No fix recipe recorded</div>'}</section>
   `;
+}
+
+function compactGoodLifeProblemForWorker(problem) {
+  if (!problem) return {};
+  return {
+    id: problem.id,
+    state: problem.state,
+    claim: problem.claim,
+    openedAt: problem.openedAt,
+    updatedAt: problem.updatedAt,
+    lastCheckedAt: problem.lastCheckedAt,
+    lastResult: problem.lastResult,
+    verifier: problem.verifier,
+    remediation: problem.remediation,
+    remediationLog: (problem.remediationLog || []).slice(-5),
+    fixRecipe: problem.fixRecipe,
+  };
+}
+
+function buildGoodLifeWorkerPrompt(problem) {
+  const scopeLabel = goodLifeLabelForScope(goodLifeOverlayState.scope);
+  const payload = compactGoodLifeProblemForWorker(problem);
+  return [
+    `Good Life operator intervention for ${scopeLabel}.`,
+    '',
+    'Inspect this live problem with current evidence. Diagnose the exact failing layer, re-run or dry-run the verifier when safe, and return a receipt with pass/fail evidence and the smallest concrete next action.',
+    '',
+    'Guardrails: do not use global PM2 stop/delete, do not discard local changes, do not restart unrelated services, and do not claim resolution without verifier evidence.',
+    '',
+    'Live problem payload:',
+    JSON.stringify(payload, null, 2),
+  ].join('\n');
+}
+
+async function chooseGoodLifeWorker() {
+  if (!workersState.workers.length) {
+    const data = await workerApi('');
+    workersState.workers = data.workers || [];
+  }
+  return workersState.workers.find((worker) => worker.name === 'systems')
+    || workersState.workers.find((worker) => worker.name === 'freshness')
+    || workersState.workers.find((worker) => worker.name === 'memory')
+    || workersState.workers[0]
+    || null;
 }
 
 function renderGoodLifeWorkDetail(data) {
@@ -3102,6 +3147,43 @@ async function testGoodLifeVerifier(problemId) {
       : `Verifier result: ${result.result?.ok ? 'pass' : 'fail'} - ${result.result?.detail || 'no detail'}`);
   } catch (err) {
     setText('goodlife-overlay-action-status', `Verifier test failed: ${err.message}`);
+  }
+}
+
+async function runGoodLifeWorkerCheck(problemId) {
+  const data = goodLifeSurfaceState.get(goodLifeOverlayState.scope);
+  const problem = (data?.liveProblems?.problems || []).find((entry) => entry.id === problemId);
+  if (!problem) {
+    setText('goodlife-overlay-action-status', 'Select an active issue first.');
+    return;
+  }
+
+  setText('goodlife-overlay-action-status', 'Starting worker check...');
+  try {
+    const worker = await chooseGoodLifeWorker();
+    if (!worker?.name) throw new Error('No worker specialists are available.');
+    const result = await workerApi(`/${encodeURIComponent(worker.name)}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt: buildGoodLifeWorkerPrompt(problem),
+        requestedBy: 'good-life-operator',
+        requester: 'home23-dashboard',
+        ownerAgent: primaryAgent?.name,
+        context: {
+          surface: 'good-life',
+          scope: goodLifeOverlayState.scope,
+          problemId: problem.id,
+        },
+      }),
+    });
+    workersState.receipt = result.receipt || null;
+    if (result.runId) {
+      await loadWorkersSurface().catch(() => {});
+      await openWorkerReceipt(result.runId).catch(() => {});
+    }
+    setText('goodlife-overlay-action-status', `Worker check complete: ${result.receipt?.status || result.runId || 'receipt recorded'}.`);
+  } catch (err) {
+    setText('goodlife-overlay-action-status', `Worker check failed: ${err.message}`);
   }
 }
 

@@ -3105,6 +3105,7 @@ body.h23-external-focus #cosmo23-refresh-btn {
 
 .h23-goodlife-detail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0;
 }
