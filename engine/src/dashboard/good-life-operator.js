@@ -347,9 +347,10 @@ function buildConsistency({ state, projection, liveProblems, freshness, runtime 
 
   for (const service of runtime?.services || []) {
     if (service?.ok === false) {
+      const isEngineTimeout = service.id === 'engine' && /timeout|aborted/i.test(String(service.error || ''));
       warnings.push({
         code: `runtime_${service.id || 'service'}_unavailable`,
-        severity: 'critical',
+        severity: isEngineTimeout ? 'warning' : 'critical',
         message: `${service.label || service.id || 'Runtime service'} is unavailable: ${service.error || 'ping failed'}`,
       });
     }

@@ -278,6 +278,27 @@ test('Good Life operator model escalates unavailable runtime services', () => {
   assert.ok(model.operatorAnswer.some((line) => line.includes('Jerry engine admin is unavailable')));
 });
 
+test('Good Life operator model reports engine admin timeout without overriding clean registry', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [],
+    runtime: {
+      ok: false,
+      services: [
+        { id: 'engine', label: 'Forrest engine admin', ok: false, error: 'The operation was aborted due to timeout' },
+        { id: 'harness', label: 'Forrest harness bridge', ok: true },
+      ],
+    },
+    now: NOW,
+  });
+
+  const warning = model.consistency.warnings.find((item) => item.code === 'runtime_engine_unavailable');
+  assert.equal(model.status, 'current');
+  assert.equal(model.safeToInherit, false);
+  assert.equal(warning?.severity, 'warning');
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Forrest engine admin is unavailable')));
+});
+
 test('Good Life operator model builds end-user detail sections for drill-down navigation', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({
