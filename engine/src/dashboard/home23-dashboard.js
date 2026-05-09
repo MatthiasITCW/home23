@@ -10,6 +10,7 @@
 
 const REFRESH_MS = 30000;
 const HOME_THOUGHT_ROTATE_MS = 16000;
+const GOOD_LIFE_API_TIMEOUT_MS = 12000;
 let agents = [];
 // Back-compat variable name: this is the agent that owns the current dashboard.
 let primaryAgent = null;
@@ -2682,7 +2683,7 @@ async function loadHomeTiles() {
     fetch(stateUrl, { signal: AbortSignal.timeout(8_000) })
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null),
-    apiFetch(`${base}/api/good-life`, { timeoutMs: 4000 }).catch(() => null),
+    apiFetch(`${base}/api/good-life`, { timeoutMs: GOOD_LIFE_API_TIMEOUT_MS }).catch(() => null),
   ]);
 
   if (summary) {
@@ -2960,7 +2961,7 @@ function goodLifeBaseForScope(scope = 'home') {
 
 async function loadGoodLifeForScope(scope = 'home') {
   const base = goodLifeBaseForScope(scope);
-  const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: 5000 }).catch(() => null);
+  const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: GOOD_LIFE_API_TIMEOUT_MS }).catch(() => null);
   if (data) updateGoodLifeTile(data, scope);
   return data;
 }
@@ -2972,7 +2973,7 @@ async function loadGoodLifeFleet({ updateTiles = true } = {}) {
   const rows = await Promise.all(configuredAgents.filter(Boolean).map(async (agent) => {
     const scope = agent.name === primaryAgent?.name ? 'home' : `agent-${agent.name}`;
     const base = apiBase(agent);
-    const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: 5000 }).catch(() => null);
+    const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: GOOD_LIFE_API_TIMEOUT_MS }).catch(() => null);
     const row = { agent, scope, data };
     goodLifeFleetState.set(scope, row);
     if (data && updateTiles) updateGoodLifeTile(data, scope);
@@ -4301,7 +4302,7 @@ async function loadAgentPanel(agentName) {
   const [summary, engineHealth, goodLifeData] = await Promise.all([
     apiFetch(`${base}/api/home/summary`, { timeoutMs: 4000 }).catch(() => null),
     fetchEngineHealth(agent).catch(() => null),
-    apiFetch(`${base}/api/good-life`, { timeoutMs: 4000 }).catch(() => null)
+    apiFetch(`${base}/api/good-life`, { timeoutMs: GOOD_LIFE_API_TIMEOUT_MS }).catch(() => null)
   ]);
   updateGoodLifeTile(goodLifeData, `agent-${agentName}`);
 
