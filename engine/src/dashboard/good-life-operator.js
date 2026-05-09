@@ -456,6 +456,10 @@ function annotateLatestRegulatorAction(action, obligations) {
   };
 }
 
+function isActiveAgendaStatus(status) {
+  return ['candidate', 'surfaced', 'acknowledged'].includes(String(status || '').toLowerCase());
+}
+
 function buildLanes(state, commitments = {}) {
   const commitmentByLane = new Map();
   for (const item of commitments?.commitments || []) {
@@ -800,7 +804,7 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
     lines.push(`Active work: ${work.activeTotal}${reviewText}${agendaText}${goalText}`);
   }
 
-  if (latestAction?.workerRoute?.worker) {
+  if (latestAction?.workerRoute?.worker && isActiveAgendaStatus(latestAction.agendaStatus || 'candidate')) {
     const route = latestAction.workerRoute;
     lines.push(`Worker route: ${route.worker}${route.reason ? ` - ${route.reason}` : ''}`);
   }

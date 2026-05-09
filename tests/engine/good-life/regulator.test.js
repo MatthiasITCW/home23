@@ -36,6 +36,26 @@ function recoverObservation() {
   };
 }
 
+function learnObservation() {
+  const obs = recoverObservation();
+  obs.sourceRef = 'good-life:learn:2026-05-01T15:00:00.000Z';
+  obs.payload.evaluatedAt = '2026-05-01T15:00:00.000Z';
+  obs.payload.summary = 'learn - no critical drift; pursue learning progress while staying useful';
+  obs.payload.evidence = {
+    liveProblems: { open: 0, chronic: 0, resolved: 3, unverifiable: 0 },
+  };
+  obs.payload.lanes = {
+    viability: { status: 'healthy', reasons: ['core engine evidence is flowing'] },
+    usefulness: { status: 'watch', reasons: ['usefulness must be proven by visible progress'] },
+    recovery: { status: 'watch', reasons: ['recovery is available but not currently needed'] },
+  };
+  obs.payload.policy.mode = 'learn';
+  obs.payload.policy.reason = 'no critical drift; pursue learning progress while staying useful';
+  obs.payload.policy.actionCard.intent = 'learn';
+  obs.payload.policy.actionCard.riskTier = 0;
+  return obs;
+}
+
 test('GoodLifeRegulator routes recover policy through agenda and motor cortex', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
   const added = [];
@@ -103,6 +123,67 @@ test('GoodLifeRegulator stales older Good Life agenda rows when AgendaStore is r
   assert.equal(staleUpdates[0].opts.actor, 'good-life-regulator');
   assert.equal(staleUpdates[0].opts.skipReconcile, true);
   assert.equal(added[0].temporalContext.staledPriorGoodLifeAgenda, 1);
+});
+
+test('GoodLifeRegulator stales superseded repair work before self-maintenance budget blocks new work', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  writeFileSync(join(dir, 'good-life-regulator-state.json'), JSON.stringify({
+    daily: {
+      date: new Date().toISOString().slice(0, 10),
+      selfMaintenanceActions: 4,
+      actions: [],
+    },
+  }));
+  const staleUpdates = [];
+  let added = 0;
+  const regulator = new GoodLifeRegulator({
+    brainDir: dir,
+    getAgendaStore: () => ({
+      list(filter) {
+        assert.deepEqual(filter.status, ['candidate', 'surfaced', 'acknowledged']);
+        return [
+          {
+            id: 'ag-repair-old',
+            status: 'candidate',
+            sourceSignal: 'good-life',
+            topicTags: ['good-life', 'good-life:repair'],
+            temporalContext: { policy: 'repair' },
+          },
+          {
+            id: 'ag-learn-current',
+            status: 'candidate',
+            sourceSignal: 'good-life',
+            topicTags: ['good-life', 'good-life:learn'],
+            temporalContext: { policy: 'learn' },
+          },
+          {
+            id: 'ag-other',
+            status: 'candidate',
+            sourceSignal: 'anomaly',
+            topicTags: ['cron'],
+          },
+        ];
+      },
+      updateStatus(id, status, opts) {
+        staleUpdates.push({ id, status, opts });
+        return { id, status };
+      },
+      add() {
+        added += 1;
+        return { id: `ag-${added}`, status: 'candidate' };
+      },
+    }),
+  });
+
+  const result = await regulator.handleObservation(learnObservation());
+
+  assert.equal(result.status, 'blocked_self_maintenance_budget');
+  assert.equal(result.staledSupersededRepair, 1);
+  assert.equal(added, 0);
+  assert.deepEqual(staleUpdates.map((row) => row.id), ['ag-repair-old']);
+  assert.equal(staleUpdates[0].status, 'stale');
+  assert.equal(staleUpdates[0].opts.note, 'superseded by current Good Life state with no open live problems');
+  assert.equal(staleUpdates[0].opts.skipReconcile, true);
 });
 
 test('GoodLifeRegulator appends agenda event when AgendaStore is not ready', async () => {

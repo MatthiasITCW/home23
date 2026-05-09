@@ -31,18 +31,23 @@ class GoodLifeRegulator {
     const usefulness = this._usefulnessContract(evaluation, agenda);
     if (!usefulness.passes) return { status: 'blocked_usefulness_gate', reason: usefulness.reason };
 
+    const agendaStore = this.getAgendaStore();
+    const cleanupAt = new Date().toISOString();
+    const staledSupersededRepair = agendaStore
+      ? this._staleSupersededRepairAgendaStore(agendaStore, evaluation, cleanupAt)
+      : this._staleSupersededRepairAgenda(evaluation, cleanupAt);
+
     const key = this._actionKey(evaluation);
     const state = this._readState();
     const last = state[key];
     const nowMs = Date.now();
     if (last?.at && nowMs - Date.parse(last.at) < this.throttleMs) {
-      return { status: 'throttled', key };
+      return { status: 'throttled', key, staledSupersededRepair };
     }
     if (this._selfMaintenanceBudgetExceeded(state, evaluation, usefulness)) {
-      return { status: 'blocked_self_maintenance_budget', key };
+      return { status: 'blocked_self_maintenance_budget', key, staledSupersededRepair };
     }
 
-    const agendaStore = this.getAgendaStore();
     let record = null;
     if (agendaStore?.add) {
       const now = new Date().toISOString();
@@ -62,10 +67,11 @@ class GoodLifeRegulator {
           usefulnessContract: usefulness,
           workerRoute: agenda.workerRoute,
           staledPriorGoodLifeAgenda: staledPrior,
+          staledSupersededRepairAgenda: staledSupersededRepair,
         },
       });
     } else {
-      record = this._appendAgendaEvent(obs, agenda, evaluation);
+      record = this._appendAgendaEvent(obs, agenda, evaluation, { staledSupersededRepair });
     }
 
     if (!record) return { status: 'rejected', key };
@@ -78,6 +84,7 @@ class GoodLifeRegulator {
         summary: evaluation.summary,
         usefulnessContract: usefulness,
         workerRoute: agenda.workerRoute,
+        staledSupersededRepairAgenda: staledSupersededRepair,
       },
       daily: this._nextDailyState(state.daily, evaluation, usefulness, record.id),
     });
@@ -189,7 +196,7 @@ class GoodLifeRegulator {
     return null;
   }
 
-  _appendAgendaEvent(obs, agenda, evaluation) {
+  _appendAgendaEvent(obs, agenda, evaluation, opts = {}) {
     const now = new Date().toISOString();
     const staledPrior = this._stalePriorGoodLifeAgenda(now);
     const id = `ag-gl-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
@@ -209,6 +216,7 @@ class GoodLifeRegulator {
         lanes: agenda.lanes,
         usefulnessContract: this._usefulnessContract(evaluation, agenda),
         workerRoute: agenda.workerRoute,
+        staledSupersededRepairAgenda: opts.staledSupersededRepair || 0,
       },
       createdAt: now,
       updatedAt: now,
@@ -275,6 +283,55 @@ class GoodLifeRegulator {
     }
   }
 
+  _staleSupersededRepairAgenda(evaluation, now = new Date().toISOString()) {
+    try {
+      if (!fs.existsSync(this.agendaPath)) return 0;
+      const items = new Map();
+      const lines = fs.readFileSync(this.agendaPath, 'utf8').split('\n').filter(Boolean);
+      for (const line of lines) {
+        let row = null;
+        try { row = JSON.parse(line); } catch { continue; }
+        if (row.type === 'add' && row.id) {
+          const record = row.record || {};
+          items.set(row.id, {
+            id: row.id,
+            status: record.status || row.status || 'candidate',
+            content: record.content || row.content || '',
+            sourceSignal: record.sourceSignal || row.sourceSignal || null,
+            topicTags: Array.isArray(record.topicTags) ? record.topicTags : [],
+            temporalContext: record.temporalContext || row.temporalContext || null,
+          });
+        } else if (row.type === 'status' && row.id) {
+          const rec = items.get(row.id) || { id: row.id };
+          rec.status = row.status || rec.status || 'candidate';
+          items.set(row.id, rec);
+        }
+      }
+
+      const active = new Set(['candidate', 'surfaced', 'acknowledged']);
+      const staleRows = [];
+      for (const item of items.values()) {
+        if (!active.has(item.status)) continue;
+        if (!this._isSupersededRepairAgenda(item, evaluation)) continue;
+        staleRows.push({
+          type: 'status',
+          id: item.id,
+          status: 'stale',
+          at: now,
+          note: 'superseded by current Good Life state with no open live problems',
+          actor: 'good-life-regulator',
+        });
+      }
+      if (staleRows.length > 0) {
+        fs.appendFileSync(this.agendaPath, staleRows.map((row) => JSON.stringify(row)).join('\n') + '\n', 'utf8');
+      }
+      return staleRows.length;
+    } catch (err) {
+      this.logger.warn?.('[good-life] superseded repair agenda stale sweep failed:', err?.message || err);
+      return 0;
+    }
+  }
+
   _stalePriorGoodLifeAgendaStore(agendaStore, now = new Date().toISOString()) {
     try {
       if (!agendaStore?.list || !agendaStore?.updateStatus) return 0;
@@ -297,6 +354,46 @@ class GoodLifeRegulator {
       this.logger.warn?.('[good-life] agenda-store stale sweep failed:', err?.message || err);
       return 0;
     }
+  }
+
+  _staleSupersededRepairAgendaStore(agendaStore, evaluation, now = new Date().toISOString()) {
+    try {
+      if (!agendaStore?.list || !agendaStore?.updateStatus) return 0;
+      const rows = agendaStore.list({ status: ['candidate', 'surfaced', 'acknowledged'], limit: 200 }) || [];
+      let staled = 0;
+      for (const row of rows) {
+        if (!row?.id || !this._isSupersededRepairAgenda(row, evaluation)) continue;
+        const updated = agendaStore.updateStatus(row.id, 'stale', {
+          actor: 'good-life-regulator',
+          note: 'superseded by current Good Life state with no open live problems',
+          at: now,
+          skipReconcile: true,
+        });
+        if (updated) staled += 1;
+      }
+      return staled;
+    } catch (err) {
+      this.logger.warn?.('[good-life] superseded repair agenda-store stale sweep failed:', err?.message || err);
+      return 0;
+    }
+  }
+
+  _isSupersededRepairAgenda(row = {}, evaluation = {}) {
+    const mode = String(evaluation?.policy?.mode || '').toLowerCase();
+    if (mode === 'repair' || mode === 'recover') return false;
+    const live = evaluation?.evidence?.liveProblems || {};
+    const activeProblems = Number(live.open || 0) + Number(live.chronic || 0);
+    if (activeProblems > 0) return false;
+
+    const tags = Array.isArray(row.topicTags) ? row.topicTags.map((tag) => String(tag || '').toLowerCase()) : [];
+    const sourceSignal = String(row.sourceSignal || '').toLowerCase();
+    const isGoodLife = sourceSignal === 'good-life' || tags.some((tag) => tag === 'good-life' || tag.startsWith('good-life:'));
+    if (!isGoodLife) return false;
+
+    const rowPolicy = String(row.temporalContext?.policy || row.policy || '').toLowerCase();
+    if (rowPolicy === 'repair' || rowPolicy === 'recover') return true;
+    return tags.includes('good-life:repair') || tags.includes('good-life:recover')
+      || /\bGood Life (repair|recovery) drift\b/i.test(String(row.content || ''));
   }
 
   _usefulnessContract(evaluation, agenda) {

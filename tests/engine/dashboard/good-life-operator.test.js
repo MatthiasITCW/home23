@@ -702,6 +702,38 @@ test('Good Life operator answer exposes latest recommended worker route', () => 
   });
 });
 
+test('Good Life operator answer hides worker route for stale latest agenda action', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    regulator: {
+      'repair:viability:critical': {
+        at: NOW,
+        agendaId: 'ag-worker-route',
+        mode: 'repair',
+        summary: 'repair - critical viability drift',
+        workerRoute: {
+          worker: 'systems',
+          reason: 'system viability needs host/process evidence',
+        },
+      },
+    },
+    obligations: {
+      activeAgenda: [],
+      activeGoals: [],
+      latestAgendaById: {
+        'ag-worker-route': { status: 'stale', updatedAt: NOW },
+      },
+      counts: { activeAgenda: 0, activeGoals: 0 },
+    },
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.equal(model.latestRegulatorAction.agendaStatus, 'stale');
+  assert.equal(model.work.activeTotal, 0);
+  assert.equal(model.operatorAnswer.some((line) => line.includes('Worker route: systems')), false);
+});
+
 test('Good Life operator marks superseded repair agenda for review when registry is clear', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({
