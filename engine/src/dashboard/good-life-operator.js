@@ -177,6 +177,7 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, now = 
         createdAt: record.createdAt || row.createdAt || row.at || null,
         updatedAt: record.updatedAt || row.updatedAt || row.at || null,
         temporalContext: record.temporalContext || row.temporalContext || null,
+        workerRoute: record.temporalContext?.workerRoute || row.temporalContext?.workerRoute || null,
       });
     } else if (row?.type === 'status' && row.id) {
       const rec = agenda.get(row.id) || { id: row.id, content: '' };
@@ -419,7 +420,7 @@ function buildConsistency({ state, projection, liveProblems, freshness, runtime 
   };
 }
 
-function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work }) {
+function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, latestAction }) {
   const lines = [];
   if (state?.summary || state?.policy?.reason) {
     lines.push(state.summary || state.policy.reason);
@@ -437,6 +438,11 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work }) 
       : '';
     const goalText = work.topGoal?.id ? `; top goal ${work.topGoal.id}` : '';
     lines.push(`Active work: ${work.activeTotal}${reviewText}${goalText}`);
+  }
+
+  if (latestAction?.workerRoute?.worker) {
+    const route = latestAction.workerRoute;
+    lines.push(`Worker route: ${route.worker}${route.reason ? ` - ${route.reason}` : ''}`);
   }
 
   for (const lane of lanes.filter((candidate) => candidate.active)) {
@@ -563,6 +569,7 @@ function buildGoodLifeOperatorModel({
     liveProblems: directLiveProblems,
     consistency,
     work,
+    latestAction,
   });
   return model;
 }

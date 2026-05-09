@@ -413,3 +413,42 @@ test('Good Life operator answer includes active work and review-needed goals', (
   assert.equal(model.work.goalsNeedingReview, 1);
   assert.ok(model.operatorAnswer.some((line) => line.includes('Active work: 1; 1 goal(s) need operator review; top goal goal_force')));
 });
+
+test('Good Life operator answer exposes latest recommended worker route', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    regulator: {
+      'repair:viability:critical': {
+        at: NOW,
+        agendaId: 'ag-worker-route',
+        mode: 'repair',
+        summary: 'repair - critical viability drift',
+        workerRoute: {
+          worker: 'systems',
+          reason: 'system viability needs host/process evidence',
+        },
+      },
+    },
+    obligations: {
+      activeAgenda: [{
+        id: 'ag-worker-route',
+        status: 'candidate',
+        content: 'Repair viability drift',
+        workerRoute: {
+          worker: 'systems',
+          reason: 'system viability needs host/process evidence',
+        },
+      }],
+      activeGoals: [],
+      latestAgendaById: {
+        'ag-worker-route': { status: 'candidate', updatedAt: NOW },
+      },
+      counts: { activeAgenda: 1, activeGoals: 0 },
+    },
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.equal(model.latestRegulatorAction.workerRoute.worker, 'systems');
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Worker route: systems - system viability needs host/process evidence')));
+});

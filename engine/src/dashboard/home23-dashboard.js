@@ -2905,7 +2905,10 @@ function renderGoodLifeWorkList(data) {
       badge: item.status || 'agenda',
       title: item.id || 'agenda',
       text: item.content || '',
-      age: item.ageMin != null ? `${item.ageMin}m` : '',
+      age: [
+        item.ageMin != null ? `${item.ageMin}m` : '',
+        item.workerRoute?.worker ? `worker ${item.workerRoute.worker}` : '',
+      ].filter(Boolean).join(' - '),
     })),
     ...goals.map((goal) => ({
       badge: goal.review?.recommended ? 'review' : (goal.status || 'goal'),
@@ -3106,6 +3109,11 @@ function renderGoodLifeWorkDetail(data) {
   const obligations = operator.detail?.work?.obligations || {};
   const agenda = obligations.activeAgenda || [];
   const goals = obligations.activeGoals || [];
+  const agendaMeta = (item) => [
+    item.status,
+    item.ageMin != null ? `${item.ageMin}m` : null,
+    item.workerRoute?.worker ? `worker: ${item.workerRoute.worker}` : null,
+  ].filter(Boolean).join(' - ');
   return `
     <h3>Current Work</h3>
     <div class="h23-goodlife-detail-grid">
@@ -3114,7 +3122,7 @@ function renderGoodLifeWorkDetail(data) {
       <div><label>Expected Outcome</label><p>${escapeHtml(card.expectedOutcome || 'not recorded')}</p></div>
       <div><label>Risk</label><p>${escapeHtml([card.riskTier != null ? `risk ${card.riskTier}` : null, card.reversible ? 'reversible' : null, card.evidenceRequired ? 'evidence required' : null].filter(Boolean).join(', ') || 'not recorded')}</p></div>
     </div>
-    <section><h4>Active Agenda</h4>${agenda.length ? agenda.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.id || 'agenda')}</strong><span>${escapeHtml(item.content || '')}</span><small>${escapeHtml([item.status, item.ageMin != null ? `${item.ageMin}m` : null].filter(Boolean).join(' - '))}</small><div class="h23-goodlife-mini-actions"><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'acknowledged')">Acknowledge</button><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'stale')">Dismiss</button></div></div>`).join('') : '<div class="h23-goodlife-empty">No active agenda rows</div>'}</section>
+    <section><h4>Active Agenda</h4>${agenda.length ? agenda.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.id || 'agenda')}</strong><span>${escapeHtml(item.content || '')}</span><small>${escapeHtml(agendaMeta(item))}</small><div class="h23-goodlife-mini-actions"><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'acknowledged')">Acknowledge</button><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'stale')">Dismiss</button></div></div>`).join('') : '<div class="h23-goodlife-empty">No active agenda rows</div>'}</section>
     <section><h4>Active Goals</h4>${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p><div class="h23-goodlife-mini-actions"><button type="button" onclick="archiveGoodLifeGoal('${escapeAttr(goal.id || '')}')">Archive Goal</button></div>` : ''}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
     <section><h4>Active Commitments</h4>${activeCommitments.length ? activeCommitments.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml((item.reasons || []).join(' - ') || item.status || '')}</span><small>${escapeHtml(item.lane || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active commitments</div>'}</section>
   `;

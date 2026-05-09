@@ -62,6 +62,9 @@ test('GoodLifeRegulator routes recover policy through agenda and motor cortex', 
   assert.equal(added.length, 1);
   assert.equal(added[0].sourceSignal, 'good-life');
   assert.match(added[0].content, /^Diagnose Good Life recovery drift/);
+  assert.match(added[0].content, /Recommended worker: systems/);
+  assert.equal(added[0].temporalContext.workerRoute.worker, 'systems');
+  assert.equal(added[0].topicTags.includes('worker:systems'), true);
   assert.equal(acted.length, 1);
   assert.equal(acted[0].context.actor, 'good-life-regulator');
 });
@@ -75,7 +78,70 @@ test('GoodLifeRegulator appends agenda event when AgendaStore is not ready', asy
 
   assert.equal(result.status, 'queued_no_motor');
   assert.match(agenda, /Good Life recovery drift/);
+  assert.match(agenda, /Recommended worker: systems/);
   assert.match(agenda, /"sourceSignal":"good-life"/);
+  assert.match(agenda, /"workerRoute":\{"worker":"systems"/);
+});
+
+test('GoodLifeRegulator maps continuity help drift to memory worker route', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  const added = [];
+  const obs = recoverObservation();
+  obs.payload.summary = 'help - strained continuity drift';
+  obs.payload.policy.mode = 'help';
+  obs.payload.policy.reason = 'strained continuity drift';
+  obs.payload.policy.actionCard.intent = 'help';
+  obs.payload.policy.actionCard.riskTier = 0;
+  obs.payload.lanes = {
+    continuity: { status: 'strained', reasons: ['open agenda rows'] },
+    usefulness: { status: 'watch', reasons: ['visible progress required'] },
+  };
+  const regulator = new GoodLifeRegulator({
+    brainDir: dir,
+    getAgendaStore: () => ({
+      add(params) {
+        added.push(params);
+        return { id: 'ag-good-life-help', content: params.content, status: 'candidate' };
+      },
+    }),
+  });
+
+  const result = await regulator.handleObservation(obs);
+
+  assert.equal(result.status, 'queued_no_motor');
+  assert.equal(added[0].temporalContext.workerRoute.worker, 'memory');
+  assert.match(added[0].temporalContext.workerRoute.reason, /memory, agenda, and receipt inspection/);
+  assert.equal(added[0].topicTags.includes('worker:memory'), true);
+});
+
+test('GoodLifeRegulator maps viability repair drift to systems worker route', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  const added = [];
+  const obs = recoverObservation();
+  obs.payload.summary = 'repair - critical viability drift';
+  obs.payload.policy.mode = 'repair';
+  obs.payload.policy.reason = 'critical viability drift';
+  obs.payload.policy.actionCard.intent = 'repair';
+  obs.payload.lanes = {
+    viability: { status: 'critical', reasons: ['engine evidence missing'] },
+    usefulness: { status: 'watch', reasons: ['visible progress required'] },
+  };
+  const regulator = new GoodLifeRegulator({
+    brainDir: dir,
+    getAgendaStore: () => ({
+      add(params) {
+        added.push(params);
+        return { id: 'ag-good-life-repair', content: params.content, status: 'candidate' };
+      },
+    }),
+  });
+
+  const result = await regulator.handleObservation(obs);
+
+  assert.equal(result.status, 'queued_no_motor');
+  assert.equal(added[0].temporalContext.workerRoute.worker, 'systems');
+  assert.match(added[0].temporalContext.workerRoute.reason, /host\/process evidence/);
+  assert.equal(added[0].topicTags.includes('worker:systems'), true);
 });
 
 test('GoodLifeRegulator fallback stales older Good Life agenda rows before appending a new one', async () => {

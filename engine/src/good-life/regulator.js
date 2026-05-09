@@ -58,6 +58,7 @@ class GoodLifeRegulator {
           policy: evaluation.policy?.mode || null,
           lanes: agenda.lanes,
           usefulnessContract: usefulness,
+          workerRoute: agenda.workerRoute,
         },
       });
     } else {
@@ -73,6 +74,7 @@ class GoodLifeRegulator {
         mode: evaluation.policy.mode,
         summary: evaluation.summary,
         usefulnessContract: usefulness,
+        workerRoute: agenda.workerRoute,
       },
       daily: this._nextDailyState(state.daily, evaluation, usefulness, record.id),
     });
@@ -109,6 +111,7 @@ class GoodLifeRegulator {
     const laneText = lanes.length ? lanes.join(', ') : 'development:watch';
     const base = 'using instances/jerry/brain/good-life-state.json, instances/jerry/brain/good-life-ledger.jsonl, and engine logs';
 
+    const workerRoute = this._workerRouteForEvaluation(evaluation, lanes);
     let content = null;
     if (mode === 'repair') {
       content = `Diagnose Good Life repair drift ${base}; restore verified Home23 engine evidence and clear the failing lane(s): ${laneText}.`;
@@ -126,12 +129,61 @@ class GoodLifeRegulator {
       return null;
     }
 
+    if (workerRoute) {
+      content = `${content} Recommended worker: ${workerRoute.worker} (${workerRoute.reason}).`;
+    }
+
     return {
       content,
       kind: mode === 'ask' ? 'question' : 'idea',
-      topicTags: ['good-life', `good-life:${mode}`, ...lanes.map(l => `good-life:${l.replace(':', '-')}`)],
+      topicTags: [
+        'good-life',
+        `good-life:${mode}`,
+        ...lanes.map(l => `good-life:${l.replace(':', '-')}`),
+        ...(workerRoute ? [`worker:${workerRoute.worker}`] : []),
+      ],
       lanes,
+      workerRoute,
     };
+  }
+
+  _workerRouteForEvaluation(evaluation, lanes = []) {
+    const mode = evaluation?.policy?.mode || 'observe';
+    if (!AUTO_ACT_MODES.has(mode)) return null;
+
+    const laneText = lanes.join('|').toLowerCase();
+    const has = (pattern) => pattern.test(laneText);
+    if (has(/viability:critical|recovery:critical|friction:critical|friction:strained/)) {
+      return {
+        worker: 'systems',
+        reason: 'system viability, recovery, and friction drift need host/process evidence',
+      };
+    }
+    if (has(/continuity:critical|continuity:strained|coherence:critical|coherence:strained/)) {
+      return {
+        worker: 'memory',
+        reason: 'continuity and coherence drift need memory, agenda, and receipt inspection',
+      };
+    }
+    if (has(/usefulness:critical|usefulness:strained|usefulness:watch|development:critical|development:strained/)) {
+      return {
+        worker: 'freshness',
+        reason: 'usefulness or development drift needs freshness and visible-output evidence',
+      };
+    }
+    if (mode === 'recover' || mode === 'repair') {
+      return {
+        worker: 'systems',
+        reason: `${mode} policy defaults to systems evidence when no narrower lane owns it`,
+      };
+    }
+    if (mode === 'help') {
+      return {
+        worker: 'freshness',
+        reason: 'help policy needs a bounded evidence check before claiming visible progress',
+      };
+    }
+    return null;
   }
 
   _appendAgendaEvent(obs, agenda, evaluation) {
@@ -153,6 +205,7 @@ class GoodLifeRegulator {
         policy: evaluation.policy?.mode || null,
         lanes: agenda.lanes,
         usefulnessContract: this._usefulnessContract(evaluation, agenda),
+        workerRoute: agenda.workerRoute,
       },
       createdAt: now,
       updatedAt: now,

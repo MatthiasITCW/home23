@@ -7438,6 +7438,7 @@ class Orchestrator {
       policy: item.temporalContext?.policy || opts.goodLife?.intent || null,
       lanes: item.temporalContext?.lanes || [],
       usefulnessContract: item.temporalContext?.usefulnessContract || null,
+      workerRoute: item.temporalContext?.workerRoute || null,
       content: String(item.content || '').slice(0, 1000),
       verifier: 'next domain.good-life evaluation',
     };
