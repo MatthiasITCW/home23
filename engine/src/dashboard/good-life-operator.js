@@ -173,7 +173,7 @@ function buildFreshness(state, commitments, nowMs) {
   };
 }
 
-function buildConsistency({ state, projection, liveProblems, freshness }) {
+function buildConsistency({ state, projection, liveProblems, freshness, runtime }) {
   const warnings = [];
   if (!state) {
     warnings.push({
@@ -210,6 +210,16 @@ function buildConsistency({ state, projection, liveProblems, freshness }) {
       message: `Good Life live-problem counts disagree with the live registry: ${mismatchKeys.join(', ')}`,
       fields: mismatchKeys,
     });
+  }
+
+  for (const service of runtime?.services || []) {
+    if (service?.ok === false) {
+      warnings.push({
+        code: `runtime_${service.id || 'service'}_unavailable`,
+        severity: 'critical',
+        message: `${service.label || service.id || 'Runtime service'} is unavailable: ${service.error || 'ping failed'}`,
+      });
+    }
   }
 
   return {
@@ -285,6 +295,7 @@ function buildGoodLifeOperatorModel({
   regulator = null,
   liveProblems = [],
   ledgerTail = [],
+  runtime = null,
   now = new Date(),
 } = {}) {
   const nowMs = toNowMs(now);
@@ -303,10 +314,12 @@ function buildGoodLifeOperatorModel({
     projection,
     liveProblems: directLiveProblems,
     freshness,
+    runtime,
   });
 
   let status = 'current';
   if (!state) status = 'unknown';
+  else if (consistency.warnings.some((warning) => warning.severity === 'critical')) status = 'critical';
   else if (consistency.warnings.some((warning) => warning.code === 'good_life_projection_mismatch')) status = 'conflicted';
   else if (freshness.status === 'stale') status = 'stale';
   else if (freshness.status === 'unknown') status = 'unknown';
@@ -322,6 +335,7 @@ function buildGoodLifeOperatorModel({
     actionCard,
     liveProblems: directLiveProblems,
     projection,
+    runtime,
     consistency,
     latestRegulatorAction: latestAction,
     trends: trends?.latest || null,

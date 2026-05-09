@@ -748,6 +748,59 @@ class DashboardServer {
     };
   }
 
+  async getHome23RuntimeHealth(candidate) {
+    const target = this.getHome23AgentContext(candidate);
+    const checks = [
+      {
+        id: 'engine',
+        label: 'Jerry engine admin',
+        url: `http://127.0.0.1:${target.realtimePort}/admin/thinking/stats`,
+      },
+      {
+        id: 'harness',
+        label: 'Jerry harness bridge',
+        url: `http://127.0.0.1:${target.bridgePort}/health`,
+      },
+    ];
+
+    const services = await Promise.all(checks.map(async (check) => {
+      const startedAt = Date.now();
+      try {
+        const response = await fetch(check.url, {
+          method: 'GET',
+          headers: { accept: 'application/json' },
+          signal: AbortSignal.timeout(1500),
+        });
+        return {
+          id: check.id,
+          label: check.label,
+          url: check.url,
+          ok: response.ok,
+          status: response.status,
+          latencyMs: Date.now() - startedAt,
+          error: response.ok ? null : `HTTP ${response.status}`,
+        };
+      } catch (error) {
+        return {
+          id: check.id,
+          label: check.label,
+          url: check.url,
+          ok: false,
+          status: null,
+          latencyMs: Date.now() - startedAt,
+          error: error.message || String(error),
+        };
+      }
+    }));
+
+    return {
+      agent: target.agentName,
+      checkedAt: new Date().toISOString(),
+      ok: services.every((service) => service.ok),
+      services,
+    };
+  }
+
   async proxyWorkerConnector(req, res, method, connectorPath, timeoutMs = 120_000) {
     const target = this.getHome23AgentContext(req.query?.agent);
     const baseUrl = `http://127.0.0.1:${target.bridgePort}`;
@@ -4909,6 +4962,7 @@ Be specific, actionable, and maintain research continuity.`;
           problems: liveProblemList,
           snapshot: buildLiveProblemSnapshot(liveProblemList),
         };
+        const runtime = await this.getHome23RuntimeHealth(req.query?.agent);
         res.json({
           ok: true,
           state,
@@ -4917,6 +4971,7 @@ Be specific, actionable, and maintain research continuity.`;
           regulator,
           liveProblems,
           ledgerTail,
+          runtime,
           operator: buildGoodLifeOperatorModel({
             state,
             commitments,
@@ -4924,6 +4979,7 @@ Be specific, actionable, and maintain research continuity.`;
             regulator,
             liveProblems: liveProblemList,
             ledgerTail,
+            runtime,
           }),
         });
       } catch (error) {

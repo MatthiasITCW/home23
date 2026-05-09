@@ -161,6 +161,27 @@ test('Good Life operator model refuses inheritance when freshness is unknown', (
   assert.ok(model.consistency.warnings.some((warning) => warning.code === 'good_life_freshness_unknown'));
 });
 
+test('Good Life operator model escalates unavailable runtime services', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [],
+    runtime: {
+      ok: false,
+      services: [
+        { id: 'engine', label: 'Jerry engine admin', ok: false, error: 'fetch failed' },
+        { id: 'harness', label: 'Jerry harness bridge', ok: true },
+      ],
+    },
+    now: NOW,
+  });
+
+  assert.equal(model.status, 'critical');
+  assert.equal(model.safeToInherit, false);
+  assert.equal(model.runtime.ok, false);
+  assert.ok(model.consistency.warnings.some((warning) => warning.code === 'runtime_engine_unavailable'));
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Jerry engine admin is unavailable')));
+});
+
 test('Good Life operator model builds end-user detail sections for drill-down navigation', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({
