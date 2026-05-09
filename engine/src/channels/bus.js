@@ -20,7 +20,7 @@
 import { EventEmitter } from 'node:events';
 import { mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureTraceId, validateObservation } from './contract.js';
+import { ensureTraceId, makeObservation, validateObservation } from './contract.js';
 
 export class ChannelBus extends EventEmitter {
   constructor({ persistenceDir, logger } = {}) {
@@ -76,6 +76,24 @@ export class ChannelBus extends EventEmitter {
 
   async _handleRaw(channel, raw) {
     try {
+      if (raw && raw.__error) {
+        const producedAt = raw.at || new Date().toISOString();
+        const obs = makeObservation({
+          channelId: channel.id,
+          sourceRef: `poll-error:${channel.id}:${producedAt}`,
+          payload: {
+            error: String(raw.__error),
+            channelId: channel.id,
+          },
+          flag: 'UNKNOWN',
+          confidence: 0.35,
+          producedAt,
+          verifierId: 'channel:poll-error',
+        });
+        this._persist(channel, obs);
+        this.emit('observation', obs);
+        return;
+      }
       const parsed = raw && raw.payload !== undefined ? raw : channel.parse(raw);
       const obs = validateObservation(ensureTraceId(channel.verify(parsed, {})));
       this._persist(channel, obs);

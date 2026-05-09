@@ -33,6 +33,12 @@ class MalformedChan extends FakeChan {
   }
 }
 
+class FailingPollChan extends FakeChan {
+  async poll() {
+    throw new Error('ps sampler timed out');
+  }
+}
+
 test('ChannelBus accepts registration and starts channels', async () => {
   const bus = new ChannelBus({ persistenceDir: null });
   const ch = new FakeChan();
@@ -99,4 +105,28 @@ test('ChannelBus drops malformed verified observations before persistence and fa
   assert.equal(obs.length, 0);
   assert.equal(existsSync(join(dir, 'machine.fake.invalid.jsonl')), false);
   assert.ok(warnings.some((args) => String(args[0]).includes('handle failed on fake.invalid')));
+});
+
+test('ChannelBus turns poll failures into UNKNOWN observations instead of parse failures', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bus-poll-error-'));
+  const warnings = [];
+  const bus = new ChannelBus({
+    persistenceDir: dir,
+    logger: { warn: (...args) => warnings.push(args) },
+  });
+  bus.register(new FailingPollChan('machine.process'));
+  const obs = [];
+  bus.on('observation', (o) => obs.push(o));
+
+  await bus.start();
+  await new Promise((r) => setTimeout(r, 30));
+  await bus.stop();
+
+  assert.ok(obs.length >= 1);
+  assert.equal(obs[0].channelId, 'machine.process');
+  assert.equal(obs[0].flag, 'UNKNOWN');
+  assert.equal(obs[0].verifierId, 'channel:poll-error');
+  assert.equal(obs[0].payload.error, 'ps sampler timed out');
+  assert.ok(obs[0].sourceRef.startsWith('poll-error:machine.process:'));
+  assert.equal(warnings.some((args) => String(args[0]).includes('handle failed on machine.process')), false);
 });
