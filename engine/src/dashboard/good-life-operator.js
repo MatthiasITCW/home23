@@ -228,8 +228,10 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, output
         createdAt,
         ageMin,
       };
+      const artifactStatus = goalArtifactText(row);
       return {
         ...row,
+        artifactStatus,
         review: classifyGoalReview(row),
       };
     });
@@ -460,10 +462,28 @@ function classifyGoalReview(goal = {}) {
 
 function summarizeWork(obligations = {}) {
   const activeAgenda = Array.isArray(obligations.activeAgenda) ? obligations.activeAgenda : [];
-  const activeGoals = Array.isArray(obligations.activeGoals) ? obligations.activeGoals : [];
+  const activeGoals = Array.isArray(obligations.activeGoals)
+    ? obligations.activeGoals.map((goal) => ({
+      ...goal,
+      artifactStatus: goal.artifactStatus || goalArtifactText(goal),
+    }))
+    : [];
   const goalsNeedingReview = activeGoals.filter((goal) => goal.review?.recommended);
   const agendaNeedingReview = activeAgenda.filter((row) => row.review?.recommended);
   const agendaNeedingUser = activeAgenda.filter((row) => row.intervention?.required);
+  const topAgenda = activeAgenda[0] || null;
+  const topGoal = activeGoals[0] || null;
+  const topReviewGoal = goalsNeedingReview[0] || null;
+  const workStatus = summarizeWorkStatus({
+    activeAgenda,
+    activeGoals,
+    agendaNeedingReview,
+    goalsNeedingReview,
+    agendaNeedingUser,
+    topAgenda,
+    topGoal,
+    topReviewGoal,
+  });
   return {
     activeAgenda: activeAgenda.length,
     activeGoals: activeGoals.length,
@@ -471,11 +491,83 @@ function summarizeWork(obligations = {}) {
     agendaNeedingReview: agendaNeedingReview.length,
     goalsNeedingReview: goalsNeedingReview.length,
     interventionRequired: agendaNeedingUser.length,
-    topAgenda: activeAgenda[0] || null,
-    topGoal: activeGoals[0] || null,
-    topReviewGoal: goalsNeedingReview[0] || null,
+    status: workStatus.status,
+    statusText: workStatus.text,
+    needsUser: workStatus.needsUser,
+    topAgenda,
+    topGoal,
+    topReviewGoal,
     agendaReviewRows: agendaNeedingReview.slice(0, 5),
     reviewRows: goalsNeedingReview.slice(0, 5),
+  };
+}
+
+function summarizeWorkStatus({
+  activeAgenda = [],
+  activeGoals = [],
+  agendaNeedingReview = [],
+  goalsNeedingReview = [],
+  agendaNeedingUser = [],
+  topAgenda = null,
+  topGoal = null,
+  topReviewGoal = null,
+} = {}) {
+  if (agendaNeedingUser.length > 0) {
+    const row = agendaNeedingUser[0];
+    return {
+      status: 'needs-user',
+      needsUser: true,
+      text: row.intervention?.reason
+        ? `user intervention needed: ${compactText(row.intervention.reason, 120)}`
+        : 'user intervention needed for active work',
+    };
+  }
+  if (agendaNeedingReview.length > 0) {
+    const row = agendaNeedingReview[0];
+    return {
+      status: 'review',
+      needsUser: false,
+      text: row.review?.reason
+        ? `review recommended: ${compactText(row.review.reason, 120)}`
+        : 'operator review recommended for active agenda',
+    };
+  }
+  if (goalsNeedingReview.length > 0) {
+    const goal = topReviewGoal || goalsNeedingReview[0];
+    return {
+      status: 'review',
+      needsUser: false,
+      text: goal.review?.reason
+        ? `review recommended: ${compactText(goal.review.reason, 120)}`
+        : 'operator review recommended for active goal',
+    };
+  }
+  const topGoalArtifactStatus = topGoal?.artifactStatus || goalArtifactText(topGoal);
+  if (topGoalArtifactStatus) {
+    return {
+      status: 'working',
+      needsUser: false,
+      text: topGoalArtifactStatus,
+    };
+  }
+  if (topAgenda?.id) {
+    return {
+      status: 'working',
+      needsUser: false,
+      text: `autonomous work active: ${topAgenda.id}`,
+    };
+  }
+  if (activeAgenda.length + activeGoals.length > 0) {
+    return {
+      status: 'working',
+      needsUser: false,
+      text: 'autonomous work active; no user intervention needed yet',
+    };
+  }
+  return {
+    status: 'clear',
+    needsUser: false,
+    text: 'no active routed work',
   };
 }
 

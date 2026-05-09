@@ -709,6 +709,8 @@ test('Good Life operator answer includes active work and review-needed goals', (
 
   assert.equal(model.work.activeGoals, 1);
   assert.equal(model.work.goalsNeedingReview, 1);
+  assert.equal(model.work.status, 'review');
+  assert.match(model.work.statusText, /review recommended: force-output goal has no observable progress/);
   assert.ok(model.operatorAnswer.some((line) => line.includes('Active work: 1; 1 goal(s) need operator review; top review goal: goal_force - Produce outputs/digest-6382.md')));
 });
 
@@ -925,6 +927,9 @@ test('Good Life operator brief includes active goal artifact status', () => {
   });
 
   assert.equal(model.operatorBrief.next, 'Top goal: goal-output - Produce outputs/digest-6427.md; artifact pending: outputs/digest-6427.md; review in 11h');
+  assert.equal(model.work.status, 'working');
+  assert.equal(model.work.statusText, 'artifact pending: outputs/digest-6427.md; review in 11h');
+  assert.equal(model.work.topGoal.artifactStatus, 'artifact pending: outputs/digest-6427.md; review in 11h');
   assert.ok(model.operatorAnswer.some((line) => line.includes('artifact pending: outputs/digest-6427.md; review in 11h')));
 });
 

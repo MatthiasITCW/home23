@@ -2909,12 +2909,13 @@ function updateGoodLifeTile(data, scope = 'home') {
   setHtml(id('goodlife-lanes'), laneHtml);
   const latest = operator?.latestRegulatorAction;
   const workCounts = operator?.detail?.work?.obligations?.counts || {};
+  const work = operator?.work || operator?.detail?.work?.summary || {};
   const activeWork = Number(workCounts.activeAgenda || 0) + Number(workCounts.activeGoals || 0);
   const latestActive = latest?.agendaId && goodLifeAgendaStatusIsActive(latest.agendaStatus);
   const latestStatus = latestActive && latest?.agendaStatus ? ` (${latest.agendaStatus})` : '';
   const action = latestActive
     ? `active work ${activeWork}; latest routed ${latest.agendaId}${latestStatus}`
-    : `active work ${activeWork}; no active routed work`;
+    : `active work ${activeWork}; ${work.statusText || 'no active routed work'}`;
   const evaluatedAt = operator?.freshness?.evaluatedAt || state.evaluatedAt;
   const freshness = evaluatedAt ? `evaluated ${timeSince(new Date(evaluatedAt))}` : 'freshness unknown';
   setText(id('goodlife-meta'), `${freshness} - ${action}`);
@@ -2970,8 +2971,8 @@ function goodLifeAgendaStatusIsActive(status) {
 
 function goodLifeLatestRoutedText(latest = {}, activeWork = 0) {
   if (latest?.at && goodLifeAgendaStatusIsActive(latest.agendaStatus)) {
-    const status = latest.agendaStatus ? ` - ${escapeHtml(latest.agendaStatus)}` : '';
-    return `latest routed ${escapeHtml(timeSince(new Date(latest.at)))}${status}`;
+    const status = latest.agendaStatus ? ` - ${latest.agendaStatus}` : '';
+    return `latest routed ${timeSince(new Date(latest.at))}${status}`;
   }
   return activeWork > 0 ? 'active routed work needs review' : 'no active routed work';
 }
@@ -3018,7 +3019,11 @@ function renderGoodLifeWorkList(data) {
       badge: goal.review?.recommended ? 'review' : (goal.status || 'goal'),
       title: goal.id || 'goal',
       text: goal.description || '',
-      age: [goal.ageMin != null ? `${goal.ageMin}m` : '', goal.review?.recommended ? 'review' : ''].filter(Boolean).join(' - '),
+      age: [
+        goal.ageMin != null ? `${goal.ageMin}m` : '',
+        goal.review?.recommended ? 'review' : '',
+        goal.artifactStatus || '',
+      ].filter(Boolean).join(' - '),
     })),
   ];
   if (!rows.length && !actions.length) return '<div class="h23-goodlife-empty h23-goodlife-pad">No routed work or active obligations</div>';
@@ -3053,6 +3058,7 @@ function renderGoodLifeTop(data) {
   const freshness = operator.freshness || {};
   const latest = operator.latestRegulatorAction || {};
   const workCounts = operator.detail?.work?.obligations?.counts || {};
+  const work = operator.work || operator.detail?.work?.summary || {};
   const activeWork = Number(workCounts.activeAgenda || 0) + Number(workCounts.activeGoals || 0);
   const warnings = operator.consistency?.warnings || [];
   const answerLines = (operator.operatorAnswer || [])
@@ -3079,7 +3085,9 @@ function renderGoodLifeTop(data) {
       <div class="h23-goodlife-top-card">
         <label>Active Work</label>
         <strong>${activeWork}</strong>
-        <span>${goodLifeLatestRoutedText(latest, activeWork)}</span>
+        <span>${escapeHtml(latest?.at && goodLifeAgendaStatusIsActive(latest.agendaStatus)
+          ? goodLifeLatestRoutedText(latest, activeWork)
+          : (work.statusText || goodLifeLatestRoutedText(latest, activeWork)))}</span>
       </div>
     </div>
     ${answerLines.length ? `<div class="h23-goodlife-operator-answer-panel">
