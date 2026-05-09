@@ -19,6 +19,7 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
   const instanceRoot = process.cwd().replace(/\/engine$/, '') + `/instances/${agent}`;
   const brainStatePath = `${instanceRoot}/brain/brain-state.json`;
   const thoughtsPath = `${instanceRoot}/brain/thoughts.jsonl`;
+  const engineErrPath = `${instanceRoot}/logs/engine-err.log`;
 
   return [
     {
@@ -141,6 +142,36 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
             text: `Engine admin on :${realtimePort} is not responding. Dashboard may show stale/fallback state even if the process is online.`,
           },
           cooldownMin: 60,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
+      id: `${agent}_engine_cycle_timeouts_clear`,
+      claim: `${agent} engine has no cycle timeout exceeded events in the last 30 minutes`,
+      verifier: {
+        type: 'log_recent_count',
+        args: {
+          path: engineErrPath,
+          pattern: '\\[TimeoutManager\\] Cycle timeout exceeded',
+          windowMinutes: 30,
+          maxCount: 0,
+          maxLines: 3000,
+        },
+      },
+      // Cycle timeouts mean the autonomy loop is alive but not finishing work
+      // inside its own execution contract. Route to the systems worker first so
+      // the loop gets a scoped diagnosis and receipt before escalating.
+      remediation: [
+        { type: 'dispatch_to_worker', args: { worker: 'systems', budgetHours: 2 }, cooldownMin: 15 },
+        { type: 'dispatch_to_agent', args: { budgetHours: 2 }, cooldownMin: 30 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'normal',
+            text: `${agent} has recent engine cycle timeouts. Worker and agent diagnosis did not clear it; engine efficiency needs review.`,
+          },
+          cooldownMin: 120,
         },
       ],
       seedOrigin: 'system',

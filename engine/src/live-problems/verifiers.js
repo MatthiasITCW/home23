@@ -355,6 +355,110 @@ function compareValues(observed, op, expected) {
   }
 }
 
+function parseLogTimestamp(line, now = new Date()) {
+  const iso = line.match(/\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\b/);
+  if (iso) {
+    const ms = Date.parse(iso[1]);
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  const bracketed = line.match(/^\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]/);
+  if (!bracketed) return null;
+
+  const hh = Number.parseInt(bracketed[1], 10);
+  const mm = Number.parseInt(bracketed[2], 10);
+  const ss = bracketed[3] ? Number.parseInt(bracketed[3], 10) : 0;
+
+  const local = new Date(now);
+  local.setHours(hh, mm, ss, 0);
+  if (local.getTime() > now.getTime() + 5 * 60_000) local.setDate(local.getDate() - 1);
+
+  const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hh, mm, ss, 0));
+  if (utc.getTime() > now.getTime() + 5 * 60_000) utc.setUTCDate(utc.getUTCDate() - 1);
+
+  // Home23 log files can contain both local and UTC-only `[HH:MM:SS]` stamps
+  // after restarts/log rotation. Use the interpretation closest to now.
+  const candidates = [local.getTime(), utc.getTime()];
+  candidates.sort((a, b) => Math.abs(now.getTime() - a) - Math.abs(now.getTime() - b));
+  return candidates[0];
+}
+
+/**
+ * Scan a plain text log tail for a regex within a recent time window.
+ * Supports ISO timestamps and Home23's `[HH:MM:SS] LEVEL ...` log format.
+ *
+ * args: {
+ *   path: "instances/jerry/logs/engine-err.log",
+ *   pattern: "\\[TimeoutManager\\] Cycle timeout exceeded",
+ *   windowMinutes?: 30,
+ *   maxCount?: 0,
+ *   minCount?: null,
+ *   maxLines?: 5000
+ * }
+ */
+verifiers.log_recent_count = async function logRecentCount(args = {}) {
+  const { path: filePath, pattern } = args;
+  if (!filePath) return { ok: false, detail: 'path required' };
+  if (!pattern) return { ok: false, detail: 'pattern required' };
+
+  const full = expandPath(filePath);
+  if (!fs.existsSync(full)) return { ok: false, detail: `missing: ${filePath}` };
+
+  let re;
+  try {
+    re = new RegExp(pattern);
+  } catch (err) {
+    return { ok: false, detail: `invalid pattern: ${err.message}` };
+  }
+
+  const windowMin = Number.isFinite(args.windowMinutes) ? args.windowMinutes : 60;
+  const maxLines = Math.min(args.maxLines || 5000, 50000);
+  const hasMin = Number.isFinite(args.minCount);
+  const minCount = hasMin ? args.minCount : null;
+  const maxCount = Number.isFinite(args.maxCount) ? args.maxCount : 0;
+  const now = new Date();
+  const cutoffMs = now.getTime() - windowMin * 60_000;
+
+  try {
+    const raw = fs.readFileSync(full, 'utf8');
+    const lines = raw.split('\n');
+    const start = Math.max(0, lines.length - maxLines);
+    let matchCount = 0;
+    let scanned = 0;
+    let timestamped = 0;
+    let firstMatch = null;
+    let lastMatch = null;
+
+    for (let i = start; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      scanned++;
+      if (!re.test(line)) continue;
+      re.lastIndex = 0;
+      const tsMs = parseLogTimestamp(line, now);
+      if (!tsMs || tsMs < cutoffMs) continue;
+      timestamped++;
+      matchCount++;
+      const item = {
+        ts: new Date(tsMs).toISOString(),
+        line: line.slice(0, 180),
+      };
+      if (!firstMatch) firstMatch = item;
+      lastMatch = item;
+    }
+
+    const ok = hasMin ? matchCount >= minCount : matchCount <= maxCount;
+    const threshold = hasMin ? `need ${minCount}` : `limit ${maxCount}`;
+    return {
+      ok,
+      detail: `${matchCount} matching log entries in last ${windowMin}m (${threshold}); scanned ${scanned}`,
+      observed: { matchCount, windowMin, maxCount, minCount, scanned, timestamped, firstMatch, lastMatch },
+    };
+  } catch (err) {
+    return { ok: false, detail: `read failed: ${err.message}` };
+  }
+};
+
 /**
  * GET a URL, parse JSON response, extract a dot-path, compare with op/value.
  * Covers: tile sensor freshness, pi-bridge health endpoints, live-problems

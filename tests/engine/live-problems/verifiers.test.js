@@ -9,6 +9,14 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { runVerifier } = require('../../../engine/src/live-problems/verifiers.js');
 
+function hhmmss(date) {
+  return [
+    String(date.getHours()).padStart(2, '0'),
+    String(date.getMinutes()).padStart(2, '0'),
+    String(date.getSeconds()).padStart(2, '0'),
+  ].join(':');
+}
+
 test('http_ping verifies a local HTTP status without fetch', async () => {
   const server = http.createServer((_req, res) => {
     res.writeHead(204);
@@ -31,6 +39,69 @@ test('http_ping verifies a local HTTP status without fetch', async () => {
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('log_recent_count fails when recent bracketed log matches exceed maxCount', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verifier-log-'));
+  const file = path.join(dir, 'engine-err.log');
+  const now = new Date();
+  fs.writeFileSync(file, [
+    `[${hhmmss(now)}] WARN [TimeoutManager] Cycle timeout exceeded after 180000ms`,
+    `[${hhmmss(now)}] WARN [TimeoutManager] Cycle timeout exceeded after 180000ms`,
+    '',
+  ].join('\n'));
+
+  const result = await runVerifier({
+    type: 'log_recent_count',
+    args: {
+      path: file,
+      pattern: '\\[TimeoutManager\\] Cycle timeout exceeded',
+      windowMinutes: 30,
+      maxCount: 0,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.observed.matchCount, 2);
+  assert.match(result.detail, /limit 0/);
+});
+
+test('log_recent_count ignores matches outside the configured window', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verifier-log-'));
+  const file = path.join(dir, 'engine-err.log');
+  const old = new Date(Date.now() - 90 * 60_000);
+  fs.writeFileSync(file, [
+    `[${hhmmss(old)}] WARN [TimeoutManager] Cycle timeout exceeded after 180000ms`,
+    '',
+  ].join('\n'));
+
+  const result = await runVerifier({
+    type: 'log_recent_count',
+    args: {
+      path: file,
+      pattern: '\\[TimeoutManager\\] Cycle timeout exceeded',
+      windowMinutes: 30,
+      maxCount: 0,
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.observed.matchCount, 0);
+});
+
+test('log_recent_count reports missing log files as failed', async () => {
+  const result = await runVerifier({
+    type: 'log_recent_count',
+    args: {
+      path: path.join(os.tmpdir(), 'missing-home23-engine.log'),
+      pattern: 'Cycle timeout exceeded',
+      windowMinutes: 30,
+      maxCount: 0,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /missing/);
 });
 
 test('jsonl_metric_date_fresh fails when wrapper writes are fresh but metric date is stale', async () => {
