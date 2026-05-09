@@ -94,6 +94,25 @@ test('document feeder skips oversized files before reading or compiling', async 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('document feeder ignores duplicate in-flight processing for same file', async () => {
+  const feeder = makeFeeder();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home23-feeder-'));
+  const filePath = path.join(dir, 'doc.md');
+  fs.writeFileSync(filePath, 'hello world', 'utf8');
+  feeder._processingFiles.add(path.resolve(filePath));
+
+  await feeder._processFile(filePath, 'tmp');
+
+  assert.equal(feeder._processingFiles.has(path.resolve(filePath)), true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('document feeder watcher leaves existing files to the explicit startup scan', () => {
+  const feeder = makeFeeder();
+
+  assert.equal(feeder._watcherOptions().ignoreInitial, true);
+});
+
 test('document feeder rejects compile jobs when pending queue is full', async () => {
   const logs = [];
   const feeder = makeFeeder({ compiler: { maxConcurrent: 1, maxQueue: 1 } }, logs);

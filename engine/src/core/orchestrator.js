@@ -65,6 +65,13 @@ const { getActiveClusterSummary } = require('../memory/active-clusters');
 const { NoticePass } = require('../sleep/notice-pass');
 const { readGoodLifeSleepPolicy } = require('../good-life/sleep-policy');
 
+function shouldAddWorkspaceFeederFallback(feederConfig = {}) {
+  const configured = Array.isArray(feederConfig.additionalWatchPaths)
+    ? feederConfig.additionalWatchPaths
+    : [];
+  return configured.length === 0;
+}
+
 /**
  * Phase 2B Orchestrator - GPT-5.5 Version
  * Uses GPT-5.5 Responses API with extended reasoning, web search, and tools
@@ -592,8 +599,11 @@ class Orchestrator {
           embeddingFn: (text) => this.memory.embed(text)
         });
         await this.feeder.start(this.logsDir);
-        // Also watch the workspace directory if set (Home23 puts user docs here)
-        if (workspacePath && this.feeder.addWatchPath) {
+        // Also watch the workspace directory only as a legacy fallback. Modern
+        // Home23 agents carry explicit feeder watch paths; adding the whole
+        // workspace on top of those makes volatile runtime files churn through
+        // the compiler and starves the engine HTTP server.
+        if (workspacePath && this.feeder.addWatchPath && shouldAddWorkspaceFeederFallback(feederConfig)) {
           await this.feeder.addWatchPath(workspacePath, 'workspace');
           this.logger.info('Document feeder watching workspace', { path: workspacePath });
         }
@@ -8340,4 +8350,9 @@ async function persistArchivedGoalsToState(logsDir, archivedIds = [], reason = '
   };
 }
 
-module.exports = { Orchestrator, compactActiveGoalsForSnapshot, persistArchivedGoalsToState };
+module.exports = {
+  Orchestrator,
+  compactActiveGoalsForSnapshot,
+  persistArchivedGoalsToState,
+  shouldAddWorkspaceFeederFallback,
+};

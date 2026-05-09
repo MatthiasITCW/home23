@@ -32,6 +32,7 @@ class DocumentFeeder {
     this._watchers = [];
     this._flushTimer = null;
     this._started = false;
+    this._processingFiles = new Set();
 
     // Concurrency-limited compilation queue — prevents 429 rate-limit avalanche
     // when large folders are added and chokidar fires hundreds of file events at once
@@ -294,17 +295,7 @@ class DocumentFeeder {
       return;
     }
 
-    // ignoreInitial: false — fire 'add' for every pre-existing file on
-    // startup so files that predate the watcher get a one-time scan. The
-    // downstream _processFile() hash-staleness gate means already-manifested
-    // files are a cheap no-op, so this does not re-compile the whole corpus.
-    const watcher = chokidar.watch(watchPath, {
-      persistent: true,
-      ignoreInitial: false,
-      awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
-      depth: 99,
-      ignored: (candidatePath) => this._shouldIgnorePath(candidatePath)
-    });
+    const watcher = chokidar.watch(watchPath, this._watcherOptions());
 
     watcher.on('add', (filePath) => this._onFileEvent(filePath, fixedLabel, watchPath));
     watcher.on('change', (filePath) => this._onFileEvent(filePath, fixedLabel, watchPath));
@@ -313,6 +304,19 @@ class DocumentFeeder {
     });
 
     this._watchers.push({ path: watchPath, label: fixedLabel, watcher });
+  }
+
+  _watcherOptions() {
+    return {
+      persistent: true,
+      // Startup is handled by _scanDirectory below. Letting chokidar emit
+      // "add" for every existing file duplicates expensive conversion and
+      // compilation work during engine boot.
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+      depth: 99,
+      ignored: (candidatePath) => this._shouldIgnorePath(candidatePath)
+    };
   }
 
   async _onFileEvent(filePath, fixedLabel, watchRoot) {
@@ -329,6 +333,12 @@ class DocumentFeeder {
   }
 
   async _processFile(filePath, label) {
+    const processingKey = path.resolve(filePath);
+    if (this._processingFiles.has(processingKey)) {
+      this.logger?.debug?.('Skipping duplicate in-flight feeder processing', { filePath });
+      return;
+    }
+    this._processingFiles.add(processingKey);
     try {
       // Skip dotfiles and our own manifest/pending files
       const basename = path.basename(filePath);
@@ -449,6 +459,8 @@ class DocumentFeeder {
       });
     } catch (err) {
       this.logger?.error?.('Failed to process file', { filePath, error: err.message });
+    } finally {
+      this._processingFiles.delete(processingKey);
     }
   }
 
