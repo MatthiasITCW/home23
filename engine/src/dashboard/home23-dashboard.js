@@ -2929,8 +2929,7 @@ function renderGoodLifeTabs(data) {
   const counts = data?.operator?.liveProblems?.counts || {};
   const workCounts = detail.work?.obligations?.counts || {};
   const workTotal = Number(workCounts.activeAgenda || 0)
-    + Number(workCounts.activeGoals || 0)
-    + Number((detail.work?.dailyActions || []).length);
+    + Number(workCounts.activeGoals || 0);
   const tabs = [
     ['issues', `Issues ${Number(counts.open || 0) + Number(counts.chronic || 0) + Number(counts.unverifiable || 0)}`],
     ['work', `Work ${workTotal}`],
