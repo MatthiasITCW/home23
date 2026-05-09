@@ -3144,6 +3144,29 @@ body.h23-external-focus #cosmo23-refresh-btn {
   color: var(--text-muted);
 }
 
+.h23-goodlife-evidence-receipt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  border: 1px solid rgba(112, 211, 162, 0.22);
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(112, 211, 162, 0.07);
+}
+
+.h23-goodlife-evidence-receipt strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.h23-goodlife-evidence-receipt span,
+.h23-goodlife-evidence-receipt code {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .h23-goodlife-overlay-action-status {
   min-height: 18px;
   color: var(--text-muted);

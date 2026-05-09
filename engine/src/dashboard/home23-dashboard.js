@@ -3002,6 +3002,7 @@ function renderGoodLifeWorkDetail(data) {
 
 function renderGoodLifeResolutionDetail(problem) {
   if (!problem) return '<div class="h23-goodlife-empty h23-goodlife-pad">Select a resolution to inspect what closed.</div>';
+  const evidence = problem.evidence || null;
   return `
     <div class="h23-goodlife-detail-head">
       <span class="h23-goodlife-problem-state resolved">resolved</span>
@@ -3012,6 +3013,13 @@ function renderGoodLifeResolutionDetail(problem) {
       <div><label>Resolved</label><p>${problem.resolvedAt ? escapeHtml(timeSince(new Date(problem.resolvedAt))) : 'unknown'}</p></div>
       <div><label>Verifier</label><p>${escapeHtml(problem.lastResult?.detail || problem.fixRecipe?.verifierStatus || 'not recorded')}</p></div>
     </div>
+    <section><h4>Evidence Receipt</h4>${evidence ? `
+      <div class="h23-goodlife-evidence-receipt">
+        <strong>${escapeHtml(evidence.receiptId || 'receipt')}</strong>
+        <span>${escapeHtml([evidence.result, evidence.claimLevel].filter(Boolean).join(' - ') || 'recorded')}</span>
+        ${evidence.receiptPath ? `<code>${escapeHtml(evidence.receiptPath)}</code>` : ''}
+      </div>
+    ` : '<div class="h23-goodlife-empty">No evidence receipt linked</div>'}</section>
     <section><h4>Fix Recipe</h4>${problem.fixRecipe ? renderGoodLifeJson(problem.fixRecipe) : '<div class="h23-goodlife-empty">No fix recipe recorded</div>'}</section>
   `;
 }

@@ -58,6 +58,7 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
         ageMin: resolvedMs ? Math.max(0, Math.round((nowMs - resolvedMs) / 60000)) : null,
         fixRecipe: problem.fixRecipe || null,
         lastResult: problem.lastResult || null,
+        evidence: problem.evidence || null,
       });
       if (resolvedMs && nowMs - resolvedMs < RECENT_RESOLUTION_MS) {
         resolvedJustNow.push({

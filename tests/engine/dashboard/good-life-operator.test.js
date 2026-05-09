@@ -45,7 +45,7 @@ test('live-problem snapshot separates open, chronic, resolved, and unverifiable 
   const snapshot = buildLiveProblemSnapshot([
     { id: 'open_1', state: 'open', claim: 'Open thing', openedAt: '2026-05-08T13:40:00.000Z' },
     { id: 'chronic_1', state: 'chronic', claim: 'Chronic thing', openedAt: '2026-05-08T13:00:00.000Z', lastResult: { detail: 'still failing' } },
-    { id: 'resolved_1', state: 'resolved', claim: 'Resolved thing', resolvedAt: '2026-05-08T13:44:00.000Z' },
+    { id: 'resolved_1', state: 'resolved', claim: 'Resolved thing', resolvedAt: '2026-05-08T13:44:00.000Z', evidence: { receiptId: 'ev_1', result: 'pass' } },
     { id: 'unv_1', state: 'unverifiable', claim: 'No verifier' },
   ], NOW);
 
@@ -57,6 +57,7 @@ test('live-problem snapshot separates open, chronic, resolved, and unverifiable 
   assert.equal(snapshot.chronic[0].detail, 'still failing');
   assert.equal(snapshot.resolvedJustNow[0].id, 'resolved_1');
   assert.equal(snapshot.resolved[0].id, 'resolved_1');
+  assert.equal(snapshot.resolved[0].evidence.receiptId, 'ev_1');
 });
 
 test('Good Life operator model exposes safe current help state with evidence and action card', () => {
@@ -213,7 +214,14 @@ test('Good Life operator model builds end-user detail sections for drill-down na
     },
     liveProblems: [
       { id: 'chronic_1', state: 'chronic', claim: 'Chronic thing', openedAt: '2026-05-08T13:00:00.000Z', lastResult: { detail: 'still failing' } },
-      { id: 'resolved_1', state: 'resolved', claim: 'Resolved thing', resolvedAt: '2026-05-08T13:44:00.000Z', fixRecipe: { summary: 'Restarted the dashboard' } },
+      {
+        id: 'resolved_1',
+        state: 'resolved',
+        claim: 'Resolved thing',
+        resolvedAt: '2026-05-08T13:44:00.000Z',
+        fixRecipe: { summary: 'Restarted the dashboard' },
+        evidence: { receiptId: 'ev_resolved_1', result: 'pass', claimLevel: 'verified_claim' },
+      },
     ],
     ledgerTail: [
       { at: '2026-05-08T13:40:00.000Z', event: 'good_life.evaluated', summary: 'help mode' },
@@ -225,6 +233,7 @@ test('Good Life operator model builds end-user detail sections for drill-down na
   assert.equal(model.detail.issues.rows[0].id, 'chronic_1');
   assert.equal(model.detail.work.dailyActions[0].agendaId, 'ag-new');
   assert.equal(model.detail.resolutions.recent[0].id, 'resolved_1');
+  assert.equal(model.detail.resolutions.recent[0].evidence.receiptId, 'ev_resolved_1');
   assert.equal(model.detail.insights.activeCommitments[0].id, 'continuity');
   assert.equal(model.detail.insights.trendMetrics.pendingAgenda, 145);
   assert.equal(model.detail.insights.ledgerTail[0].event, 'good_life.evaluated');

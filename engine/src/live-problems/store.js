@@ -329,6 +329,14 @@ class LiveProblemStore {
       const receiptPath = path.join(this.brainDir, 'evidence', 'live-problems', `${stamp}-${safeId}.evidence.json`);
       const indexPath = path.join(this.brainDir, 'evidence', 'live-problems.jsonl');
       writeEvidenceReceipt({ receipt, receiptPath, indexPath });
+      problem.evidence = {
+        receiptId: receipt.receiptId,
+        receiptPath,
+        result: receipt.result,
+        claimLevel: receipt.claimLevel,
+        createdAt: receipt.createdAt,
+      };
+      this.save();
       const ledger = new EventLedger(this.brainDir, { logger: this.logger });
       ledger.recordStateTransition({
         eventType: 'live_problem.fixed',
