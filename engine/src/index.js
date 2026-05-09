@@ -1024,7 +1024,9 @@ async function main() {
         if (fs.existsSync(instancePath)) {
           const inst = yaml.load(fs.readFileSync(instancePath, 'utf8')) || {};
           const bridgePort = inst.ports?.bridge;
-          if (bridgePort) bridgeInjectUrl = `http://localhost:${bridgePort}/api/bridge-chat/inject`;
+          if (bridgePort && inst.sibling?.enabled && inst.sibling?.bridgeChat?.enabled) {
+            bridgeInjectUrl = `http://localhost:${bridgePort}/api/bridge-chat/inject`;
+          }
         }
       }
     } catch { /* best-effort */ }
@@ -1033,14 +1035,15 @@ async function main() {
       salienceThreshold: publishCfg.targets?.bridge_chat?.salience_threshold ?? 0.75,
       sender: bridgeInjectUrl
         ? async ({ text }) => {
-            try {
-              await fetch(bridgeInjectUrl, {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ lane: 'observations', from: 'os-engine', text }),
-              });
-            } catch (err) {
-              logger.warn?.('[publish] bridge-chat POST failed:', err?.message || err);
+            const response = await fetch(bridgeInjectUrl, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ lane: 'observations', from: 'os-engine', text }),
+            });
+            if (!response.ok) {
+              let detail = '';
+              try { detail = await response.text(); } catch { /* ignore */ }
+              throw new Error(`HTTP ${response.status}${detail ? ` ${detail.slice(0, 160)}` : ''}`);
             }
           }
         : null,
@@ -1048,6 +1051,7 @@ async function main() {
       logger,
     });
     if (bridgeInjectUrl) logger.info(`[publish] bridge-chat sender → ${bridgeInjectUrl}`);
+    else logger.info('[publish] bridge-chat sender disabled');
     // Hook bus observations into bridge salience evaluation (no-op until sender is wired).
     channelBus.on('observation', async (obs) => {
       const salience = computeSalience(obs);

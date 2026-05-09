@@ -15,6 +15,36 @@ test('BridgeChatPublisher only publishes above salience threshold', async () => 
   assert.equal(sent.length, 1);
 });
 
+test('BridgeChatPublisher does not record success when no sender is configured', async () => {
+  let records = 0;
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    ledger: { record: async () => { records += 1; } },
+  });
+
+  const result = await pub.onObservation({ salience: 0.9, summary: 'big' });
+
+  assert.equal(result, null);
+  assert.equal(records, 0);
+});
+
+test('BridgeChatPublisher does not record success when sender fails', async () => {
+  let records = 0;
+  const warnings = [];
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    sender: async () => { throw new Error('HTTP 503 bridge-chat not configured'); },
+    ledger: { record: async () => { records += 1; } },
+    logger: { warn: (...args) => warnings.push(args), info: () => {} },
+  });
+
+  const result = await pub.onObservation({ salience: 0.9, summary: 'big' });
+
+  assert.equal(result, false);
+  assert.equal(records, 0);
+  assert.ok(warnings.some((args) => String(args[0]).includes('bridge-chat failed')));
+});
+
 test('computeSalience weights COLLECTED higher than UNCERTIFIED', () => {
   const now = Date.now();
   const collected = { confidence: 0.9, flag: 'COLLECTED', receivedAt: new Date(now).toISOString() };

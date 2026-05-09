@@ -10,13 +10,14 @@
 export class BridgeChatPublisher {
   constructor({ salienceThreshold = 0.75, sender, ledger, logger } = {}) {
     this.salienceThreshold = salienceThreshold;
-    this.sender = typeof sender === 'function' ? sender : async () => null;
+    this.sender = typeof sender === 'function' ? sender : null;
     this.ledger = ledger;
     this.logger = logger || console;
   }
 
   async onObservation({ salience, summary, observation } = {}) {
     if (typeof salience !== 'number' || salience < this.salienceThreshold) return null;
+    if (!this.sender) return null;
     try {
       await this.sender({ text: summary, observation });
       await this.ledger?.record?.({ target: 'bridge_chat', artifact: `bridge:${new Date().toISOString()}` });
