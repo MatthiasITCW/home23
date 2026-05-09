@@ -3078,7 +3078,7 @@ function renderGoodLifeWorkDetail(data) {
       <div><label>Risk</label><p>${escapeHtml([card.riskTier != null ? `risk ${card.riskTier}` : null, card.reversible ? 'reversible' : null, card.evidenceRequired ? 'evidence required' : null].filter(Boolean).join(', ') || 'not recorded')}</p></div>
     </div>
     <section><h4>Active Agenda</h4>${agenda.length ? agenda.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.id || 'agenda')}</strong><span>${escapeHtml(item.content || '')}</span><small>${escapeHtml([item.status, item.ageMin != null ? `${item.ageMin}m` : null].filter(Boolean).join(' - '))}</small><div class="h23-goodlife-mini-actions"><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'acknowledged')">Acknowledge</button><button type="button" onclick="updateGoodLifeAgendaStatus('${escapeAttr(item.id || '')}', 'stale')">Dismiss</button></div></div>`).join('') : '<div class="h23-goodlife-empty">No active agenda rows</div>'}</section>
-    <section><h4>Active Goals</h4>${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p>` : ''}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
+    <section><h4>Active Goals</h4>${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p><div class="h23-goodlife-mini-actions"><button type="button" onclick="archiveGoodLifeGoal('${escapeAttr(goal.id || '')}')">Archive Goal</button></div>` : ''}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
     <section><h4>Active Commitments</h4>${activeCommitments.length ? activeCommitments.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml((item.reasons || []).join(' - ') || item.status || '')}</span><small>${escapeHtml(item.lane || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active commitments</div>'}</section>
   `;
 }
@@ -3264,6 +3264,32 @@ async function updateGoodLifeAgendaStatus(agendaId, status) {
     setText('goodlife-overlay-action-status', `${agendaId} marked ${status}.`);
   } catch (err) {
     setText('goodlife-overlay-action-status', `Agenda update failed: ${err.message}`);
+  }
+}
+
+async function archiveGoodLifeGoal(goalId) {
+  if (!goalId) return;
+  const confirmed = window.confirm(`Archive active goal ${goalId}? This removes it from the engine's active goal list without marking it completed.`);
+  if (!confirmed) return;
+
+  const base = goodLifeBaseForScope(goodLifeOverlayState.scope);
+  setText('goodlife-overlay-action-status', `Archiving ${goalId}...`);
+  try {
+    const res = await fetch(`${base}/api/goals/${encodeURIComponent(goalId)}/archive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'good-life-operator',
+        reason: 'archived from Good Life operator after review',
+      }),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || result.ok === false) throw new Error(result.error || `HTTP ${res.status}`);
+    await loadGoodLifeForScope(goodLifeOverlayState.scope);
+    renderGoodLifeOverlay();
+    setText('goodlife-overlay-action-status', `${goalId} archived.`);
+  } catch (err) {
+    setText('goodlife-overlay-action-status', `Goal archive failed: ${err.message}`);
   }
 }
 

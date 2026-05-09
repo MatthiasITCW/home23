@@ -110,6 +110,17 @@ class RealtimeServer {
             return;
           }
 
+          // ── Goal operator controls ──
+          if (req.url && req.url.startsWith('/admin/goals')) {
+            try {
+              await this._handleGoalAdmin(req, res);
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+            return;
+          }
+
           // ── Thinking machine observability (Phase 8) ──
           if (req.url && req.url.startsWith('/admin/thinking')) {
             try {
@@ -370,6 +381,49 @@ class RealtimeServer {
     }
 
     return json(404, { ok: false, error: `Unknown agenda route: ${req.method} ${url}` });
+  }
+
+  /**
+   * Handle /admin/goals* routes — narrow operator controls for Good Life
+   * surfaces. These mutate the live engine goal system, then persist state.
+   */
+  async _handleGoalAdmin(req, res) {
+    const url = req.url;
+    const json = (code, body) => {
+      res.writeHead(code, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+
+    const archivePost = url.match(/^\/admin\/goals\/([^/]+)\/archive$/);
+    if (req.method === 'POST' && archivePost) {
+      if (!this.orchestrator?.goals?.archiveGoal) {
+        return json(503, { ok: false, error: 'Goal system is not available' });
+      }
+
+      const goalId = decodeURIComponent(archivePost[1]);
+      const goal = this.orchestrator.goals.getGoal?.(goalId) || null;
+      if (!goal || (goal.status && goal.status !== 'active')) {
+        return json(404, { ok: false, error: 'active goal not found' });
+      }
+
+      const body = await this._readJsonBody(req);
+      const reason = String(body.reason || body.note || 'archived from Good Life operator').slice(0, 500);
+      const ok = this.orchestrator.goals.archiveGoal(goalId, reason);
+      if (!ok) return json(409, { ok: false, error: 'goal was not archived' });
+
+      if (typeof this.orchestrator.saveState === 'function') {
+        await this.orchestrator.saveState();
+      }
+
+      return json(200, {
+        ok: true,
+        goalId,
+        status: 'archived',
+        reason,
+      });
+    }
+
+    return json(404, { ok: false, error: `Unknown goal route: ${req.method} ${url}` });
   }
 
   /**

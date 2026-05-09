@@ -1340,6 +1340,17 @@ class DashboardServer {
         return res.status(fallback.ok ? 200 : 400).json(fallback);
       });
 
+      this.app.post('/api/goals/:id/archive', async (req, res) => {
+        const target = this.getHome23AgentContext(req.query?.agent || req.body?.agent);
+        const requestPath = `/admin/goals/${encodeURIComponent(req.params.id)}/archive`;
+        try {
+          const result = await fetchAdminJson(target, 'POST', requestPath, req.body || {}, 10_000);
+          return res.status(result.status).json(result.body);
+        } catch (err) {
+          return res.status(502).json({ ok: false, error: `Engine admin unreachable: ${err.message}` });
+        }
+      });
+
       // Thinking-machine observability (Phase 8 of thinking-machine-cycle).
       this.app.get('/api/thinking/stats', async (req, res) => {
         const target = this.getHome23AgentContext(req.query?.agent);
