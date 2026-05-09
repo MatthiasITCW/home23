@@ -103,9 +103,30 @@ test('Good Life obligation snapshot exposes active agenda rows and goals', () =>
   assert.equal(snapshot.counts.activeGoals, 1);
   assert.deepEqual(snapshot.activeAgenda.map((row) => row.id), ['ag-3', 'ag-1']);
   assert.equal(snapshot.activeGoals[0].id, 'goal_1');
+  assert.equal(snapshot.activeGoals[0].description, 'Resolve operator visibility gap');
   assert.equal(snapshot.activeGoals[0].review.recommended, false);
   assert.equal(snapshot.latestAgendaById['ag-2'].status, 'stale');
   assert.equal(snapshot.latestAgendaById['ag-3'].status, 'surfaced');
+});
+
+test('Good Life obligation snapshot compacts force-output goal prompts for operator display', () => {
+  const snapshot = buildGoodLifeObligationSnapshot({
+    goals: {
+      active: [
+        ['goal_force', {
+          id: 'goal_force',
+          description: 'Produce outputs/digest-6427.md. Synthesize these findings from recent memory:\\n  - [#1 tag=agent_insight] internal retrieval note',
+          status: 'active',
+          source: 'force-output',
+          createdAt: '2026-05-08T13:30:00.000Z',
+        }],
+      ],
+    },
+    now: NOW,
+  });
+
+  assert.equal(snapshot.activeGoals[0].description, 'Produce outputs/digest-6427.md');
+  assert.match(snapshot.activeGoals[0].rawDescription, /Synthesize these findings/);
 });
 
 test('Good Life obligation snapshot flags stale force-output goals for operator review', () => {
@@ -635,7 +656,7 @@ test('Good Life operator answer includes active work and review-needed goals', (
 
   assert.equal(model.work.activeGoals, 1);
   assert.equal(model.work.goalsNeedingReview, 1);
-  assert.ok(model.operatorAnswer.some((line) => line.includes('Active work: 1; 1 goal(s) need operator review; top review goal goal_force')));
+  assert.ok(model.operatorAnswer.some((line) => line.includes('Active work: 1; 1 goal(s) need operator review; top review goal: goal_force - Produce outputs/digest-6382.md')));
 });
 
 test('Good Life operator answer names reviewed goal before first active goal', () => {
@@ -672,7 +693,7 @@ test('Good Life operator answer names reviewed goal before first active goal', (
   assert.equal(model.work.activeGoals, 2);
   assert.equal(model.work.goalsNeedingReview, 1);
   const line = model.operatorAnswer.find((entry) => entry.includes('goal(s) need operator review'));
-  assert.match(line, /top review goal goal_force/);
+  assert.match(line, /top review goal: goal_force - Produce outputs\/digest-6382\.md/);
   assert.doesNotMatch(line, /top goal goal_recent/);
 });
 
@@ -817,7 +838,7 @@ test('Good Life operator brief ignores stale latest worker route when active goa
   });
 
   assert.equal(model.work.activeTotal, 1);
-  assert.equal(model.operatorBrief.next, 'Top goal: goal-visible-progress');
+  assert.equal(model.operatorBrief.next, 'Top goal: goal-visible-progress - Produce visible progress from current evidence');
   assert.deepEqual(model.operatorBrief.target, {
     tab: 'work',
     id: 'goal-visible-progress',

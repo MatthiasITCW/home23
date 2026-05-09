@@ -211,9 +211,12 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, now = 
       const createdAt = goal.createdAt || goal.created_at || goal.created || null;
       const ageMin = ageMinutes(createdAt, nowMs);
       const source = goal.source?.label || goal.source?.origin || goal.source || null;
+      const rawDescription = goal.description || goal.title || goal.goal || '';
+      const description = summarizeGoalDescription(rawDescription);
       const row = {
         id: goal.id || '',
-        description: goal.description || goal.title || goal.goal || '',
+        description,
+        rawDescription,
         status: goal.status || 'active',
         source,
         priority: goal.priority ?? null,
@@ -252,6 +255,23 @@ function normalizeActiveGoals(goals) {
     if (Array.isArray(entry)) return entry[1] || { id: entry[0] };
     return entry || {};
   }).filter(Boolean);
+}
+
+function summarizeGoalDescription(description) {
+  const text = String(description || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  if (/^Produce\s+/i.test(text)) {
+    const firstToken = text.replace(/^Produce\s+/i, '').split(/\s+/)[0]?.replace(/[.,;:]+$/, '');
+    if (firstToken && firstToken.includes('/')) return `Produce ${firstToken}`;
+  }
+  const sentenceMatch = text.match(/^(.+?[.!?])(?:\s|$)/);
+  return compactText(sentenceMatch?.[1] || text, 180);
+}
+
+function topGoalText(goal = {}) {
+  if (!goal?.id) return null;
+  const description = summarizeGoalDescription(goal.description || goal.rawDescription || '');
+  return description ? `Top goal: ${goal.id} - ${description}` : `Top goal: ${goal.id}`;
 }
 
 function classifyAgendaReview(row = {}) {
@@ -760,7 +780,7 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     } else if (work.topAgenda?.id) {
       next = `Top agenda: ${work.topAgenda.id}`;
     } else if (work.topGoal?.id) {
-      next = `Top goal: ${work.topGoal.id}`;
+      next = topGoalText(work.topGoal);
     }
     target = {
       tab: 'work',
@@ -847,8 +867,8 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
     const reviewText = reviewParts.length ? `; ${reviewParts.join('; ')}` : '';
     const agendaText = work.topAgenda?.id ? `; top agenda ${work.topAgenda.id}` : '';
     const goalText = work.topReviewGoal?.id
-      ? `; top review goal ${work.topReviewGoal.id}`
-      : (work.topGoal?.id ? `; top goal ${work.topGoal.id}` : '');
+      ? `; ${topGoalText(work.topReviewGoal).replace(/^Top goal:/, 'top review goal:')}`
+      : (work.topGoal?.id ? `; ${topGoalText(work.topGoal).replace(/^Top goal:/, 'top goal:')}` : '');
     lines.push(`Active work: ${work.activeTotal}${reviewText}${agendaText}${goalText}`);
   }
 
