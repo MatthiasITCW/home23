@@ -1033,7 +1033,7 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
       worker: null,
     };
   } else if (budget?.exhausted) {
-    severity = 'attention';
+    severity = work?.activeTotal > 0 ? 'attention' : 'clear';
     status = 'Paused';
     headline = 'Good Life self-maintenance budget is spent';
     why = budget.reason;
@@ -1193,12 +1193,12 @@ function buildOperatorDigest({ brief, liveProblems, work, budget }) {
     userAction = workStatus || 'Operator review is recommended for active work.';
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
+  } else if (budget?.exhausted) {
+    userAction = 'No user action needed; Good Life self-maintenance is paused by daily budget.';
   } else if (brief?.severity === 'attention') {
-    userAction = budget?.exhausted
-      ? 'No user action needed; Good Life self-maintenance is paused by daily budget.'
-      : (brief.headline
-        ? `No user action needed; Home23 is watching: ${brief.headline}`
-        : 'No user action needed; Home23 is watching the warning.');
+    userAction = brief.headline
+      ? `No user action needed; Home23 is watching: ${brief.headline}`
+      : 'No user action needed; Home23 is watching the warning.';
   }
 
   return {

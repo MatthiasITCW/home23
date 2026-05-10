@@ -989,10 +989,12 @@ test('Good Life operator surfaces exhausted self-maintenance budget as paused au
   assert.equal(model.autonomyBudget.exhausted, true);
   assert.equal(model.autonomyBudget.used, 4);
   assert.equal(model.autonomyBudget.limit, 4);
+  assert.equal(model.operatorBrief.severity, 'clear');
   assert.equal(model.operatorBrief.status, 'Paused');
   assert.match(model.operatorBrief.headline, /self-maintenance budget is spent/);
   assert.match(model.operatorHandoff.repair, /self-maintenance budget is 4\/4/);
   assert.match(model.operatorHandoff.userAction, /No user action needed/);
+  assert.match(model.operatorDigest.userAction, /paused by daily budget/);
   assert.equal(model.operatorHandoff.evidence[1].label, 'Autonomy budget');
   assert.match(model.operatorAnswer.find((line) => line.startsWith('Autonomy budget:')), /4\/4 self-maintenance actions used/);
   assert.equal(model.detail.work.daily.selfMaintenanceLimit, 4);
