@@ -19,6 +19,8 @@ test('live-problems panel exposes an operator readout, not only raw verifier row
   assert.match(js, /Action Needed/);
   assert.match(js, /Inspect Plan/);
   assert.match(js, /Re-check/);
+  assert.match(js, /manual review needed; autonomous remediation has escalated this issue/);
+  assert.match(js, /problem\.escalated === true/);
   assert.match(js, /nothing; this issue is resolved/);
   assert.match(js, /brief\.status === 'Paused'/);
   assert.match(js, /paused by budget/);

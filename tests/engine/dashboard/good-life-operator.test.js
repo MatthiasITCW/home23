@@ -469,6 +469,43 @@ test('Good Life operator answer surfaces live problems that need user interventi
   assert.equal(model.operatorDigest.evidence.interventionRequired, 1);
 });
 
+test('Good Life operator keeps escalated open problems visible as user intervention', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({ evidence: { liveProblems: { open: 1, chronic: 0, resolved: 0, unverifiable: 0, total: 1 } } }),
+    liveProblems: [
+      {
+        id: 'bridge_escalated',
+        state: 'open',
+        claim: 'External bridge has no successful OAuth import',
+        openedAt: '2026-05-08T13:00:00.000Z',
+        stepIndex: 2,
+        escalated: true,
+        remediation: [
+          { type: 'dispatch_to_agent', args: { budgetHours: 2 } },
+          { type: 'notify_jtr', args: { text: 'Approve the bridge import.' } },
+        ],
+        remediationLog: [
+          {
+            step: 1,
+            type: 'notify_jtr',
+            outcome: 'success',
+            detail: 'jtr notified',
+            at: '2026-05-08T13:10:00.000Z',
+          },
+        ],
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.liveProblems.counts.interventionRequired, 1);
+  assert.equal(model.liveProblems.open[0].intervention.required, true);
+  assert.equal(model.operatorBrief.severity, 'needs-user');
+  assert.equal(model.operatorBrief.needsUser, true);
+  assert.match(model.operatorBrief.next, /User action: review escalated problem/);
+  assert.match(model.operatorHandoff.userAction, /review escalated problem/);
+});
+
 test('Good Life operator answer names open live problem and latest fix attempt', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({ evidence: { liveProblems: { open: 1, chronic: 0, resolved: 0, unverifiable: 0, total: 1 } } }),

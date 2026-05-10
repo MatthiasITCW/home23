@@ -93,7 +93,8 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
   for (const problem of Array.isArray(problems) ? problems : []) {
     if (problem?.state === 'open' || problem?.state === 'chronic') {
       const nextRemediation = summarizeNextRemediation(problem);
-      if (nextRemediation.requiresUser) interventionRequired += 1;
+      const requiresUser = nextRemediation.requiresUser || problem.escalated === true;
+      if (requiresUser) interventionRequired += 1;
       const row = {
         id: problem.id || '',
         claim: problem.claim || '',
@@ -106,8 +107,10 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
         remediationTotal: Array.isArray(problem.remediation) ? problem.remediation.length : 0,
         nextRemediation,
         intervention: {
-          required: nextRemediation.requiresUser,
-          reason: nextRemediation.requiresUser ? nextRemediation.text : null,
+          required: requiresUser,
+          reason: problem.escalated
+            ? `escalated after autonomous remediation; ${nextRemediation.text || 'manual review required'}`
+            : (nextRemediation.requiresUser ? nextRemediation.text : null),
         },
         lastCheckedAt: problem.lastCheckedAt || null,
         lastRemediation: Array.isArray(problem.remediationLog)
@@ -1035,6 +1038,12 @@ function remediationCooldownStatus(problem = {}, next = {}, nowMs = Date.now()) 
 
 function formatRemediationLine(prefix, next = {}, problem = null, nowMs = Date.now()) {
   if (!next?.type && !next?.text) return null;
+  if (problem?.escalated) {
+    const latest = problem.lastRemediation
+      ? [problem.lastRemediation.type, problem.lastRemediation.outcome].filter(Boolean).join(' ')
+      : null;
+    return `${prefix}: review escalated problem${next?.text ? ` - ${compactText(next.text, 120)}` : ''}${latest ? `; latest attempt: ${latest}` : ''}`;
+  }
   const cooldown = remediationCooldownStatus(problem, next, nowMs);
   if (cooldown?.text) {
     return `${prefix}: ${cooldown.text}`;

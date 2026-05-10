@@ -553,11 +553,11 @@ function problemRepairText(problem = {}) {
 
 function problemUserText(problem = {}) {
   if (problem.state === 'resolved') return 'nothing; this issue is resolved';
+  if (problem.escalated) return 'manual review needed; autonomous remediation has escalated this issue';
   if (goodLifeNeedsUser(problem)) {
     const next = goodLifeNextRemediation(problem);
     return next.text || 'manual/user intervention is the next remediation step';
   }
-  if (problem.escalated) return 'escalated; check the remediation log before taking manual action';
   return 'not needed yet; autonomous remediation can continue';
 }
 
@@ -659,10 +659,12 @@ function renderProblemCard(p) {
 function renderProblemUserAction(problem = {}) {
   if (!goodLifeNeedsUser(problem)) return '';
   const next = goodLifeNextRemediation(problem);
-  const stepText = next.type
+  const stepText = problem.escalated
+    ? 'manual review'
+    : next.type
     ? `${next.type}${next.total ? ` step ${next.index + 1} of ${next.total}` : ''}`
     : 'manual intervention';
-  const actionText = next.text || problemUserText(problem);
+  const actionText = problem.escalated ? problemUserText(problem) : (next.text || problemUserText(problem));
   return `
     <div class="h23-problem-user-action">
       <div>
@@ -2881,7 +2883,7 @@ function goodLifeNextRemediation(problem = {}) {
 }
 
 function goodLifeNeedsUser(problem = {}) {
-  return problem.intervention?.required === true || goodLifeNextRemediation(problem).requiresUser === true;
+  return problem.escalated === true || problem.intervention?.required === true || goodLifeNextRemediation(problem).requiresUser === true;
 }
 
 function setGoodLifeStatus(scope, operator) {
