@@ -41,6 +41,64 @@ test('http_ping verifies a local HTTP status without fetch', async () => {
   }
 });
 
+test('pm2_port_owner passes when the online PM2 process owns the listening port', async () => {
+  const result = await runVerifier({
+    type: 'pm2_port_owner',
+    args: { name: 'home23-jerry-dash', port: '5002' },
+  }, {
+    execFileSync(command) {
+      if (command === 'pm2') {
+        return JSON.stringify([{
+          name: 'home23-jerry-dash',
+          pid: 69054,
+          pm2_env: { status: 'online' },
+        }]);
+      }
+      if (command === 'lsof') {
+        return [
+          'COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME',
+          'node    69054  jtr   23u  IPv4 123456      0t0  TCP *:5002 (LISTEN)',
+          '',
+        ].join('\n');
+      }
+      throw new Error(`unexpected command ${command}`);
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.observed.pm2Pid, 69054);
+  assert.deepEqual(result.observed.listenerPids, [69054]);
+});
+
+test('pm2_port_owner fails when a stale listener owns the dashboard port', async () => {
+  const result = await runVerifier({
+    type: 'pm2_port_owner',
+    args: { name: 'home23-jerry-dash', port: '5002' },
+  }, {
+    execFileSync(command) {
+      if (command === 'pm2') {
+        return JSON.stringify([{
+          name: 'home23-jerry-dash',
+          pid: 67231,
+          pm2_env: { status: 'online' },
+        }]);
+      }
+      if (command === 'lsof') {
+        return [
+          'COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME',
+          'node    44914  jtr   23u  IPv4 123456      0t0  TCP *:5002 (LISTEN)',
+          '',
+        ].join('\n');
+      }
+      throw new Error(`unexpected command ${command}`);
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /expected home23-jerry-dash pid 67231/);
+  assert.deepEqual(result.observed.listenerPids, [44914]);
+});
+
 test('log_recent_count fails when recent bracketed log matches exceed maxCount', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verifier-log-'));
   const file = path.join(dir, 'engine-err.log');

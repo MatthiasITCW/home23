@@ -126,6 +126,27 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
       seedOrigin: 'system',
     },
     {
+      id: `${agent}_dashboard_port_owner`,
+      claim: `Dashboard port :${dashPort} is owned by ${dashProc}, not a stale listener`,
+      verifier: {
+        type: 'pm2_port_owner',
+        args: { name: dashProc, port: dashPort },
+      },
+      remediation: [
+        { type: 'pm2_restart', args: { name: dashProc }, cooldownMin: 5 },
+        { type: 'dispatch_to_agent', args: { budgetHours: 2 }, cooldownMin: 15 },
+        {
+          type: 'notify_jtr',
+          args: {
+            severity: 'alert',
+            text: `Dashboard port :${dashPort} is not owned by ${dashProc}. A stale listener may be serving old operator state.`,
+          },
+          cooldownMin: 60,
+        },
+      ],
+      seedOrigin: 'system',
+    },
+    {
       id: `${agent}_engine_admin_ping`,
       claim: `Engine admin HTTP responding on :${realtimePort}`,
       verifier: {

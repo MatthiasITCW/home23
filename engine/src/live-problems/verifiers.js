@@ -135,6 +135,90 @@ const verifiers = {
   },
 
   /**
+   * PM2 process is online and is the process that owns a listening TCP port.
+   * Catches stale/orphan listeners where HTTP still responds but an older
+   * process owns the socket instead of the current PM2 child.
+   * args: { name, port }
+   */
+  pm2_port_owner({ name, port }, ctx = {}) {
+    if (!name) return { ok: false, detail: 'name required' };
+    if (!port) return { ok: false, detail: 'port required' };
+
+    const portText = String(port).trim();
+    if (!/^\d+$/.test(portText)) return { ok: false, detail: `invalid port: ${port}` };
+
+    const run = ctx.execFileSync || execFileSync;
+    let pm2Pid = null;
+    let status = null;
+
+    try {
+      const out = run('pm2', ['jlist'], { encoding: 'utf8', timeout: 15000 });
+      const list = JSON.parse(out);
+      const matches = list.filter(p => p.name === name);
+      if (matches.length === 0) {
+        return { ok: false, detail: `not registered: ${name}`, observed: { name, port: portText } };
+      }
+
+      const online = matches.find(p => p.pm2_env?.status === 'online');
+      if (!online) {
+        const statuses = matches.map(p => p.pm2_env?.status || '?').join(',');
+        return {
+          ok: false,
+          detail: `status=${statuses}`,
+          observed: { name, port: portText, statuses },
+        };
+      }
+
+      status = online.pm2_env?.status || null;
+      pm2Pid = Number.parseInt(String(online.pid || ''), 10);
+      if (!Number.isFinite(pm2Pid) || pm2Pid <= 0) {
+        return {
+          ok: false,
+          detail: `pm2 pid unavailable for ${name}`,
+          observed: { name, port: portText, status, pm2Pid: online.pid || null },
+        };
+      }
+    } catch (err) {
+      return { ok: false, detail: `pm2 jlist failed: ${err.message}`, observed: { name, port: portText } };
+    }
+
+    let lsofOut = '';
+    try {
+      lsofOut = run('lsof', ['-nP', `-iTCP:${portText}`, '-sTCP:LISTEN'], { encoding: 'utf8', timeout: 5000 });
+    } catch (err) {
+      return {
+        ok: false,
+        detail: `no listener on port ${portText} for ${name} pid ${pm2Pid}`,
+        observed: { name, port: portText, pm2Pid, status, listenerPids: [] },
+      };
+    }
+
+    const listenerPids = [...new Set(String(lsofOut)
+      .trim()
+      .split('\n')
+      .slice(1)
+      .map(line => Number.parseInt(line.trim().split(/\s+/)[1], 10))
+      .filter(pid => Number.isFinite(pid) && pid > 0))];
+
+    if (listenerPids.length === 0) {
+      return {
+        ok: false,
+        detail: `no listener on port ${portText} for ${name} pid ${pm2Pid}`,
+        observed: { name, port: portText, pm2Pid, status, listenerPids },
+      };
+    }
+
+    const ok = listenerPids.includes(pm2Pid);
+    return {
+      ok,
+      detail: ok
+        ? `port ${portText} owned by ${name} pid ${pm2Pid}`
+        : `port ${portText} owned by stale pid ${listenerPids.join(',')}, expected ${name} pid ${pm2Pid}`,
+      observed: { name, port: portText, pm2Pid, status, listenerPids },
+    };
+  },
+
+  /**
    * HTTP GET returns 2xx within timeoutMs.
    * args: { url, timeoutMs, expectStatus }
    */

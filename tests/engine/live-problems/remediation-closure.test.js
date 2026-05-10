@@ -66,6 +66,20 @@ test('default seeds include agent-local operational log pressure invariants', ()
   assert.equal(cpu.verifier.args.maxCount, 3);
 });
 
+test('default seeds verify dashboard port ownership separately from HTTP reachability', () => {
+  const seeds = defaultSeeds({ agentName: 'forrest', dashboardPort: '5012', bridgePort: '5014' });
+  const byId = new Map(seeds.map((seed) => [seed.id, seed]));
+
+  const portOwner = byId.get('forrest_dashboard_port_owner');
+  assert.equal(portOwner?.verifier?.type, 'pm2_port_owner');
+  assert.equal(portOwner.verifier.args.name, 'home23-forrest-dash');
+  assert.equal(portOwner.verifier.args.port, '5012');
+  assert.equal(portOwner.remediation[0].type, 'pm2_restart');
+  assert.equal(portOwner.remediation[0].args.name, 'home23-forrest-dash');
+  assert.equal(portOwner.remediation[1].type, 'dispatch_to_agent');
+  assert.match(portOwner.remediation[2].args.text, /stale listener/);
+});
+
 test('resolved verification clears stale escalation state', () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
   try {
