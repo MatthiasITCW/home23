@@ -78,6 +78,20 @@ class MetaCoordinator {
     this.setupMessageHandlers();
   }
 
+  coordinatorMaxTokens(fallback = 3000, ceiling = 10000) {
+    const configured = Number(this.config.maxTokens);
+    const value = Number.isFinite(configured) && configured > 0 ? configured : fallback;
+    return Math.max(1000, Math.min(value, ceiling));
+  }
+
+  coordinatorReasoningEffort(fallback = 'low') {
+    return this.config.reasoningEffort || fallback;
+  }
+
+  coordinatorVerbosity(fallback = 'low') {
+    return this.config.verbosity || fallback;
+  }
+
   /**
    * Initiate guided mission at startup
    * Coordinator owns mission lifecycle: assessment, planning, execution, monitoring
@@ -927,9 +941,9 @@ IMPORTANT: Be explicit with goal IDs for programmatic action.`;
         model: this.config.models?.coordinatorStrategic || 'gpt-5.5', // Strategic goal prioritization needs GPT-5.5
         instructions: prompt,
         messages: [{ role: 'user', content: 'Evaluate this goal portfolio concisely.' }],
-        maxTokens: 25000, // Strategic prioritization needs deep analysis space
-        reasoningEffort: 'high', // Goal prioritization drives entire agent layer
-        verbosity: 'low' // Request concise output to fit within budget
+        maxTokens: this.coordinatorMaxTokens(3000, 8000),
+        reasoningEffort: this.coordinatorReasoningEffort('low'),
+        verbosity: this.coordinatorVerbosity('low')
       }, 3);
 
       // Extract prioritized goals from response
@@ -1957,9 +1971,9 @@ Requirements:
         model: this.config.models?.coordinatorStrategic || 'gpt-5.5', // Use GPT-5.5 for strategic decisions - this is important!
         instructions: decisionPrompt,
         messages: [{ role: 'user', content: 'Generate strategic action plan - be comprehensive but concise.' }],
-        maxTokens: 16000, // Maximum allocation - most important strategic decision point (capped at API max)
-        reasoningEffort: 'high', // Maximum reasoning for strategic decisions that set system direction
-        verbosity: 'high' // Want rich strategic output
+        maxTokens: this.coordinatorMaxTokens(3000, 8000),
+        reasoningEffort: this.coordinatorReasoningEffort('low'),
+        verbosity: this.coordinatorVerbosity('low')
       }, 3);
 
       // Parse decisions
