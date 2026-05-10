@@ -1379,6 +1379,47 @@ test('Good Life operator brief includes active goal artifact status', () => {
   assert.ok(model.operatorAnswer.some((line) => line.includes('artifact pending: outputs/digest-6427.md; review in 11h')));
 });
 
+test('Good Life operator work summary prefers concrete artifact goals over newer synthesis goals', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    obligations: {
+      activeAgenda: [],
+      activeGoals: [
+        {
+          id: 'synthesis_7004',
+          description: 'Consolidate recent cognitive work into a comprehensive knowledge report.',
+          rawDescription: 'Consolidate recent cognitive work into a comprehensive knowledge report.',
+          status: 'active',
+          source: 'system_scheduler',
+          progress: 0.42,
+          createdAt: NOW,
+        },
+        {
+          id: 'goal-output',
+          description: 'Produce outputs/digest-6427.md',
+          rawDescription: 'Produce outputs/digest-6427.md. Synthesize current evidence.',
+          artifact: {
+            relativePath: 'outputs/digest-6427.md',
+            exists: false,
+          },
+          status: 'active',
+          source: 'force-output',
+          createdAt: '2026-05-10T03:43:33.826Z',
+          ageMin: 78,
+        },
+      ],
+      counts: { activeAgenda: 0, activeGoals: 2, activeGoalsShown: 2, activeGoalsTrusted: true },
+    },
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.equal(model.work.topGoal.id, 'goal-output');
+  assert.equal(model.work.statusText, 'artifact pending: outputs/digest-6427.md; review in 11h');
+  assert.match(model.operatorDigest.currentWork, /outputs\/digest-6427\.md/);
+  assert.doesNotMatch(model.operatorDigest.currentWork, /synthesis_7004/);
+});
+
 test('Good Life operator digest names top active goal when no artifact is pending', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState(),

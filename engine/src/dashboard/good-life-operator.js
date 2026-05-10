@@ -495,7 +495,7 @@ function summarizeWork(obligations = {}) {
   const agendaNeedingReview = activeAgenda.filter((row) => row.review?.recommended);
   const agendaNeedingUser = activeAgenda.filter((row) => row.intervention?.required);
   const topAgenda = activeAgenda[0] || null;
-  const topGoal = activeGoals[0] || null;
+  const topGoal = selectTopGoal(activeGoals);
   const topReviewGoal = goalsNeedingReview[0] || null;
   const workStatus = summarizeWorkStatus({
     activeAgenda,
@@ -524,6 +524,13 @@ function summarizeWork(obligations = {}) {
     agendaReviewRows: agendaNeedingReview.slice(0, 5),
     reviewRows: goalsNeedingReview.slice(0, 5),
   };
+}
+
+function selectTopGoal(activeGoals = []) {
+  if (!Array.isArray(activeGoals) || activeGoals.length === 0) return null;
+  return activeGoals.find((goal) => goal.artifactStatus || goalArtifactText(goal))
+    || activeGoals[0]
+    || null;
 }
 
 function buildAutonomyBudget(regulator = {}, policy = {}) {
