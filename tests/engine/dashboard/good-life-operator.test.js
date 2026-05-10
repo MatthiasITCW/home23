@@ -1036,14 +1036,20 @@ test('Good Life operator surfaces exhausted self-maintenance budget as paused au
   assert.equal(model.autonomyBudget.exhausted, true);
   assert.equal(model.autonomyBudget.used, 4);
   assert.equal(model.autonomyBudget.limit, 4);
+  assert.equal(model.autonomyBudget.resetAt, '2026-05-09T00:00:00.000Z');
+  assert.equal(model.autonomyBudget.resetInMin, 615);
+  assert.equal(model.autonomyBudget.resetText, 'resets in 10h 15m');
   assert.equal(model.operatorBrief.severity, 'clear');
   assert.equal(model.operatorBrief.status, 'Paused');
   assert.match(model.operatorBrief.headline, /self-maintenance budget is spent/);
+  assert.match(model.operatorBrief.next, /resets in 10h 15m/);
   assert.match(model.operatorHandoff.repair, /self-maintenance budget is 4\/4/);
-  assert.match(model.operatorHandoff.userAction, /No user action needed/);
-  assert.match(model.operatorDigest.userAction, /paused by daily budget/);
+  assert.match(model.operatorHandoff.userAction, /self-maintenance resets in 10h 15m/);
+  assert.match(model.operatorDigest.userAction, /paused by daily budget and resets in 10h 15m/);
   assert.equal(model.operatorHandoff.evidence[1].label, 'Autonomy budget');
+  assert.match(model.operatorHandoff.evidence[1].detail, /resets in 10h 15m/);
   assert.match(model.operatorAnswer.find((line) => line.startsWith('Autonomy budget:')), /4\/4 self-maintenance actions used/);
+  assert.match(model.operatorAnswer.find((line) => line.startsWith('Autonomy budget:')), /resets in 10h 15m/);
   assert.equal(model.detail.work.daily.selfMaintenanceLimit, 4);
   assert.equal(model.detail.work.daily.selfMaintenanceExhausted, true);
   assert.equal(model.detail.insights.autonomyBudget.status, 'exhausted');
@@ -1155,9 +1161,10 @@ test('Good Life operator does not present active learn work as working when budg
 
   assert.equal(model.operatorBrief.status, 'Paused');
   assert.match(model.operatorBrief.next, /1 active work item waiting/);
+  assert.match(model.operatorBrief.next, /daily budget reset \(resets in 10h 15m\)/);
   assert.equal(model.operatorBrief.target.tab, 'work');
   assert.match(model.operatorDigest.currentWork, /^Paused by daily budget:/);
-  assert.match(model.operatorDigest.userAction, /self-maintenance is paused by daily budget/);
+  assert.match(model.operatorDigest.userAction, /self-maintenance is paused by daily budget and resets in 10h 15m/);
   assert.match(model.operatorHandoff.repair, /self-maintenance budget is 4\/4/);
 });
 

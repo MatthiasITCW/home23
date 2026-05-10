@@ -365,6 +365,25 @@ function formatMinutes(minutes) {
   return `${value}m`;
 }
 
+function buildDailyReset(date, nowMs) {
+  const match = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return { resetAt: null, resetInMin: null, resetText: null };
+  const resetMs = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1);
+  if (!Number.isFinite(resetMs)) return { resetAt: null, resetInMin: null, resetText: null };
+  const resetInMin = Math.max(0, Math.ceil((resetMs - nowMs) / 60000));
+  const hours = Math.floor(resetInMin / 60);
+  const minutes = resetInMin % 60;
+  let duration = `${minutes}m`;
+  if (hours > 0) {
+    duration = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  return {
+    resetAt: new Date(resetMs).toISOString(),
+    resetInMin,
+    resetText: `resets in ${duration}`,
+  };
+}
+
 function classifyAgendaReview(row = {}) {
   const ageMin = finiteCount(row.ageMin);
   const status = String(row.status || 'candidate').toLowerCase();
@@ -540,7 +559,7 @@ function selectTopGoal(activeGoals = []) {
     || null;
 }
 
-function buildAutonomyBudget(regulator = {}, policy = {}) {
+function buildAutonomyBudget(regulator = {}, policy = {}, nowMs = Date.now()) {
   const daily = regulator?.daily || null;
   const dailyActions = Array.isArray(daily?.actions) ? daily.actions : [];
   const budgetedActions = dailyActions.filter((action) => goodLifeActionCountsAgainstSelfMaintenanceBudget(action));
@@ -554,6 +573,8 @@ function buildAutonomyBudget(regulator = {}, policy = {}) {
   const budgetedMode = !['repair', 'help'].includes(mode);
   const exhausted = budgetedMode && used >= limit;
   const bypassed = !budgetedMode && used >= limit;
+  const reset = buildDailyReset(daily?.date, nowMs);
+  const resetSuffix = reset.resetText ? `; ${reset.resetText}` : '';
   return {
     date: daily?.date || null,
     used,
@@ -562,10 +583,13 @@ function buildAutonomyBudget(regulator = {}, policy = {}) {
     exhausted,
     bypassed,
     bypassUsed: bypassActions.length,
+    resetAt: reset.resetAt,
+    resetInMin: reset.resetInMin,
+    resetText: reset.resetText,
     mode,
     status: exhausted ? 'exhausted' : (bypassed ? 'bypassed' : 'available'),
     reason: exhausted
-      ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode || 'current'} work is paused unless repair/help evidence appears`
+      ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode || 'current'} work is paused unless repair/help evidence appears${resetSuffix}`
       : bypassed
         ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode} work can still run because repair/help bypasses the budget gate`
         : bypassActions.length
@@ -1043,9 +1067,10 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     status = 'Paused';
     headline = 'Good Life self-maintenance budget is spent';
     why = budget.reason;
+    const resetText = budget.resetText ? `the daily budget reset (${budget.resetText})` : 'the daily budget reset';
     next = work?.activeTotal > 0
-      ? `${work.activeTotal} active work item${work.activeTotal === 1 ? '' : 's'} waiting for the daily budget reset or fresh repair/help drift.`
-      : 'Autonomous repair/help can still run if drift appears; learning/rest work resumes when the daily budget resets.';
+      ? `${work.activeTotal} active work item${work.activeTotal === 1 ? '' : 's'} waiting for ${resetText} or fresh repair/help drift.`
+      : `Autonomous repair/help can still run if drift appears; learning/rest work resumes after ${resetText}.`;
     target = {
       tab: work?.activeTotal > 0 ? 'work' : 'insights',
       id: work?.topAgenda?.id || work?.topGoal?.id || null,
@@ -1182,7 +1207,8 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
   }
 
   if (budget?.exhausted) {
-    lines.push(`Autonomy budget: ${budget.used}/${budget.limit} self-maintenance actions used; ${budget.mode || 'current'} work is paused until reset or repair/help drift appears`);
+    const resetText = budget.resetText ? `; ${budget.resetText}` : '';
+    lines.push(`Autonomy budget: ${budget.used}/${budget.limit} self-maintenance actions used; ${budget.mode || 'current'} work is paused until reset or repair/help drift appears${resetText}`);
   }
 
   for (const lane of lanes.filter((candidate) => candidate.active)) {
@@ -1214,7 +1240,7 @@ function buildOperatorDigest({ brief, liveProblems, work, budget }) {
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
   } else if (budget?.exhausted) {
-    userAction = 'No user action needed; Good Life self-maintenance is paused by daily budget.';
+    userAction = `No user action needed; Good Life self-maintenance is paused by daily budget${budget.resetText ? ` and ${budget.resetText}` : ''}.`;
   } else if (brief?.severity === 'attention') {
     userAction = brief.headline
       ? `No user action needed; Home23 is watching: ${brief.headline}`
@@ -1278,7 +1304,7 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
   } else if (budget?.exhausted) {
-    userAction = 'No user action needed; repair/help can still run if drift appears, and self-maintenance resumes after the daily reset.';
+    userAction = `No user action needed; repair/help can still run if drift appears, and self-maintenance ${budget.resetText || 'resumes after the daily reset'}.`;
   }
 
   const evidence = [
@@ -1292,7 +1318,7 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
     evidence.push({
       label: 'Autonomy budget',
       value: `${budget.used}/${budget.limit}`,
-      detail: 'self-maintenance paused until reset',
+      detail: budget.resetText ? `self-maintenance paused; ${budget.resetText}` : 'self-maintenance paused until reset',
     });
   }
   if (actionableWarnings.length > 0) {
@@ -1413,7 +1439,7 @@ function buildGoodLifeOperatorModel({
   });
   const latestAction = annotateLatestRegulatorAction(latestRegulatorAction(regulator || {}), currentObligations);
   const work = summarizeWork(currentObligations || {});
-  const budget = buildAutonomyBudget(regulator || {}, policy);
+  const budget = buildAutonomyBudget(regulator || {}, policy, nowMs);
   const consistency = buildConsistency({
     state,
     projection,
