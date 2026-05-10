@@ -10784,7 +10784,7 @@ You are empowered to explore and understand. The user trusts you to discover the
               this.broadcast('stats', { cycleCount: metrics.cycleCount || metrics.totalCycles || 0, oscillator: null });
             } catch (e) { /* metrics not available */ }
           } else {
-            const state = await this.loadState();
+            const state = await this.loadStateScalars();
             this.broadcast('stats', {
               cycleCount: state.cycleCount,
               oscillator: state.oscillator

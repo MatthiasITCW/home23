@@ -3265,7 +3265,7 @@ function renderGoodLifeTop(data) {
       </div>
       <div>
         <label>Evidence</label>
-        ${(handoff.evidence || []).slice(0, 3).map((item) => `<p><strong>${escapeHtml(item.label || '')}:</strong> ${escapeHtml([item.value, item.detail].filter(Boolean).join(' - '))}</p>`).join('') || '<p>No evidence recorded</p>'}
+        ${(handoff.evidence || []).slice(0, 5).map((item) => `<p><strong>${escapeHtml(item.label || '')}:</strong> ${escapeHtml([item.value, item.detail].filter(Boolean).join(' - '))}</p>`).join('') || '<p>No evidence recorded</p>'}
       </div>
     </div>` : ''}
     ${digest ? `<div class="h23-goodlife-digest-grid">

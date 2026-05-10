@@ -969,6 +969,55 @@ test('Good Life operator surfaces exhausted self-maintenance budget as paused au
   assert.equal(model.detail.insights.autonomyBudget.status, 'exhausted');
 });
 
+test('Good Life operator handoff prioritizes budget evidence before warnings and receipts', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      summary: 'learn - no critical drift; pursue learning progress while staying useful (usefulness:watch)',
+      policy: {
+        mode: 'learn',
+        reason: 'no critical drift; pursue learning progress while staying useful',
+      },
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 1, unverifiable: 0, total: 1 },
+      },
+    }),
+    regulator: {
+      daily: {
+        date: '2026-05-08',
+        actions: [
+          { at: '2026-05-08T09:00:00.000Z', mode: 'learn', category: 'grounded-learning' },
+          { at: '2026-05-08T10:00:00.000Z', mode: 'rest', category: 'reduces-friction' },
+          { at: '2026-05-08T11:00:00.000Z', mode: 'learn', category: 'grounded-learning' },
+          { at: '2026-05-08T12:00:00.000Z', mode: 'rest', category: 'reduces-friction' },
+        ],
+      },
+    },
+    runtime: {
+      services: [{
+        id: 'engine',
+        ok: true,
+        slow: true,
+        label: 'Jerry engine realtime',
+        pm2: { status: 'online' },
+      }],
+    },
+    liveProblems: [{
+      id: 'cycle_timeout_clear',
+      state: 'resolved',
+      claim: 'Cycle timeouts cleared',
+      resolvedAt: '2026-05-08T13:44:00.000Z',
+      lastResult: { detail: '0 matching log entries in last 30m' },
+    }],
+    obligations: { activeAgenda: [], activeGoals: [], counts: { activeAgenda: 0, activeGoals: 0, activeGoalsTrusted: true } },
+    now: NOW,
+  });
+
+  assert.deepEqual(
+    model.operatorHandoff.evidence.map((item) => item.label),
+    ['Live registry', 'Autonomy budget', 'Operator warning', 'Latest resolution'],
+  );
+});
+
 test('Good Life operator does not present active learn work as working when budget is exhausted', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({

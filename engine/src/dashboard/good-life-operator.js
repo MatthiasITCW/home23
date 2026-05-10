@@ -1258,22 +1258,11 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
       detail: `${Number(counts.interventionRequired || 0)} ${Number(counts.interventionRequired || 0) === 1 ? 'needs' : 'need'} user intervention`,
     },
   ];
-  if (latestResolution) {
+  if (budget?.exhausted) {
     evidence.push({
-      label: 'Latest resolution',
-      value: latestResolution.id || 'resolution',
-      detail: latestResolution.lastResult?.detail
-        || latestResolution.fixRecipe?.verifierStatus
-        || latestResolution.evidence?.result
-        || latestResolution.claim
-        || '',
-    });
-  }
-  if (latestAction?.workerRoute?.worker && isActiveAgendaStatus(latestAction.agendaStatus || 'candidate')) {
-    evidence.push({
-      label: 'Worker route',
-      value: latestAction.workerRoute.worker,
-      detail: latestAction.workerRoute.reason || latestAction.agendaId || '',
+      label: 'Autonomy budget',
+      value: `${budget.used}/${budget.limit}`,
+      detail: 'self-maintenance paused until reset',
     });
   }
   if (actionableWarnings.length > 0) {
@@ -1283,11 +1272,22 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
       detail: actionableWarnings[0].message || '',
     });
   }
-  if (budget?.exhausted) {
+  if (latestAction?.workerRoute?.worker && isActiveAgendaStatus(latestAction.agendaStatus || 'candidate')) {
     evidence.push({
-      label: 'Autonomy budget',
-      value: `${budget.used}/${budget.limit}`,
-      detail: 'self-maintenance paused until reset',
+      label: 'Worker route',
+      value: latestAction.workerRoute.worker,
+      detail: latestAction.workerRoute.reason || latestAction.agendaId || '',
+    });
+  }
+  if (latestResolution) {
+    evidence.push({
+      label: 'Latest resolution',
+      value: latestResolution.id || 'resolution',
+      detail: latestResolution.lastResult?.detail
+        || latestResolution.fixRecipe?.verifierStatus
+        || latestResolution.evidence?.result
+        || latestResolution.claim
+        || '',
     });
   }
 

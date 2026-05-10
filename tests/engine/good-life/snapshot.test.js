@@ -84,6 +84,38 @@ test('Good Life goal summary does not count completed goals still present in act
   });
 });
 
+test('Good Life goal summary includes active goal obligations from brain snapshot', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-snapshot-'));
+  try {
+    writeFileSync(join(dir, 'brain-snapshot.json'), JSON.stringify({
+      goalCounts: { active: 3, completed: 7, archived: 2 },
+      activeGoalSummaries: [
+        { id: 'goal-a', status: 'active', progress: 0.2 },
+        { id: 'goal-b', status: 'active', progress: 0.4 },
+        { id: 'goal-c', status: 'active', progress: 0.6 },
+      ],
+    }));
+    const goals = {
+      getGoals() {
+        return [
+          { id: 'goal-a', status: 'active', progress: 0.2 },
+          { id: 'goal-b', status: 'active', progress: 0.4 },
+        ];
+      },
+    };
+
+    const snapshot = buildGoodLifeSnapshot({ runtimeRoot: dir, goals });
+
+    assert.deepEqual(snapshot.goals, {
+      open: 3,
+      complete: 7,
+      total: 10,
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('Good Life action summary prefers structured recent failure counter over prose mentions', () => {
   const snapshot = buildGoodLifeSnapshot({
     runtimeRoot: '',

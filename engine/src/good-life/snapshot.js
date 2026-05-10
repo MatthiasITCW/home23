@@ -18,7 +18,7 @@ function buildGoodLifeSnapshot({
       edges: sizeOf(memory?.edges),
     },
     liveProblems: summarizeLiveProblems(orchestrator, runtimeRoot),
-    goals: summarizeGoals(goals),
+    goals: summarizeGoals(goals, runtimeRoot),
     agenda: summarizeAgenda(runtimeRoot),
     crystallization: summarizeJsonl(path.join(runtimeRoot || '', 'crystallization-receipts.jsonl')),
     discovery: orchestrator?.discoveryEngine?.getStats?.() || null,
@@ -62,7 +62,7 @@ function isGoodLifeDiagnosticProblem(problem) {
   return id.startsWith('agenda_') && /Agenda action: Diagnose Good Life /i.test(claim);
 }
 
-function summarizeGoals(goals) {
+function summarizeGoals(goals, runtimeRoot) {
   const list = typeof goals?.getGoals === 'function' ? goals.getGoals() : [];
   let open = 0;
   let complete = 0;
@@ -70,7 +70,26 @@ function summarizeGoals(goals) {
     if (isOpenGoal(g)) open++;
     else complete++;
   }
+  const brainSnapshot = readJson(path.join(runtimeRoot || '', 'brain-snapshot.json'));
+  const snapshotActive = snapshotActiveGoalCount(brainSnapshot);
+  if (snapshotActive != null) open = Math.max(open, snapshotActive);
+  if (Number.isFinite(Number(brainSnapshot?.goalCounts?.completed))) {
+    complete = Math.max(complete, Number(brainSnapshot.goalCounts.completed));
+  }
   return { open, complete, total: open + complete };
+}
+
+function snapshotActiveGoalCount(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  const activeCount = Number(snapshot.goalCounts?.active);
+  const activeSummaries = Array.isArray(snapshot.activeGoalSummaries)
+    ? snapshot.activeGoalSummaries.filter(isOpenGoal).length
+    : null;
+  if (Number.isFinite(activeCount) && activeCount >= 0 && activeSummaries != null) {
+    return Math.max(activeCount, activeSummaries);
+  }
+  if (Number.isFinite(activeCount) && activeCount >= 0) return activeCount;
+  return activeSummaries;
 }
 
 function isOpenGoal(goal) {
