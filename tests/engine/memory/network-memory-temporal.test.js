@@ -101,6 +101,22 @@ test('addNode preserves temporal metadata through exportGraph', async () => {
   assert.equal(node.metadata.goalId, 'g1');
 });
 
+test('runtime embeddings use typed arrays while exports stay JSON arrays', async () => {
+  const memory = makeMemory();
+  const node = await memory.addNode('typed embedding memory', 'test', [1, 0]);
+
+  assert.equal(node.embedding instanceof Float32Array, true);
+  assert.equal(memory.cosineSimilarity(node.embedding, Float32Array.from([1, 0])), 1);
+
+  const exported = memory.exportGraph().nodes[0];
+  assert.equal(Array.isArray(exported.embedding), true);
+  assert.deepEqual(exported.embedding, [1, 0]);
+
+  const changes = memory.consumePersistenceChanges();
+  assert.equal(Array.isArray(changes.nodes[0].embedding), true);
+  assert.deepEqual(changes.nodes[0].embedding, [1, 0]);
+});
+
 test('persistence changes capture node, edge, and removal mutations', async () => {
   const memory = makeMemory();
   const first = await memory.addNode('first durable memory', 'test', [1, 0]);

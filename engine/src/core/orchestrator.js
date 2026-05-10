@@ -6762,7 +6762,10 @@ class Orchestrator {
             }
             // Import into live memory so subsequent cycles see the new nodes
             for (const node of feederNodes) {
-              this.memory.nodes.set(node.id, node);
+              const nodeRecord = this.memory.normalizeNodeRecord
+                ? this.memory.normalizeNodeRecord(node)
+                : node;
+              this.memory.nodes.set(node.id, nodeRecord);
             }
             this.logger.info('Merged feeder nodes into state', {
               feederNodes: feederNodes.length,
@@ -7268,9 +7271,12 @@ class Orchestrator {
           // new embeddings (e.g. after a brain restore that stripped them).
           const missingEmbedIds = [];
           for (const nodeData of state.memory.nodes) {
-            this.memory.nodes.set(nodeData.id, nodeData);
-            if (!nodeData.embedding) {
-              missingEmbedIds.push(nodeData.id);
+            const nodeRecord = this.memory.normalizeNodeRecord
+              ? this.memory.normalizeNodeRecord(nodeData)
+              : nodeData;
+            this.memory.nodes.set(nodeRecord.id, nodeRecord);
+            if (!nodeRecord.embedding) {
+              missingEmbedIds.push(nodeRecord.id);
             }
           }
 

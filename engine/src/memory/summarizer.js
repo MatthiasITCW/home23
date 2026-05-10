@@ -442,12 +442,14 @@ the specific instances.`,
 
   cosineSimilarity(a, b) {
     // Handle undefined inputs gracefully
-    if (!a || !b || !Array.isArray(a) || !Array.isArray(b)) {
+    const aIsVector = Array.isArray(a) || (ArrayBuffer.isView(a) && typeof a.length === 'number');
+    const bIsVector = Array.isArray(b) || (ArrayBuffer.isView(b) && typeof b.length === 'number');
+    if (!a || !b || !aIsVector || !bIsVector) {
       this.logger?.warn?.('Cosine similarity called with invalid inputs', {
         a: typeof a,
         b: typeof b,
-        aIsArray: Array.isArray(a),
-        bIsArray: Array.isArray(b)
+        aIsVector,
+        bIsVector
       });
       return 0;
     }

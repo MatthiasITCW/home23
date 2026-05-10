@@ -109,7 +109,8 @@ async function mergeRuns(loadedRuns, options = {}) {
   metrics.loadTimeMs = Date.now() - loadStart;
 
   // Detect embedding dimensions from first node with an embedding
-  const sampleNode = allNodes.find(n => n.embedding && Array.isArray(n.embedding));
+  const isVector = (value) => Array.isArray(value) || (ArrayBuffer.isView(value) && typeof value.length === 'number');
+  const sampleNode = allNodes.find(n => n.embedding && isVector(n.embedding));
   const embeddingDim = sampleNode ? sampleNode.embedding.length : 768;
   logger.info?.(`Detected embedding dimensions: ${embeddingDim}`);
 
@@ -136,7 +137,7 @@ async function mergeRuns(loadedRuns, options = {}) {
   const nodeEmbeddings = new Map();
   
   for (const node of allNodes) {
-    if (!node.embedding || !Array.isArray(node.embedding)) continue;
+    if (!node.embedding || !isVector(node.embedding)) continue;
     
     try {
       const domainEmbed = await domainEmbeddings.getEmbedding(node._domain);
@@ -508,4 +509,3 @@ module.exports = {
   
   DEFAULT_OPTIONS
 };
-

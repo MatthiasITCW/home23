@@ -6,6 +6,10 @@ function yieldToEventLoop() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function isVectorLike(value) {
+  return Array.isArray(value) || (ArrayBuffer.isView(value) && typeof value.length === 'number');
+}
+
 /**
  * Network Memory Graph
  * Implements spreading activation, Hebbian learning, and small-world topology
@@ -46,6 +50,33 @@ class NetworkMemory {
       });
       this.tokenizer = null;
     }
+  }
+
+  normalizeEmbedding(embedding) {
+    if (!isVectorLike(embedding)) return embedding;
+    if (embedding instanceof Float32Array) return embedding;
+    return Float32Array.from(embedding);
+  }
+
+  serializeEmbedding(embedding) {
+    if (!isVectorLike(embedding)) return embedding;
+    if (Array.isArray(embedding)) return embedding;
+    return Array.from(embedding);
+  }
+
+  normalizeNodeRecord(node) {
+    if (!node || typeof node !== 'object') return node;
+    return {
+      ...node,
+      embedding: this.normalizeEmbedding(node.embedding),
+    };
+  }
+
+  serializeNodeRecord(node) {
+    return {
+      ...node,
+      embedding: this.serializeEmbedding(node?.embedding),
+    };
   }
 
   /**
@@ -257,7 +288,7 @@ class NetworkMemory {
     let successCount = 0;
     nodesToEmbed.forEach((node, i) => {
       if (embeddings[i]) {
-        node.embedding = embeddings[i];
+        node.embedding = this.normalizeEmbedding(embeddings[i]);
         successCount++;
       }
     });
@@ -292,7 +323,7 @@ class NetworkMemory {
     }
 
     // All nodes use same dimensions for network consistency
-    const embed = nodeEmbedding || await this.embed(conceptText);
+    const embed = this.normalizeEmbedding(nodeEmbedding || await this.embed(conceptText));
 
     // Skip adding nodes with null embeddings
     if (!embed) {
@@ -507,7 +538,7 @@ class NetworkMemory {
       id: node.id,
       concept: node.concept,
       tag: node.tag,
-      embedding: node.embedding,
+      embedding: this.serializeEmbedding(node.embedding),
       weight: node.weight,
       activation: node.activation,
       cluster: node.cluster,
@@ -1274,12 +1305,12 @@ class NetworkMemory {
    */
   cosineSimilarity(a, b) {
     // Handle undefined inputs gracefully
-    if (!a || !b || !Array.isArray(a) || !Array.isArray(b)) {
+    if (!a || !b || !isVectorLike(a) || !isVectorLike(b)) {
       this.logger?.warn?.('Cosine similarity called with invalid inputs', {
         a: typeof a,
         b: typeof b,
-        aIsArray: Array.isArray(a),
-        bIsArray: Array.isArray(b)
+        aIsVector: isVectorLike(a),
+        bIsVector: isVectorLike(b)
       });
       return 0;
     }
@@ -1333,7 +1364,7 @@ class NetworkMemory {
         id: n.id,
         concept: n.concept,
         tag: n.tag,
-        embedding: n.embedding, // CRITICAL: Include embeddings for memory persistence
+        embedding: this.serializeEmbedding(n.embedding), // CRITICAL: Include embeddings for memory persistence
         weight: n.weight,
         activation: n.activation,
         cluster: n.cluster,
@@ -1401,7 +1432,7 @@ class NetworkMemory {
    */
   async save(filepath) {
     const state = {
-      nodes: Array.from(this.nodes.entries()),
+      nodes: Array.from(this.nodes.entries()).map(([id, node]) => [id, this.serializeNodeRecord(node)]),
       edges: Array.from(this.edges.entries()),
       clusters: Array.from(this.clusters.entries()).map(([id, nodes]) => [id, Array.from(nodes)]),
       nextNodeId: this.nextNodeId,
@@ -1419,7 +1450,7 @@ class NetworkMemory {
     try {
       const data = JSON.parse(await fs.promises.readFile(filepath, 'utf8'));
       
-      this.nodes = new Map(data.nodes);
+      this.nodes = new Map(data.nodes.map(([id, node]) => [id, this.normalizeNodeRecord(node)]));
       this.edges = new Map(data.edges);
       this.clusters = new Map(data.clusters.map(([id, nodes]) => [id, new Set(nodes)]));
       this.nextNodeId = data.nextNodeId;

@@ -81,3 +81,18 @@ test('full sidecar rewrite clears pending memory delta journal', async () => {
 
   assert.equal(fs.existsSync(path.join(dir, MEMORY_DELTA_FILE)), false);
 });
+
+test('full sidecar rewrite serializes typed-array embeddings as JSON arrays', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'memory-sidecar-typed-'));
+  const nodes = new Map([
+    ['n1', { id: 'n1', concept: 'typed', embedding: Float32Array.from([0.25, 0.5]) }],
+  ]);
+
+  await writeMemorySidecars(dir, { nodes, edges: [] });
+
+  const seen = [];
+  await readJsonlGz(path.join(dir, 'memory-nodes.jsonl.gz'), (node) => seen.push(node));
+
+  assert.equal(Array.isArray(seen[0].embedding), true);
+  assert.deepEqual(seen[0].embedding, [0.25, 0.5]);
+});

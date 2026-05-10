@@ -303,7 +303,7 @@ function toPgsGraph(memory, focusNodes, opts = {}) {
     nodes.push({
       id,
       concept: typeof node.concept === 'string' ? node.concept : String(node.concept || ''),
-      embedding: Array.isArray(node.embedding) ? node.embedding : undefined,
+      embedding: node.embedding && typeof node.embedding.length === 'number' ? Array.from(node.embedding) : undefined,
       tag: node.tag || undefined,
     });
   }

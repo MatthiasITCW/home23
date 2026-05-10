@@ -85,7 +85,7 @@ class LatentProjector {
 
   buildBaseVector(nodes) {
     const vectors = nodes
-      .map(node => Array.isArray(node.embedding) ? node.embedding : null)
+      .map(node => (node.embedding && typeof node.embedding.length === 'number') ? node.embedding : null)
       .filter(Boolean);
 
     if (vectors.length === 0) {

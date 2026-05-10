@@ -40,6 +40,15 @@ function nodesPath(brainDir) { return path.join(brainDir, NODES_FILE); }
 function edgesPath(brainDir) { return path.join(brainDir, EDGES_FILE); }
 function memoryDeltaPath(brainDir) { return path.join(brainDir, MEMORY_DELTA_FILE); }
 
+function serializeNodeRecord(record) {
+  if (!record || typeof record !== 'object') return record;
+  const embedding = record.embedding;
+  if (embedding && !Array.isArray(embedding) && ArrayBuffer.isView(embedding) && typeof embedding.length === 'number') {
+    return { ...record, embedding: Array.from(embedding) };
+  }
+  return record;
+}
+
 function uniqueTmpPath(outPath) {
   const suffix = `${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
   return `${outPath}.${suffix}.tmp`;
@@ -224,11 +233,11 @@ async function readMemorySidecars(brainDir, { onNode, onEdge }) {
 function* iterateNodes(memory) {
   // memory.nodes is a Map<id, nodeData>
   if (memory?.nodes && typeof memory.nodes.values === 'function') {
-    for (const n of memory.nodes.values()) yield n;
+    for (const n of memory.nodes.values()) yield serializeNodeRecord(n);
     return;
   }
   if (Array.isArray(memory?.nodes)) {
-    for (const n of memory.nodes) yield n;
+    for (const n of memory.nodes) yield serializeNodeRecord(n);
     return;
   }
 }
@@ -268,4 +277,5 @@ module.exports = {
   uniqueTmpPath,
   appendMemoryDelta,
   readMemoryDeltas,
+  serializeNodeRecord,
 };
