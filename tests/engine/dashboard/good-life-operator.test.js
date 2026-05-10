@@ -1228,6 +1228,59 @@ test('Good Life operator does not present active learn work as working when budg
   assert.match(model.operatorHandoff.repair, /self-maintenance budget is 4\/4/);
 });
 
+test('Good Life operator shows friction rest remains active through sleep wake when budget is spent', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      summary: 'rest - strained friction drift (usefulness:watch, friction:strained)',
+      policy: {
+        mode: 'rest',
+        reason: 'strained friction drift',
+        actionCard: {
+          intent: 'rest',
+          goodLifeLanes: ['usefulness', 'friction'],
+          evidenceRequired: true,
+          riskTier: 0,
+          reversible: true,
+          expectedOutcome: 'loop pressure drops without losing obligations',
+          stopCondition: 'next observation cycle shows lower friction',
+        },
+      },
+      lanes: {
+        usefulness: { status: 'watch', reasons: ['usefulness must be proven by visible progress'] },
+        friction: { status: 'strained', reasons: ['host swap 90% used'] },
+      },
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0 },
+        goals: { open: 0, total: 0 },
+        agenda: { pending: 0 },
+      },
+    }),
+    regulator: {
+      daily: {
+        date: '2026-05-08',
+        actions: [
+          { at: '2026-05-08T09:00:00.000Z', agendaId: 'ag-learn-1', mode: 'learn', category: 'grounded-learning' },
+          { at: '2026-05-08T10:00:00.000Z', agendaId: 'ag-rest-1', mode: 'rest', category: 'reduces-friction' },
+          { at: '2026-05-08T11:00:00.000Z', agendaId: 'ag-learn-2', mode: 'learn', category: 'grounded-learning' },
+          { at: '2026-05-08T12:00:00.000Z', agendaId: 'ag-rest-2', mode: 'rest', category: 'reduces-friction' },
+        ],
+      },
+    },
+    liveProblems: [],
+    obligations: { activeAgenda: [], activeGoals: [], counts: { activeAgenda: 0, activeGoals: 0, activeGoalsTrusted: true } },
+    now: NOW,
+  });
+
+  assert.equal(model.autonomyBudget.pressureRest, true);
+  assert.equal(model.operatorBrief.status, 'Resting');
+  assert.match(model.operatorBrief.headline, /rest remains active/);
+  assert.match(model.operatorBrief.next, /sleep\/wake/);
+  assert.doesNotMatch(model.operatorBrief.next, /learning\/rest work resumes/);
+  assert.match(model.operatorAnswer.find((line) => line.startsWith('Autonomy budget:')), /pressure rest remains active through sleep\/wake/);
+  assert.match(model.operatorDigest.userAction, /resting to reduce host pressure/);
+  assert.match(model.operatorHandoff.repair, /pressure rest remains active through sleep\/wake/);
+});
+
 test('Good Life operator shows repair mode bypasses spent self-maintenance budget', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({

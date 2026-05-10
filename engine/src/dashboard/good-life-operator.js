@@ -573,10 +573,14 @@ function buildAutonomyBudget(regulator = {}, policy = {}, nowMs = Date.now()) {
   const remaining = Math.max(0, limit - used);
   const mode = String(policy?.mode || '').toLowerCase();
   const budgetedMode = !['repair', 'help'].includes(mode);
+  const pressureRest = mode === 'rest'
+    && Array.isArray(policy?.actionCard?.goodLifeLanes)
+    && policy.actionCard.goodLifeLanes.includes('friction');
   const exhausted = budgetedMode && used >= limit;
   const bypassed = !budgetedMode && used >= limit;
   const reset = buildDailyReset(daily?.date, nowMs);
   const resetSuffix = reset.resetText ? `; ${reset.resetText}` : '';
+  const pressureRestReason = `Good Life self-maintenance budget is ${used}/${limit}; pressure rest remains active through sleep/wake, while new self-maintenance agenda work waits for reset${resetSuffix}`;
   return {
     date: daily?.date || null,
     used,
@@ -585,12 +589,15 @@ function buildAutonomyBudget(regulator = {}, policy = {}, nowMs = Date.now()) {
     exhausted,
     bypassed,
     bypassUsed: bypassActions.length,
+    pressureRest,
     resetAt: reset.resetAt,
     resetInMin: reset.resetInMin,
     resetText: reset.resetText,
     mode,
-    status: exhausted ? 'exhausted' : (bypassed ? 'bypassed' : 'available'),
-    reason: exhausted
+    status: pressureRest && exhausted ? 'pressure-rest' : (exhausted ? 'exhausted' : (bypassed ? 'bypassed' : 'available')),
+    reason: pressureRest && exhausted
+      ? pressureRestReason
+      : exhausted
       ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode || 'current'} work is paused unless repair/help evidence appears${resetSuffix}`
       : bypassed
         ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode} work can still run because repair/help bypasses the budget gate`
@@ -1064,6 +1071,18 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
       label: 'Review Warning',
       worker: null,
     };
+  } else if (budget?.pressureRest && budget?.exhausted) {
+    severity = 'working';
+    status = 'Resting';
+    headline = 'Good Life rest remains active under host pressure';
+    why = policy?.reason ? `${budget.reason}; current signal: ${policy.reason}` : budget.reason;
+    next = 'sleep/wake can continue lowering pressure; new self-maintenance agenda work waits for budget reset or repair/help drift.';
+    target = {
+      tab: 'insights',
+      id: null,
+      label: 'Review Pressure',
+      worker: null,
+    };
   } else if (budget?.exhausted) {
     severity = work?.activeTotal > 0 ? 'attention' : 'clear';
     status = 'Paused';
@@ -1212,7 +1231,10 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
     lines.push(`Worker route: ${route.worker}${route.reason ? ` - ${route.reason}` : ''}`);
   }
 
-  if (budget?.exhausted) {
+  if (budget?.pressureRest && budget?.exhausted) {
+    const resetText = budget.resetText ? `; ${budget.resetText}` : '';
+    lines.push(`Autonomy budget: ${budget.used}/${budget.limit} self-maintenance actions used; pressure rest remains active through sleep/wake; new agenda work waits for reset${resetText}`);
+  } else if (budget?.exhausted) {
     const resetText = budget.resetText ? `; ${budget.resetText}` : '';
     lines.push(`Autonomy budget: ${budget.used}/${budget.limit} self-maintenance actions used; ${budget.mode || 'current'} work is paused until reset or repair/help drift appears${resetText}`);
   }
@@ -1245,6 +1267,8 @@ function buildOperatorDigest({ brief, liveProblems, work, budget }) {
     userAction = workStatus || 'Operator review is recommended for active work.';
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
+  } else if (budget?.pressureRest && budget?.exhausted) {
+    userAction = `No user action needed; Good Life is resting to reduce host pressure${budget.resetText ? ` and self-maintenance ${budget.resetText}` : ''}.`;
   } else if (budget?.exhausted) {
     userAction = `No user action needed; Good Life self-maintenance is paused by daily budget${budget.resetText ? ` and ${budget.resetText}` : ''}.`;
   } else if (brief?.severity === 'attention') {
@@ -1293,6 +1317,8 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
   if (activeCount > 0) {
     repair = formatRemediationLine('Next repair step', activeProblem?.nextRemediation)
       || 'Autonomous remediation can continue from the recorded plan.';
+  } else if (budget?.pressureRest && budget?.exhausted) {
+    repair = budget.reason;
   } else if (budget?.exhausted) {
     repair = budget.reason;
   } else if (work?.activeTotal > 0) {
@@ -1309,6 +1335,8 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
     userAction = work.statusText || 'Operator review is recommended for active work.';
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
+  } else if (budget?.pressureRest && budget?.exhausted) {
+    userAction = `No user action needed; pressure rest is active and self-maintenance ${budget.resetText || 'resumes after the daily reset'}.`;
   } else if (budget?.exhausted) {
     userAction = `No user action needed; repair/help can still run if drift appears, and self-maintenance ${budget.resetText || 'resumes after the daily reset'}.`;
   }
@@ -1324,7 +1352,9 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
     evidence.push({
       label: 'Autonomy budget',
       value: `${budget.used}/${budget.limit}`,
-      detail: budget.resetText ? `self-maintenance paused; ${budget.resetText}` : 'self-maintenance paused until reset',
+      detail: budget.pressureRest
+        ? (budget.resetText ? `pressure rest active; ${budget.resetText}` : 'pressure rest active; agenda work waits for reset')
+        : (budget.resetText ? `self-maintenance paused; ${budget.resetText}` : 'self-maintenance paused until reset'),
     });
   }
   if (actionableWarnings.length > 0) {
@@ -1434,6 +1464,7 @@ function buildGoodLifeOperatorModel({
   const policy = {
     mode: state?.policy?.mode || commitments?.policy?.mode || 'unknown',
     reason: state?.policy?.reason || commitments?.policy?.reason || null,
+    actionCard: state?.policy?.actionCard || commitments?.policy?.actionCard || null,
   };
   const actionCard = state?.policy?.actionCard || commitments?.policy?.actionCard || null;
   const directLiveProblems = normalizeLiveProblems(liveProblems, now);
