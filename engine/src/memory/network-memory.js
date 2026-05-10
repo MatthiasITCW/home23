@@ -65,7 +65,7 @@ class NetworkMemory {
         const maxTokens = 512;
         
         if (tokens.length > maxTokens) {
-          this.logger?.warn?.('Text exceeds token limit, truncating', {
+          this.logger?.info?.('Text exceeds token limit, truncating for embedding', {
             originalTokens: tokens.length,
             truncatedTo: maxTokens,
             textPreview: text.substring(0, 100) + '...'
@@ -79,7 +79,7 @@ class NetworkMemory {
         // Fallback to character-based truncation if tokenizer unavailable
         // 2000 chars ≈ 500 tokens — safely within nomic-embed-text's limit
         if (text.length > 2000) {
-          this.logger?.warn?.('Text exceeds character limit, truncating (tokenizer unavailable)', {
+          this.logger?.info?.('Text exceeds character limit, truncating for embedding', {
             originalLength: text.length,
             truncatedTo: 2000
           });

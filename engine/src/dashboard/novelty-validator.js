@@ -631,7 +631,7 @@ class NoveltyValidator {
       const maxTokens = 8191;
       
       if (tokens.length > maxTokens) {
-        this.logger?.warn?.('NoveltyValidator: Text exceeds token limit, truncating', {
+        this.logger?.info?.('NoveltyValidator: Text exceeds token limit, truncating for embedding', {
           originalTokens: tokens.length,
           truncatedTo: maxTokens
         });
@@ -872,4 +872,3 @@ class NoveltyValidator {
 }
 
 module.exports = { NoveltyValidator };
-
