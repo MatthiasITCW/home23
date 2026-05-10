@@ -90,3 +90,31 @@ test('stop marks clean when final save times out but durable state exists', asyn
   assert.equal(fake.shutdownStateResult.reason, 'shutdown_save_timeout_existing_state');
   fs.rmSync(logsDir, { recursive: true, force: true });
 });
+
+test('shutdown uses shorter grace when joining an in-progress save with durable state', async () => {
+  const logsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'home23-shutdown-'));
+  fs.writeFileSync(path.join(logsDir, 'state.json.gz'), 'durable-state');
+  const { fake, calls } = makeFakeOrchestrator({
+    config: {
+      shutdownTelemetryTimeoutMs: 5,
+      shutdownSaveTimeoutMs: 1000,
+      shutdownInProgressSaveTimeoutMs: 5,
+    },
+    logsDir,
+    _saveStatePromise: new Promise(() => {}),
+    saveState: async () => {
+      calls.push('save');
+      return new Promise(() => {});
+    },
+  });
+
+  const startedAt = Date.now();
+  const result = await fake.saveStateForShutdown();
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.saved, 'existing');
+  assert.equal(result.reason, 'shutdown_save_timeout_existing_state');
+  assert.equal(calls.length, 1);
+  assert.ok(elapsedMs < 200, `expected short in-progress save grace, got ${elapsedMs}ms`);
+  fs.rmSync(logsDir, { recursive: true, force: true });
+});

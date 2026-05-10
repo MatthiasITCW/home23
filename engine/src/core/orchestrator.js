@@ -7849,7 +7849,24 @@ class Orchestrator {
   }
 
   async saveStateForShutdown() {
-    const timeoutMs = this.config.shutdownSaveTimeoutMs || 60000;
+    const defaultTimeoutMs = this.config.shutdownSaveTimeoutMs || 60000;
+    const saveAlreadyInProgress = Boolean(this._saveStatePromise);
+    let durableStateBeforeWait = false;
+    let timeoutMs = defaultTimeoutMs;
+
+    if (saveAlreadyInProgress) {
+      durableStateBeforeWait = await this.hasDurableStateArtifact();
+      if (durableStateBeforeWait) {
+        const inProgressTimeoutMs = Number(this.config.shutdownInProgressSaveTimeoutMs ?? 15000);
+        timeoutMs = Math.min(defaultTimeoutMs, Math.max(1, inProgressTimeoutMs));
+        this.logger.warn('Shutdown joining in-progress state save with bounded grace', {
+          timeoutMs,
+          defaultTimeoutMs,
+          hasDurableState: true,
+        });
+      }
+    }
+
     let timeoutId = null;
     const savePromise = this.saveState()
       .then(result => ({ status: 'ok', result }))
@@ -7873,10 +7890,11 @@ class Orchestrator {
       return { saved: false, reason: 'shutdown_save_failed' };
     }
 
-    const hasDurableState = await this.hasDurableStateArtifact();
+    const hasDurableState = durableStateBeforeWait || await this.hasDurableStateArtifact();
     this.logger.warn('Shutdown state save timed out', {
       timeoutMs,
       hasDurableState,
+      saveAlreadyInProgress,
     });
     savePromise.catch(() => {});
 
