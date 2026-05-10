@@ -186,6 +186,61 @@ test('GoodLifeRegulator stales superseded repair work before self-maintenance bu
   assert.equal(staleUpdates[0].opts.skipReconcile, true);
 });
 
+test('GoodLifeRegulator stales cleared rest and help drift before budget blocks new work', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  writeFileSync(join(dir, 'good-life-regulator-state.json'), JSON.stringify({
+    daily: {
+      date: new Date().toISOString().slice(0, 10),
+      selfMaintenanceActions: 4,
+      actions: [],
+    },
+  }));
+  const staleUpdates = [];
+  const regulator = new GoodLifeRegulator({
+    brainDir: dir,
+    getAgendaStore: () => ({
+      list(filter) {
+        assert.deepEqual(filter.status, ['candidate', 'surfaced', 'acknowledged']);
+        return [
+          {
+            id: 'ag-rest-old',
+            status: 'candidate',
+            sourceSignal: 'good-life',
+            topicTags: ['good-life', 'good-life:rest', 'good-life:friction-strained'],
+            temporalContext: { policy: 'rest', lanes: ['usefulness:watch', 'friction:strained'] },
+          },
+          {
+            id: 'ag-help-old',
+            status: 'candidate',
+            sourceSignal: 'good-life',
+            topicTags: ['good-life', 'good-life:help', 'good-life:continuity-strained'],
+            temporalContext: { policy: 'help', lanes: ['continuity:strained', 'usefulness:watch'] },
+          },
+          {
+            id: 'ag-learn-current',
+            status: 'candidate',
+            sourceSignal: 'good-life',
+            topicTags: ['good-life', 'good-life:learn'],
+            temporalContext: { policy: 'learn', lanes: ['usefulness:watch'] },
+          },
+        ];
+      },
+      updateStatus(id, status, opts) {
+        staleUpdates.push({ id, status, opts });
+        return { id, status };
+      },
+    }),
+  });
+
+  const result = await regulator.handleObservation(learnObservation());
+
+  assert.equal(result.status, 'blocked_self_maintenance_budget');
+  assert.equal(result.staledSupersededDrift, 2);
+  assert.deepEqual(staleUpdates.map((row) => row.id), ['ag-rest-old', 'ag-help-old']);
+  assert.equal(staleUpdates[0].status, 'stale');
+  assert.equal(staleUpdates[0].opts.note, 'superseded by current Good Life state with cleared drift lanes');
+});
+
 test('GoodLifeRegulator appends agenda event when AgendaStore is not ready', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
   const regulator = new GoodLifeRegulator({ brainDir: dir, throttleMs: 1 });

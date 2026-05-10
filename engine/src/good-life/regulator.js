@@ -36,16 +36,19 @@ class GoodLifeRegulator {
     const staledSupersededRepair = agendaStore
       ? this._staleSupersededRepairAgendaStore(agendaStore, evaluation, cleanupAt)
       : this._staleSupersededRepairAgenda(evaluation, cleanupAt);
+    const staledSupersededDrift = agendaStore
+      ? this._staleSupersededDriftAgendaStore(agendaStore, evaluation, cleanupAt)
+      : this._staleSupersededDriftAgenda(evaluation, cleanupAt);
 
     const key = this._actionKey(evaluation);
     const state = this._readState();
     const last = state[key];
     const nowMs = Date.now();
     if (last?.at && nowMs - Date.parse(last.at) < this.throttleMs) {
-      return { status: 'throttled', key, staledSupersededRepair };
+      return { status: 'throttled', key, staledSupersededRepair, staledSupersededDrift };
     }
     if (this._selfMaintenanceBudgetExceeded(state, evaluation, usefulness)) {
-      return { status: 'blocked_self_maintenance_budget', key, staledSupersededRepair };
+      return { status: 'blocked_self_maintenance_budget', key, staledSupersededRepair, staledSupersededDrift };
     }
 
     let record = null;
@@ -68,10 +71,11 @@ class GoodLifeRegulator {
           workerRoute: agenda.workerRoute,
           staledPriorGoodLifeAgenda: staledPrior,
           staledSupersededRepairAgenda: staledSupersededRepair,
+          staledSupersededDriftAgenda: staledSupersededDrift,
         },
       });
     } else {
-      record = this._appendAgendaEvent(obs, agenda, evaluation, { staledSupersededRepair });
+      record = this._appendAgendaEvent(obs, agenda, evaluation, { staledSupersededRepair, staledSupersededDrift });
     }
 
     if (!record) return { status: 'rejected', key };
@@ -85,6 +89,7 @@ class GoodLifeRegulator {
         usefulnessContract: usefulness,
         workerRoute: agenda.workerRoute,
         staledSupersededRepairAgenda: staledSupersededRepair,
+        staledSupersededDriftAgenda: staledSupersededDrift,
       },
       daily: this._nextDailyState(state.daily, evaluation, usefulness, record.id),
     });
@@ -232,6 +237,7 @@ class GoodLifeRegulator {
         usefulnessContract: this._usefulnessContract(evaluation, agenda),
         workerRoute: agenda.workerRoute,
         staledSupersededRepairAgenda: opts.staledSupersededRepair || 0,
+        staledSupersededDriftAgenda: opts.staledSupersededDrift || 0,
       },
       createdAt: now,
       updatedAt: now,
@@ -347,6 +353,32 @@ class GoodLifeRegulator {
     }
   }
 
+  _staleSupersededDriftAgenda(evaluation, now = new Date().toISOString()) {
+    try {
+      if (!fs.existsSync(this.agendaPath)) return 0;
+      const items = this._readGoodLifeAgendaItemsFromFile();
+      const staleRows = [];
+      for (const item of items.values()) {
+        if (!this._isSupersededDriftAgenda(item, evaluation)) continue;
+        staleRows.push({
+          type: 'status',
+          id: item.id,
+          status: 'stale',
+          at: now,
+          note: 'superseded by current Good Life state with cleared drift lanes',
+          actor: 'good-life-regulator',
+        });
+      }
+      if (staleRows.length > 0) {
+        fs.appendFileSync(this.agendaPath, staleRows.map((row) => JSON.stringify(row)).join('\n') + '\n', 'utf8');
+      }
+      return staleRows.length;
+    } catch (err) {
+      this.logger.warn?.('[good-life] superseded drift agenda stale sweep failed:', err?.message || err);
+      return 0;
+    }
+  }
+
   _stalePriorGoodLifeAgendaStore(agendaStore, now = new Date().toISOString()) {
     try {
       if (!agendaStore?.list || !agendaStore?.updateStatus) return 0;
@@ -393,6 +425,54 @@ class GoodLifeRegulator {
     }
   }
 
+  _staleSupersededDriftAgendaStore(agendaStore, evaluation, now = new Date().toISOString()) {
+    try {
+      if (!agendaStore?.list || !agendaStore?.updateStatus) return 0;
+      const rows = agendaStore.list({ status: ['candidate', 'surfaced', 'acknowledged'], limit: 200 }) || [];
+      let staled = 0;
+      for (const row of rows) {
+        if (!row?.id || !this._isSupersededDriftAgenda(row, evaluation)) continue;
+        const updated = agendaStore.updateStatus(row.id, 'stale', {
+          actor: 'good-life-regulator',
+          note: 'superseded by current Good Life state with cleared drift lanes',
+          at: now,
+          skipReconcile: true,
+        });
+        if (updated) staled += 1;
+      }
+      return staled;
+    } catch (err) {
+      this.logger.warn?.('[good-life] superseded drift agenda-store stale sweep failed:', err?.message || err);
+      return 0;
+    }
+  }
+
+  _readGoodLifeAgendaItemsFromFile() {
+    const items = new Map();
+    const lines = fs.readFileSync(this.agendaPath, 'utf8').split('\n').filter(Boolean);
+    for (const line of lines) {
+      let row = null;
+      try { row = JSON.parse(line); } catch { continue; }
+      if (row.type === 'add' && row.id) {
+        const record = row.record || {};
+        items.set(row.id, {
+          id: row.id,
+          status: record.status || row.status || 'candidate',
+          content: record.content || row.content || '',
+          sourceSignal: record.sourceSignal || row.sourceSignal || null,
+          topicTags: Array.isArray(record.topicTags) ? record.topicTags : [],
+          temporalContext: record.temporalContext || row.temporalContext || null,
+        });
+      } else if (row.type === 'status' && row.id) {
+        const rec = items.get(row.id) || { id: row.id };
+        rec.status = row.status || rec.status || 'candidate';
+        rec.updatedAt = row.at || rec.updatedAt || null;
+        items.set(row.id, rec);
+      }
+    }
+    return items;
+  }
+
   _isSupersededRepairAgenda(row = {}, evaluation = {}) {
     const mode = String(evaluation?.policy?.mode || '').toLowerCase();
     if (mode === 'repair' || mode === 'recover') return false;
@@ -409,6 +489,35 @@ class GoodLifeRegulator {
     if (rowPolicy === 'repair' || rowPolicy === 'recover') return true;
     return tags.includes('good-life:repair') || tags.includes('good-life:recover')
       || /\bGood Life (repair|recovery) drift\b/i.test(String(row.content || ''));
+  }
+
+  _isSupersededDriftAgenda(row = {}, evaluation = {}) {
+    const mode = String(evaluation?.policy?.mode || '').toLowerCase();
+    if (mode !== 'learn' && mode !== 'observe') return false;
+    const live = evaluation?.evidence?.liveProblems || {};
+    const activeProblems = Number(live.open || 0) + Number(live.chronic || 0);
+    if (activeProblems > 0) return false;
+
+    const active = new Set(['candidate', 'surfaced', 'acknowledged']);
+    if (!active.has(String(row.status || 'candidate').toLowerCase())) return false;
+
+    const unhealthyLanes = new Set(Object.entries(evaluation?.lanes || {})
+      .filter(([, lane]) => lane?.status && lane.status !== 'healthy')
+      .map(([name]) => name));
+    const tags = Array.isArray(row.topicTags) ? row.topicTags.map((tag) => String(tag || '').toLowerCase()) : [];
+    const sourceSignal = String(row.sourceSignal || '').toLowerCase();
+    const isGoodLife = sourceSignal === 'good-life' || tags.some((tag) => tag === 'good-life' || tag.startsWith('good-life:'));
+    if (!isGoodLife) return false;
+
+    const rowPolicy = String(row.temporalContext?.policy || row.policy || '').toLowerCase();
+    if (!['help', 'rest'].includes(rowPolicy)) return false;
+
+    const rowLanes = Array.isArray(row.temporalContext?.lanes) ? row.temporalContext.lanes : [];
+    const driftLanes = rowLanes
+      .map((lane) => String(lane || '').split(':')[0])
+      .filter((lane) => lane && lane !== 'usefulness' && lane !== 'recovery');
+    if (driftLanes.length === 0) return rowPolicy === 'rest';
+    return driftLanes.every((lane) => !unhealthyLanes.has(lane));
   }
 
   _usefulnessContract(evaluation, agenda) {
