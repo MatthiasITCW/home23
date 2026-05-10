@@ -963,13 +963,22 @@ async function main() {
           initialDelayMs: parseDurMs(readers.goodLife.initialDelay, 20 * 1000),
           brainDir: runtimeRoot,
           logger,
-          getSnapshot: () => buildGoodLifeSnapshot({
-            runtimeRoot,
-            workspacePath: goodLifeWorkspacePath,
-            orchestrator,
-            memory,
-            goals,
-          }),
+          getSnapshot: async () => {
+            try {
+              await orchestrator?.liveProblems?.processAllNow?.();
+            } catch (err) {
+              logger?.warn?.('[good-life] live-problem preflight failed', {
+                error: err.message || String(err),
+              });
+            }
+            return buildGoodLifeSnapshot({
+              runtimeRoot,
+              workspacePath: goodLifeWorkspacePath,
+              orchestrator,
+              memory,
+              goals,
+            });
+          },
         }));
         registered.push('domain.good-life');
       }
