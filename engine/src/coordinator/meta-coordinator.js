@@ -67,8 +67,11 @@ class MetaCoordinator {
     this.lastDeliverablesAudit = null; // Store latest deliverables audit for gap-driven spawning
     this.activeGoalsSystem = null; // Live reference to IntrinsicGoalSystem for goal injection
     
-    // Directories
-    this.coordinatorDir = path.join(__dirname, '..', '..', 'runtime', 'coordinator');
+    // Directories. Coordinator state is agent-local: a shared runtime
+    // context lets one sibling's cycle counter suppress another sibling's
+    // reviews and direct work routing.
+    const runtimeRoot = config.logsDir || config.runtimeRoot || path.join(__dirname, '..', '..', 'runtime');
+    this.coordinatorDir = path.join(runtimeRoot, 'coordinator');
 
     // Message handling for agent coordination
     this.messageHandlers = new Map();
@@ -4865,11 +4868,8 @@ Respond with JSON:
     try {
       const fs = require('fs').promises;
       const path = require('path');
-      const reportPath = path.join(
-        this.config.logsDir || 'runtime',
-        'coordinator',
-        `emergency_${Date.now()}.json`
-      );
+      await fs.mkdir(this.coordinatorDir, { recursive: true });
+      const reportPath = path.join(this.coordinatorDir, `emergency_${Date.now()}.json`);
       
       if (this.capabilities) {
         await this.capabilities.writeFile(

@@ -104,7 +104,10 @@ class DocumentCreationAgent extends BaseAgent {
       missionText.includes('synthesize all research') ||
       missionText.includes('comprehensive report') ||
       missionText.includes('research findings') ||
+      missionText.includes('findings from recent memory') ||
       (this.mission?.triggerSource === 'dynamic_trigger') ||
+      (this.mission?.triggerSource === 'force_output') ||
+      (this.mission?.metadata?.forceOutput === true) ||
       (this.mission?.spawningReason === 'deliverable_production');
 
     if (!isInfrastructureDoc && !isGuidedModeDoc) {

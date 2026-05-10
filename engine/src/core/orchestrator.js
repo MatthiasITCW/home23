@@ -108,6 +108,12 @@ function shouldRunEmergencyCoordinatorReview(workState, minCycles = 10) {
     workState.cyclesSinceLastReview >= requiredCycles;
 }
 
+function shouldRouteForceOutputDirectly(workState) {
+  return workState?.activeForceOutputGoalCount > 0 &&
+    workState.activeGeneralGoalCount === 0 &&
+    workState.activeAgents === 0;
+}
+
 function buildForceOutputMissionSpec(goal, cycleCount) {
   if (!goal) return null;
   const fileCriteria = Array.isArray(goal.doneWhen?.criteria)
@@ -1412,8 +1418,43 @@ class Orchestrator {
         }
       }
       
+      const coordinatorWorkState = this.coordinator && this.coordinator.enabled
+        ? getEmergencyCoordinatorWorkState(
+            this.goals,
+            this.agentExecutor,
+            this.cycleCount,
+            this.coordinator.lastReviewCycle,
+          )
+        : null;
+      let directForceOutputRouteAttempted = false;
+
+      if (shouldRouteForceOutputDirectly(coordinatorWorkState)) {
+        directForceOutputRouteAttempted = true;
+        const missionSpec = buildForceOutputMissionSpec(coordinatorWorkState.activeForceOutputGoals[0], this.cycleCount);
+        if (missionSpec && this.agentExecutor) {
+          const agentId = await this.agentExecutor.spawnAgent(missionSpec);
+          if (agentId) {
+            this.logger.info('[force-output] direct document agent spawned', {
+              goalId: missionSpec.goalId,
+              agentId,
+              cycle: this.cycleCount
+            });
+          } else {
+            this.logger.warn('[force-output] direct document agent spawn skipped', {
+              goalId: missionSpec.goalId,
+              cycle: this.cycleCount
+            });
+          }
+        }
+      }
+
       // Meta-Coordinator strategic review (check before sleep to avoid skipping)
-      if (this.coordinator && this.coordinator.enabled && this.coordinator.shouldRunReview(this.cycleCount)) {
+      if (
+        this.coordinator &&
+        this.coordinator.enabled &&
+        !directForceOutputRouteAttempted &&
+        this.coordinator.shouldRunReview(this.cycleCount)
+      ) {
         enterCyclePhase('meta_coordinator_review');
         await this.runMetaCoordinatorReview();
         
@@ -1483,30 +1524,6 @@ class Orchestrator {
           this.cycleCount,
           this.coordinator.lastReviewCycle,
         );
-
-        if (
-          activeForceOutputGoalCount > 0 &&
-          activeGeneralGoalCount === 0 &&
-          activeAgents === 0 &&
-          cyclesSinceLastReview >= 2
-        ) {
-          const missionSpec = buildForceOutputMissionSpec(activeForceOutputGoals[0], this.cycleCount);
-          if (missionSpec && this.agentExecutor) {
-            const agentId = await this.agentExecutor.spawnAgent(missionSpec);
-            if (agentId) {
-              this.logger.info('[force-output] direct document agent spawned', {
-                goalId: missionSpec.goalId,
-                agentId,
-                cycle: this.cycleCount
-              });
-            } else {
-              this.logger.warn('[force-output] direct document agent spawn skipped', {
-                goalId: missionSpec.goalId,
-                cycle: this.cycleCount
-              });
-            }
-          }
-        }
         
         // Idle condition: active/open work exists, but no agents are working on it.
         // Completed and archived goal history is not live work; treating it as
@@ -8751,6 +8768,7 @@ module.exports = {
   Orchestrator,
   compactActiveGoalsForSnapshot,
   getEmergencyCoordinatorWorkState,
+  shouldRouteForceOutputDirectly,
   shouldRunEmergencyCoordinatorReview,
   buildForceOutputMissionSpec,
   persistArchivedGoalsToState,

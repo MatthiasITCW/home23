@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   compactActiveGoalsForSnapshot,
   getEmergencyCoordinatorWorkState,
+  shouldRouteForceOutputDirectly,
   shouldRunEmergencyCoordinatorReview,
   buildForceOutputMissionSpec,
   persistArchivedGoalsToState,
@@ -122,6 +123,26 @@ test('emergency coordinator work state separates force-output goals from general
   assert.equal(workState.activeGoalCount, 2);
   assert.equal(workState.activeForceOutputGoalCount, 1);
   assert.equal(workState.activeGeneralGoalCount, 1);
+});
+
+test('force-output work routes directly when it is the only idle active work', () => {
+  assert.equal(shouldRouteForceOutputDirectly({
+    activeForceOutputGoalCount: 1,
+    activeGeneralGoalCount: 0,
+    activeAgents: 0,
+  }), true);
+
+  assert.equal(shouldRouteForceOutputDirectly({
+    activeForceOutputGoalCount: 1,
+    activeGeneralGoalCount: 1,
+    activeAgents: 0,
+  }), false);
+
+  assert.equal(shouldRouteForceOutputDirectly({
+    activeForceOutputGoalCount: 1,
+    activeGeneralGoalCount: 0,
+    activeAgents: 1,
+  }), false);
 });
 
 test('emergency coordinator review waits for idle work to persist beyond cooldown', () => {

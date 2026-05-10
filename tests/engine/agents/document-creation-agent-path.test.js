@@ -70,3 +70,56 @@ test('saveDocument writes PathResolver deliverables through capabilities using a
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test('force-output document missions bypass claim intake and emit deliverables', async () => {
+  process.env.OPENAI_API_KEY ||= 'test-key';
+  const agent = new DocumentCreationAgent({
+    goalId: 'goal_force',
+    triggerSource: 'force_output',
+    spawningReason: 'force_output_back_pressure',
+    metadata: { forceOutput: true },
+    description: 'Produce outputs/digest-6427.md. Synthesize these findings from recent memory.',
+    deliverable: {
+      location: '@outputs/',
+      filename: 'digest-6427.md',
+      type: 'report',
+      format: 'markdown',
+    },
+  }, { logsDir: os.tmpdir() }, { info() {}, warn() {}, error() {}, debug() {} });
+
+  let generated = false;
+  agent.memory = { nodes: new Map([[1, { concept: 'finding' }], [2, { concept: 'finding' }], [3, { concept: 'finding' }]]) };
+  agent.documentManager = { initialize: async () => {}, setCapabilities() {} };
+  agent.loadDefaultTemplates = async () => {};
+  agent.queryMemoryForKnowledge = async () => [];
+  agent.parseDocumentRequirements = async () => ({
+    type: 'report',
+    format: 'markdown',
+    audience: 'operator',
+    purpose: 'digest',
+    requirements: [],
+  });
+  agent.generateDocument = async () => {
+    generated = true;
+    return { title: 'Digest', content: '# Digest\n\nCycle-backed finding.' };
+  };
+  agent.formatDocument = async (document) => document;
+  agent.saveDocument = async () => ({
+    title: 'Digest',
+    filePath: path.join(os.tmpdir(), 'digest-6427.md'),
+    deliverablePath: path.join(os.tmpdir(), 'digest-6427.md'),
+    metadataPath: null,
+    format: 'markdown',
+    wordCount: 42,
+    createdAt: new Date().toISOString(),
+  });
+  agent.addDocumentToMemory = async () => {};
+  agent.triggerQualityAssurance = async () => {};
+  agent.writeCompletionMarker = async () => {};
+
+  const result = await agent.execute();
+
+  assert.equal(generated, true);
+  assert.equal(result.success, true);
+  assert.equal(agent.results.some((entry) => entry.type === 'deliverable'), true);
+});
