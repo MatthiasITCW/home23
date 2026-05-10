@@ -980,14 +980,14 @@ async function main() {
     // phase — dashboard surface writes already exist in the curator cycle;
     // future work can route them through a dedicated publisher.
     const publishCfg = osEngineCfg?.publish || {};
-    const { PublishLedger, parseStarvationFloor } = await import('./publish/publish-ledger.js');
+    const { PublishLedger, parseStarvationFloor, publishTargetsForCognitionMode } = await import('./publish/publish-ledger.js');
     const { WorkspaceInsightsPublisher, selectHighestConfidenceCluster } = await import('./publish/workspace-insights.js');
     const { DreamLogPublisher } = await import('./publish/dream-log.js');
     const { BridgeChatPublisher, computeSalience } = await import('./publish/bridge-chat-publisher.js');
     const workspacePath = process.env.COSMO_WORKSPACE_PATH
       ? path.resolve(process.env.COSMO_WORKSPACE_PATH)
       : path.join(path.dirname(runtimeRoot), 'workspace');
-    const activePublishTargets = ['workspace_insights', 'dream_log'];
+    const activePublishTargets = publishTargetsForCognitionMode(config?.architecture?.cognitionMode);
     const starvationFloor = parseStarvationFloor(publishCfg.starvationFloor || {}, {
       activeTargets: activePublishTargets,
     });

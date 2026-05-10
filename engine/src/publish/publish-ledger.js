@@ -65,3 +65,10 @@ export function parseStarvationFloor(config = {}, { activeTargets = null } = {})
   }
   return out;
 }
+
+export function publishTargetsForCognitionMode(cognitionMode) {
+  // Workspace/dream publishers are wired through ThinkingMachine cycle hooks.
+  // In legacy_roles mode they can exist as objects, but they will not receive
+  // cycle events, so treating them as starvation targets creates false alarms.
+  return cognitionMode === 'thinking_machine' ? ['workspace_insights', 'dream_log'] : [];
+}

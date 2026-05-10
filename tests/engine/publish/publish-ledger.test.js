@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PublishLedger, parseStarvationFloor } from '../../../engine/src/publish/publish-ledger.js';
+import { PublishLedger, parseStarvationFloor, publishTargetsForCognitionMode } from '../../../engine/src/publish/publish-ledger.js';
 
 test('PublishLedger records publications and detects starvation', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pl-'));
@@ -29,4 +29,9 @@ test('parseStarvationFloor ignores configured targets without active publishers'
   assert.deepEqual(floor, {
     workspace_insights: 6 * 3600 * 1000,
   });
+});
+
+test('publish starvation targets follow wired cognition mode', () => {
+  assert.deepEqual(publishTargetsForCognitionMode('legacy_roles'), []);
+  assert.deepEqual(publishTargetsForCognitionMode('thinking_machine'), ['workspace_insights', 'dream_log']);
 });
