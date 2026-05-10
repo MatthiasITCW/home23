@@ -138,6 +138,38 @@ describe('PlanScheduler', () => {
       const result = await scheduler.nextRunnableTask();
       expect(result.id).to.equal('task-urgent');
     });
+
+    it('continues an unexpired in-progress task for the current instance', async () => {
+      allTasks = [
+        {
+          id: 'active-task',
+          state: 'IN_PROGRESS',
+          claimedBy: 'instance-1',
+          claimExpires: Date.now() + 60000,
+          tags: []
+        }
+      ];
+
+      const result = await scheduler.nextRunnableTask();
+      expect(result.id).to.equal('active-task');
+    });
+
+    it('does not continue an expired in-progress task for the current instance', async () => {
+      allTasks = [
+        {
+          id: 'stale-task',
+          state: 'IN_PROGRESS',
+          claimedBy: 'instance-1',
+          claimExpires: Date.now() - 60000,
+          tags: []
+        }
+      ];
+      runnableTasks = [];
+
+      const result = await scheduler.nextRunnableTask();
+      expect(result).to.equal(null);
+      expect(releaseCalls).to.deep.equal([]);
+    });
   });
 
   describe('specialization weighting', () => {
@@ -236,4 +268,3 @@ describe('PlanScheduler', () => {
     });
   });
 });
-

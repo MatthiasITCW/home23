@@ -2130,7 +2130,14 @@ class FilesystemStateStore {
   async listRunnableTasks(planId) {
     try {
       const allTasks = await this.listTasks(planId);
-      const pendingTasks = allTasks.filter(t => t.state === 'PENDING');
+      const nonPendingTaskIds = new Set(
+        allTasks
+          .filter(t => t.state !== 'PENDING')
+          .map(t => t.id)
+      );
+      const pendingTasks = allTasks.filter(t =>
+        t.state === 'PENDING' && !nonPendingTaskIds.has(t.id)
+      );
       const doneTasks = allTasks.filter(t => t.state === 'DONE');
       const doneTaskIds = new Set(doneTasks.map(t => t.id));
       

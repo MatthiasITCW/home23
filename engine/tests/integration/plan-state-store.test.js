@@ -317,6 +317,28 @@ describe('Plan State Store Integration', () => {
       assert(!states.includes('DONE'));
       assert(!states.includes('FAILED'));
     });
+
+    it('should not list a pending duplicate as runnable when the same task is assigned', async () => {
+      const task = {
+        id: 'task:duplicate-pending',
+        planId: 'plan:tasks',
+        milestoneId: 'milestone:tasks',
+        title: 'Duplicate Pending Test',
+        state: 'PENDING',
+        priority: 5,
+        deps: [],
+        acceptanceCriteria: [],
+        createdAt: new Date().toISOString()
+      };
+
+      await stateStore.upsertTask(task);
+      await stateStore.claimTask(task.id, 'instance-1', 60000);
+      await stateStore.startTask(task.id, 'instance-1');
+      await stateStore.upsertTask({ ...task, state: 'PENDING' });
+
+      const runnable = await stateStore.listRunnableTasks('plan:tasks');
+      assert(!runnable.some(t => t.id === task.id));
+    });
   });
 
   describe('PlanDelta application', () => {
@@ -373,4 +395,3 @@ describe('Plan State Store Integration', () => {
     });
   });
 });
-

@@ -47,16 +47,28 @@ class PlanScheduler {
       // NEW: Check if we already have an active task in progress
       // This ensures the orchestrator continues to work on and validate
       // the task it has already claimed.
-      const inProgressTasks = await this.stateStore.listTasks(activePlan.id, { 
+      const inProgressTasks = await this.stateStore.listTasks(activePlan.id, {
         state: 'IN_PROGRESS', 
         claimedBy: this.instanceId 
       });
       
       if (inProgressTasks.length > 0) {
-        this.logger?.debug('[PlanScheduler] Continuing existing in-progress task', {
-          taskId: inProgressTasks[0].id
+        const now = Date.now();
+        const activeInProgressTasks = inProgressTasks.filter((task) => {
+          return !task.claimExpires || task.claimExpires > now;
         });
-        return inProgressTasks[0];
+
+        if (activeInProgressTasks.length === 0) {
+          this.logger?.warn('[PlanScheduler] Ignoring expired in-progress task claim', {
+            taskIds: inProgressTasks.map((task) => task.id),
+            instanceId: this.instanceId
+          });
+        } else {
+          this.logger?.debug('[PlanScheduler] Continuing existing in-progress task', {
+            taskId: activeInProgressTasks[0].id
+          });
+          return activeInProgressTasks[0];
+        }
       }
       
       // Get runnable tasks
@@ -323,4 +335,3 @@ class PlanScheduler {
 }
 
 module.exports = PlanScheduler;
-
