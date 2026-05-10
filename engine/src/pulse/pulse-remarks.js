@@ -282,6 +282,7 @@ class PulseRemarks {
 
   _shouldSurfaceOpenProblem(problem) {
     if (!problem) return false;
+    if (problem.escalated === true || problem.intervention?.required === true) return true;
     const mentionedMs = Date.parse(problem.lastMentionedInPulseAt || 0);
     if (!mentionedMs) return true;
     const openedMs = Date.parse(problem.openedAt || 0);
@@ -874,7 +875,15 @@ class PulseRemarks {
       parts.push('');
       parts.push('--- LIVE PROBLEMS (verified just now — ground truth) ---');
       if (lp.open.length === 0 && lp.chronic.length === 0 && lp.resolvedJustNow.length === 0) {
-        parts.push('No newly changed problems to mention. Stable-known problems, if any, are intentionally omitted from this brief.');
+        const omittedOpen = Math.max(0,
+          Number(lp.counts?.open || 0) + Number(lp.counts?.chronic || 0)
+          - lp.open.length - lp.chronic.length);
+        if (omittedOpen > 0) {
+          parts.push(`${omittedOpen} stable-known open problem(s) are intentionally omitted from this brief to avoid repetition.`);
+          parts.push('Do not claim there are no open problems; only say there are no newly changed problems to mention.');
+        } else {
+          parts.push('No open, chronic, or newly resolved live problems to mention.');
+        }
       } else {
         for (const p of lp.open) {
           const rem = p.lastRemediation ? ` · last fix-attempt: ${p.lastRemediation.type}=${p.lastRemediation.outcome}` : '';

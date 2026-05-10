@@ -84,3 +84,69 @@ test('pulse brief suppresses positive signals for problems that are currently op
   assert.match(userMessage, /Brain persistence saved/);
   assert.doesNotMatch(userMessage, /Cycle timeout check cleared/);
 });
+
+test('pulse brief keeps escalated open problems visible even after prior mention', () => {
+  const brainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-remarks-'));
+  const now = new Date().toISOString();
+  const pulse = new PulseRemarks({
+    logsDir: brainDir,
+    liveProblems: {
+      briefSnapshot() {
+        return {
+          open: [{
+            id: 'jerry_engine_cycle_timeouts_clear',
+            claim: 'Jerry engine cycle timeout log is clear',
+            detail: '1 matching log entries in last 30m',
+            ageMin: 55,
+            openedAt: '2026-05-10T22:07:33.764Z',
+            escalatedAt: '2026-05-10T22:10:34.129Z',
+            lastMentionedInPulseAt: now,
+            escalated: true,
+          }],
+          chronic: [],
+          resolvedJustNow: [],
+          counts: { open: 1, chronic: 0, resolved: 0, unverifiable: 0 },
+        };
+      },
+    },
+  });
+
+  const brief = pulse.synthesize(baseSnapshot());
+  const { userMessage } = pulse.buildPrompt(brief);
+
+  assert.match(userMessage, /jerry_engine_cycle_timeouts_clear/);
+  assert.match(userMessage, /escalated/);
+  assert.doesNotMatch(userMessage, /No open, chronic, or newly resolved live problems/);
+});
+
+test('pulse brief warns when stable open problems are omitted from the visible brief', () => {
+  const brainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-remarks-'));
+  const now = new Date().toISOString();
+  const pulse = new PulseRemarks({
+    logsDir: brainDir,
+    liveProblems: {
+      briefSnapshot() {
+        return {
+          open: [{
+            id: 'stable_problem',
+            claim: 'Stable problem remains open',
+            detail: 'unchanged',
+            ageMin: 90,
+            openedAt: '2026-05-10T21:00:00.000Z',
+            lastMentionedInPulseAt: now,
+          }],
+          chronic: [],
+          resolvedJustNow: [],
+          counts: { open: 1, chronic: 0, resolved: 0, unverifiable: 0 },
+        };
+      },
+    },
+  });
+
+  const brief = pulse.synthesize(baseSnapshot());
+  const { userMessage } = pulse.buildPrompt(brief);
+
+  assert.match(userMessage, /1 stable-known open problem/);
+  assert.match(userMessage, /Do not claim there are no open problems/);
+  assert.doesNotMatch(userMessage, /No open, chronic, or newly resolved live problems/);
+});
