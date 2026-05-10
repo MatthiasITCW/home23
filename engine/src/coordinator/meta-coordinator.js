@@ -3560,6 +3560,10 @@ Respond in JSON format:
         followUpTriggers: spec.followUpTriggers || []
       };
 
+      if (missionSpec.agentType === 'document_creation') {
+        this.attachDocumentCreationIntake(missionSpec, goal, spec);
+      }
+
       // NEW: Track agent type for diversity monitoring
       this.recordAgentType(spec.agentType);
 
@@ -3606,6 +3610,40 @@ Respond in JSON format:
       });
       return null;
     }
+  }
+
+  attachDocumentCreationIntake(missionSpec, goal, spec = {}) {
+    const existingClaim =
+      missionSpec.intake?.claimText ||
+      missionSpec.intake?.claim ||
+      missionSpec.metadata?.claimText ||
+      missionSpec.claimText;
+
+    if (existingClaim && typeof existingClaim === 'string' && existingClaim.trim().length >= 10) {
+      return missionSpec;
+    }
+
+    const claimText = [
+      goal?.description,
+      spec?.description && spec.description !== goal?.description ? spec.description : null,
+      spec?.rationale ? `Rationale: ${spec.rationale}` : null
+    ].filter(Boolean).join('\n\n');
+
+    if (!claimText.trim()) {
+      return missionSpec;
+    }
+
+    missionSpec.intake = {
+      ...(missionSpec.intake || {}),
+      claimText
+    };
+    missionSpec.metadata = {
+      ...(missionSpec.metadata || {}),
+      claimText,
+      intakeSource: missionSpec.metadata?.intakeSource || 'goal_description'
+    };
+
+    return missionSpec;
   }
 
   /**

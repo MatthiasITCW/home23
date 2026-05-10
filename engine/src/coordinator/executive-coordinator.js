@@ -1427,6 +1427,23 @@ class ErrorMonitor {
    */
   classifyFailure(agentResult, dodCheck) {
     const errors = [];
+    const resultEntries = Array.isArray(agentResult?.results) ? agentResult.results : [];
+    const preconditionFailure =
+      agentResult?.status === 'needs_intake' ||
+      agentResult?.status === 'deferred' ||
+      agentResult?.reason === 'missing_claim' ||
+      agentResult?.reason === 'insufficient_memory' ||
+      agentResult?.agentSpecificData?.status === 'needs_intake' ||
+      agentResult?.agentSpecificData?.reason === 'missing_claim' ||
+      resultEntries.some(result =>
+        result?.status === 'needs_intake' ||
+        result?.reason === 'missing_claim' ||
+        result?.reason === 'insufficient_memory'
+      );
+
+    if (preconditionFailure) {
+      errors.push('E_PRECONDITION');
+    }
     
     // Check DoD violations
     if (dodCheck && dodCheck.violations) {
@@ -1434,7 +1451,9 @@ class ErrorMonitor {
         if (violation.field === 'documentsAnalyzed' && violation.actual === 0) {
           errors.push('E_NO_INPUT');
         } else if (violation.field === 'filesCreated' && violation.actual === 0) {
-          errors.push('E_EMPTY_OUTPUT');
+          if (!preconditionFailure) {
+            errors.push('E_EMPTY_OUTPUT');
+          }
         } else if (violation.field === 'syntaxValid' && !violation.actual) {
           errors.push('E_SCHEMA_FAIL');
         } else if (violation.field?.includes('citation')) {
@@ -1458,7 +1477,7 @@ class ErrorMonitor {
       errors.push('E_EMPTY_OUTPUT');
     }
     
-    return errors;
+    return [...new Set(errors)];
   }
   
   /**
@@ -1830,4 +1849,3 @@ class EvaluationHarness {
 }
 
 module.exports = { ExecutiveCoordinator, ActionSelector, ErrorMonitor };
-
