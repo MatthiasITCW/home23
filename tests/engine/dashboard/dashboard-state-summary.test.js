@@ -38,6 +38,9 @@ test('dashboard home summary falls back to latest cycle when thought count is ta
       role: 'analyst',
       thought: 'latest thought',
       timestamp: '2026-05-10T03:12:27.329Z',
+      cognitiveState: { energy: 0.42, mode: 'active' },
+      oscillatorMode: 'explore',
+      model: 'internal',
     },
   });
   server.getFastMemoryGraphSummary = async () => ({ nodes: 10, edges: 20, clusters: 2, source: 'test' });
@@ -48,4 +51,7 @@ test('dashboard home summary falls back to latest cycle when thought count is ta
   assert.equal(summary.cycleCount, 6996);
   assert.equal(summary.thoughtCount, 6996);
   assert.equal(summary.lastThoughtText, 'latest thought');
+  assert.deepEqual(summary.cognitiveState, { energy: 0.42, mode: 'active' });
+  assert.equal(summary.oscillatorMode, 'explore');
+  assert.equal(summary.model, 'internal');
 });

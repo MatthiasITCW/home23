@@ -5511,8 +5511,10 @@ Be specific, actionable, and maintain research continuity.`;
         const projection = {
           cycleCount: summary.cycleCount || 0,
           thoughtCount: summary.thoughtCount || 0,
-          oscillatorMode: summary.temporalState === 'sleeping' ? 'sleep' : 'focus',
-          cognitiveState: {},
+          oscillatorMode: summary.oscillatorMode || (summary.temporalState === 'sleeping' ? 'sleep' : 'focus'),
+          cognitiveState: summary.cognitiveState || {},
+          phase: summary.lastThoughtRole || null,
+          model: summary.model || null,
           memory: {
             nodes: Number.isFinite(summary.memoryGraph?.nodes) ? summary.memoryGraph.nodes : 0,
             edges: Number.isFinite(summary.memoryGraph?.edges) ? summary.memoryGraph.edges : 0,
@@ -9808,6 +9810,9 @@ You are empowered to explore and understand. The user trusts you to discover the
       lastThoughtAt: lastThought?.timestamp || null,
       lastThoughtRole,
       lastThoughtText: lastThought?.thought || lastThought?.content || lastThought?.text || null,
+      cognitiveState: lastThought?.cognitiveState || null,
+      oscillatorMode: lastThought?.oscillatorMode || null,
+      model: lastThought?.model || null,
       temporalState: lastThoughtRole === 'sleep' ? 'sleeping' : 'awake',
       generatedAt: new Date().toISOString()
     };
