@@ -544,15 +544,25 @@ class GoodLifeRegulator {
     return daily.selfMaintenanceActions >= MAX_DAILY_SELF_MAINTENANCE_ACTIONS;
   }
 
+  _actionCountsAgainstSelfMaintenanceBudget(action = {}) {
+    const mode = String(action.mode || '').toLowerCase();
+    const category = String(action.category || '').toLowerCase();
+    if (mode === 'repair' || category === 'resolves-drift') return false;
+    if (mode === 'help' || category === 'visible-progress') return false;
+    return true;
+  }
+
   _nextDailyState(existing, evaluation, usefulness, agendaId) {
     const daily = this._currentDailyState(existing);
-    if (usefulness?.category !== 'visible-progress') daily.selfMaintenanceActions++;
-    daily.actions.push({
+    const action = {
       at: new Date().toISOString(),
       agendaId,
       mode: evaluation.policy?.mode || 'observe',
       category: usefulness?.category || 'unknown',
-    });
+    };
+    action.budgetedSelfMaintenance = this._actionCountsAgainstSelfMaintenanceBudget(action);
+    if (action.budgetedSelfMaintenance) daily.selfMaintenanceActions++;
+    daily.actions.push(action);
     daily.actions = daily.actions.slice(-50);
     return daily;
   }
@@ -562,10 +572,20 @@ class GoodLifeRegulator {
     if (!existing || existing.date !== today) {
       return { date: today, selfMaintenanceActions: 0, actions: [] };
     }
+    const actions = Array.isArray(existing.actions) ? existing.actions : [];
+    const todayActions = actions.filter((action) => {
+      const at = String(action?.at || '');
+      return !at || at.slice(0, 10) === today;
+    });
+    const derivedSelfMaintenanceActions = todayActions.filter((action) => (
+      action.budgetedSelfMaintenance === false
+        ? false
+        : this._actionCountsAgainstSelfMaintenanceBudget(action)
+    )).length;
     return {
       date: existing.date,
-      selfMaintenanceActions: Number(existing.selfMaintenanceActions || 0),
-      actions: Array.isArray(existing.actions) ? existing.actions : [],
+      selfMaintenanceActions: actions.length ? derivedSelfMaintenanceActions : Number(existing.selfMaintenanceActions || 0),
+      actions,
     };
   }
 

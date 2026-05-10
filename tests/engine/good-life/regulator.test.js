@@ -420,3 +420,38 @@ test('GoodLifeRegulator caps repeated self-maintenance actions per day', async (
   assert.equal(blocked.status, 'blocked_self_maintenance_budget');
   assert.equal(added, 0);
 });
+
+test('GoodLifeRegulator does not let repair/help bypasses inflate self-maintenance budget', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-regulator-'));
+  const today = new Date().toISOString().slice(0, 10);
+  writeFileSync(join(dir, 'good-life-regulator-state.json'), JSON.stringify({
+    daily: {
+      date: today,
+      selfMaintenanceActions: 7,
+      actions: [
+        { at: `${today}T00:00:00.000Z`, agendaId: 'ag-learn-1', mode: 'learn', category: 'grounded-learning' },
+        { at: `${today}T00:05:00.000Z`, agendaId: 'ag-repair-1', mode: 'repair', category: 'resolves-drift' },
+        { at: `${today}T00:10:00.000Z`, agendaId: 'ag-help-1', mode: 'help', category: 'visible-progress' },
+      ],
+    },
+  }));
+  let added = 0;
+  const regulator = new GoodLifeRegulator({
+    brainDir: dir,
+    getAgendaStore: () => ({
+      list() { return []; },
+      add(params) {
+        added++;
+        return { id: `ag-${added}`, content: params.content, status: 'candidate' };
+      },
+    }),
+  });
+
+  const result = await regulator.handleObservation(learnObservation());
+  assert.equal(result.status, 'queued');
+  assert.equal(added, 1);
+
+  const state = JSON.parse(readFileSync(join(dir, 'good-life-regulator-state.json'), 'utf8'));
+  assert.equal(state.daily.selfMaintenanceActions, 2);
+  assert.equal(state.daily.actions.at(-1).budgetedSelfMaintenance, true);
+});

@@ -916,6 +916,8 @@ test('Good Life operator surfaces exhausted self-maintenance budget as paused au
         actions: [
           { at: '2026-05-08T09:00:00.000Z', agendaId: 'ag-learn-1', mode: 'learn', category: 'grounded-learning' },
           { at: '2026-05-08T10:00:00.000Z', agendaId: 'ag-rest-1', mode: 'rest', category: 'reduces-friction' },
+          { at: '2026-05-08T11:00:00.000Z', agendaId: 'ag-learn-2', mode: 'learn', category: 'grounded-learning' },
+          { at: '2026-05-08T12:00:00.000Z', agendaId: 'ag-rest-2', mode: 'rest', category: 'reduces-friction' },
         ],
       },
     },
@@ -980,6 +982,58 @@ test('Good Life operator shows repair mode bypasses spent self-maintenance budge
   assert.equal(model.autonomyBudget.status, 'bypassed');
   assert.match(model.autonomyBudget.reason, /repair work can still run/);
   assert.equal(model.operatorBrief.status, 'Repairing');
+});
+
+test('Good Life operator budget excludes repair/help bypass actions from self-maintenance usage', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      summary: 'rest - pressure is easing',
+      policy: {
+        mode: 'rest',
+        reason: 'reduce loop pressure while preserving obligations',
+        actionCard: {
+          intent: 'rest',
+          goodLifeLanes: ['friction'],
+          evidenceRequired: true,
+          riskTier: 0,
+          reversible: true,
+          expectedOutcome: 'lower loop pressure',
+          stopCondition: 'obligations preserved',
+        },
+      },
+      lanes: {
+        friction: { status: 'watch', reasons: ['loop pressure is high'] },
+      },
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0 },
+      },
+    }),
+    regulator: {
+      daily: {
+        date: '2026-05-08',
+        selfMaintenanceActions: 7,
+        actions: [
+          { at: '2026-05-08T09:00:00.000Z', agendaId: 'ag-learn-1', mode: 'learn', category: 'grounded-learning' },
+          { at: '2026-05-08T09:10:00.000Z', agendaId: 'ag-repair-1', mode: 'repair', category: 'resolves-drift' },
+          { at: '2026-05-08T09:20:00.000Z', agendaId: 'ag-help-1', mode: 'help', category: 'visible-progress' },
+          { at: '2026-05-08T09:30:00.000Z', agendaId: 'ag-repair-2', mode: 'repair', category: 'resolves-drift', budgetedSelfMaintenance: false },
+          { at: '2026-05-08T09:40:00.000Z', agendaId: 'ag-rest-1', mode: 'rest', category: 'reduces-friction' },
+        ],
+      },
+    },
+    liveProblems: [],
+    obligations: { activeAgenda: [], activeGoals: [], counts: { activeAgenda: 0, activeGoals: 0, activeGoalsTrusted: true } },
+    now: NOW,
+  });
+
+  assert.equal(model.autonomyBudget.used, 2);
+  assert.equal(model.autonomyBudget.bypassUsed, 3);
+  assert.equal(model.autonomyBudget.exhausted, false);
+  assert.equal(model.autonomyBudget.status, 'available');
+  assert.match(model.autonomyBudget.reason, /3 repair\/help actions bypassed/);
+  assert.equal(model.operatorBrief.status, 'Clear');
+  assert.equal(model.detail.work.daily.selfMaintenanceActions, 2);
+  assert.equal(model.detail.work.daily.bypassActions, 3);
 });
 
 test('Good Life operator answer names reviewed goal before first active goal', () => {

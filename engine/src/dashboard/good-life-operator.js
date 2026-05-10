@@ -510,7 +510,12 @@ function summarizeWork(obligations = {}) {
 
 function buildAutonomyBudget(regulator = {}, policy = {}) {
   const daily = regulator?.daily || null;
-  const used = finiteCount(daily?.selfMaintenanceActions) || 0;
+  const dailyActions = Array.isArray(daily?.actions) ? daily.actions : [];
+  const budgetedActions = dailyActions.filter((action) => goodLifeActionCountsAgainstSelfMaintenanceBudget(action));
+  const bypassActions = dailyActions.filter((action) => !goodLifeActionCountsAgainstSelfMaintenanceBudget(action));
+  const used = dailyActions.length
+    ? budgetedActions.length
+    : (finiteCount(daily?.selfMaintenanceActions) || 0);
   const limit = SELF_MAINTENANCE_DAILY_LIMIT;
   const remaining = Math.max(0, limit - used);
   const mode = String(policy?.mode || '').toLowerCase();
@@ -524,14 +529,26 @@ function buildAutonomyBudget(regulator = {}, policy = {}) {
     remaining,
     exhausted,
     bypassed,
+    bypassUsed: bypassActions.length,
     mode,
     status: exhausted ? 'exhausted' : (bypassed ? 'bypassed' : 'available'),
     reason: exhausted
       ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode || 'current'} work is paused unless repair/help evidence appears`
       : bypassed
         ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode} work can still run because repair/help bypasses the budget gate`
-      : `Good Life self-maintenance budget is ${used}/${limit}`,
+        : bypassActions.length
+          ? `Good Life self-maintenance budget is ${used}/${limit}; ${bypassActions.length} repair/help action${bypassActions.length === 1 ? '' : 's'} bypassed the budget gate`
+          : `Good Life self-maintenance budget is ${used}/${limit}`,
   };
+}
+
+function goodLifeActionCountsAgainstSelfMaintenanceBudget(action = {}) {
+  if (action.budgetedSelfMaintenance === false) return false;
+  const mode = String(action.mode || '').toLowerCase();
+  const category = String(action.category || '').toLowerCase();
+  if (mode === 'repair' || category === 'resolves-drift') return false;
+  if (mode === 'help' || category === 'visible-progress') return false;
+  return true;
 }
 
 function summarizeWorkStatus({
@@ -1271,10 +1288,11 @@ function buildDetailSections({ commitments, trends, regulator, liveProblems, led
       dailyActions,
       daily: regulator?.daily ? {
         date: regulator.daily.date || null,
-        selfMaintenanceActions: regulator.daily.selfMaintenanceActions || 0,
+        selfMaintenanceActions: budget?.used ?? regulator.daily.selfMaintenanceActions ?? 0,
         selfMaintenanceLimit: budget?.limit ?? SELF_MAINTENANCE_DAILY_LIMIT,
         selfMaintenanceRemaining: budget?.remaining ?? null,
         selfMaintenanceExhausted: budget?.exhausted === true,
+        bypassActions: budget?.bypassUsed ?? 0,
       } : null,
       obligations: compactObligations,
       summary: summarizeWork(obligations || {}),
