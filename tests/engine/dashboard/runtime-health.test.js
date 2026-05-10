@@ -84,7 +84,7 @@ test('runtime health default timeout stays bounded for operator responsiveness',
 
     assert.equal(health.ok, true);
     assert.ok(health.services.every((service) => service.ok));
-    assert.deepEqual(timeouts, [750, 2500]);
+    assert.deepEqual(timeouts, [2000, 2500]);
   } finally {
     globalThis.AbortSignal = originalAbortSignal;
   }

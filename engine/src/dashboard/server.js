@@ -762,7 +762,7 @@ class DashboardServer {
       : 'Agent';
     const slowMs = 2000;
     const defaultTimeoutMs = Number(this._home23RuntimeHealthTimeoutMs || 2500);
-    const engineTimeoutMs = Number(this._home23RuntimeEngineHealthTimeoutMs || 750);
+    const engineTimeoutMs = Number(this._home23RuntimeEngineHealthTimeoutMs || 2000);
     const fetchImpl = this._home23RuntimeHealthFetch || fetch;
     const processSnapshot = this._home23RuntimeProcessSnapshot?.()
       || this.getHome23RuntimeProcessSnapshot?.()
