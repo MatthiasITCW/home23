@@ -3710,6 +3710,13 @@ class Orchestrator {
           cycleCount: this.cycleCount,
           stagesWritten: evidenceStagesWritten,
           logger: this.logger,
+          fixtureContext: {
+            memoryNodeCount: this.memory?.nodes?.size || 0,
+            goalCount: this.goals?.getGoals?.().length || 0,
+            roleId: role?.id || 'unknown',
+            oscillatorMode: this.oscillator?.getCurrentMode?.() || 'unknown',
+            energy: cognitiveState?.energy || 0,
+          },
         });
       } catch (e) {
         // Even if enforcer itself throws, write a cycle_error receipt so the

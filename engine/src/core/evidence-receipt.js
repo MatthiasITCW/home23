@@ -358,9 +358,23 @@ function formatDiagnosisBlock(diagnosis) {
 function enforceFullLoop(ctx) {
   const { brainDir, runId, prevId, cycleCount, stagesWritten, logger } = ctx;
   const filled = [];
+  const readCurrentReceipts = () => {
+    const receiptPath = path.join(brainDir, RECEIPT_FILE);
+    if (!fs.existsSync(receiptPath)) return [];
+    return fs.readFileSync(receiptPath, 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter((receipt) => receipt && receipt.run_id === runId);
+  };
+
+  let currentReceipts = readCurrentReceipts();
+  const hasStageReceipt = (stage) => currentReceipts.some((receipt) => receipt.stage === stage);
 
   for (const stage of STAGES) {
-    if (!stagesWritten.includes(stage)) {
+    if (!stagesWritten.includes(stage) || !hasStageReceipt(stage)) {
       // Fill in the missing stage with a no-change receipt
       appendEvidenceReceipt(brainDir, buildReceipt({
         run_id: runId,
@@ -377,7 +391,33 @@ function enforceFullLoop(ctx) {
         }
       }));
       filled.push(stage);
+      currentReceipts = readCurrentReceipts();
     }
+  }
+
+  try {
+    const hasFixture = currentReceipts.some((receipt) =>
+      receipt.provenance?.source === 'canonical_nonzero_fixture'
+    );
+
+    if (!hasFixture) {
+      const fixture = ctx.fixtureContext || {};
+      appendEvidenceReceipt(brainDir, canonicalNonzeroFixture({
+        run_id: runId,
+        prev_id: prevId,
+        cycleCount,
+        memoryNodeCount: fixture.memoryNodeCount || 0,
+        goalCount: fixture.goalCount || 0,
+        roleId: fixture.roleId || 'unknown',
+        oscillatorMode: fixture.oscillatorMode || 'unknown',
+        energy: Number.isFinite(fixture.energy) ? fixture.energy : 0,
+      }));
+      if (!filled.includes('audit') && !stagesWritten.includes('audit')) {
+        filled.push('audit');
+      }
+    }
+  } catch (err) {
+    logger?.warn?.('Evidence receipt fixture enforcement failed (non-fatal)', { error: err.message });
   }
 
   // Persist current run_id for next cycle chain (idempotent — may already be saved)

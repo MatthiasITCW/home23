@@ -47,7 +47,12 @@ function isValidContent(content) {
     'is not defined',
     'no content received',
     'request failed',
-    'timeout',
+    'request timeout',
+    'request timed out',
+    'operation timed out',
+    'command timeout after',
+    'timeout after',
+    'pgs_timeout',
     'econnrefused'
   ];
 
