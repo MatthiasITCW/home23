@@ -370,6 +370,9 @@ class AgentExecutor {
   async executeAgentAsync(agent) {
     try {
       const results = await agent.run();
+      if (results?.status === 'completed' || results?.status === 'completed_unproductive') {
+        this.registry.markAgentFinished?.(agent, results.status);
+      }
       await this.resultsQueue.enqueue(results);
       
       // Track agent completion in evaluation framework

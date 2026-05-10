@@ -56,15 +56,7 @@ class AgentRegistry {
    * Handle agent completion
    */
   onAgentComplete(agent) {
-    this.activeAgents.delete(agent.agentId);
-    
-    const agentState = this.agents.get(agent.agentId);
-    if (agentState) {
-      agentState.status = 'completed';
-      agentState.endTime = agent.endTime;
-      agentState.duration = agent.endTime - agent.startTime;
-      this.completedAgents.set(agent.agentId, agentState);
-    }
+    const agentState = this.markAgentFinished(agent, 'completed');
     
     this.logger.info('✅ Agent completed', {
       agentId: agent.agentId,
@@ -72,6 +64,29 @@ class AgentRegistry {
       duration: agentState?.duration ? `${(agentState.duration / 1000).toFixed(1)}s` : 'unknown',
       resultsCount: agent.results.length
     }, 3);
+  }
+
+  /**
+   * Reconcile a finished agent with the registry.
+   * Some callers also persist completion from queued results, so this method is
+   * intentionally idempotent.
+   */
+  markAgentFinished(agent, status = 'completed') {
+    if (!agent?.agentId) return null;
+
+    this.activeAgents.delete(agent.agentId);
+
+    const agentState = this.agents.get(agent.agentId);
+    if (agentState) {
+      agentState.status = status;
+      agentState.endTime = agent.endTime || new Date();
+      agentState.duration = agentState.endTime - (agent.startTime || agentState.startTime || agentState.endTime);
+      if (status === 'completed' || status === 'completed_unproductive') {
+        this.completedAgents.set(agent.agentId, agentState);
+      }
+    }
+
+    return agentState || null;
   }
 
   /**
@@ -381,4 +396,3 @@ class AgentRegistry {
 }
 
 module.exports = { AgentRegistry };
-

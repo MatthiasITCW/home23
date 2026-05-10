@@ -110,7 +110,6 @@ function shouldRunEmergencyCoordinatorReview(workState, minCycles = 10) {
 
 function shouldRouteForceOutputDirectly(workState) {
   return workState?.activeForceOutputGoalCount > 0 &&
-    workState.activeGeneralGoalCount === 0 &&
     workState.activeAgents === 0;
 }
 

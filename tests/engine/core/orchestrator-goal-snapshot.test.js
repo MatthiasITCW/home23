@@ -137,7 +137,7 @@ test('emergency coordinator work state separates force-output goals from general
   assert.equal(workState.activeGeneralGoalCount, 1);
 });
 
-test('force-output work routes directly when it is the only idle active work', () => {
+test('force-output work routes directly whenever the engine is idle', () => {
   assert.equal(shouldRouteForceOutputDirectly({
     activeForceOutputGoalCount: 1,
     activeGeneralGoalCount: 0,
@@ -148,7 +148,7 @@ test('force-output work routes directly when it is the only idle active work', (
     activeForceOutputGoalCount: 1,
     activeGeneralGoalCount: 1,
     activeAgents: 0,
-  }), false);
+  }), true);
 
   assert.equal(shouldRouteForceOutputDirectly({
     activeForceOutputGoalCount: 1,
