@@ -104,6 +104,20 @@ test('Good Life action summary prefers structured recent failure counter over pr
   assert.equal(snapshot.actions.recentFailures, 0);
 });
 
+test('Good Life action summary treats structured recent failures as a window delta', () => {
+  const snapshot = buildGoodLifeSnapshot({
+    runtimeRoot: '',
+    orchestrator: {
+      journal: [
+        { thought: 'older state', cognitiveState: { recentFailures: 5 } },
+        { thought: 'latest state', cognitiveState: { recentFailures: 6 } },
+      ],
+    },
+  });
+
+  assert.equal(snapshot.actions.recentFailures, 1);
+});
+
 test('Good Life action summary fallback ignores resolved failure mentions', () => {
   const snapshot = buildGoodLifeSnapshot({
     runtimeRoot: '',

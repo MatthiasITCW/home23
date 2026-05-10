@@ -162,18 +162,20 @@ function summarizeSurfaces(workspacePath) {
 function summarizeActions(orchestrator) {
   const journal = Array.isArray(orchestrator?.journal) ? orchestrator.journal.slice(-40) : [];
   let maintenance = 0;
-  const latestStructuredFailures = [...journal]
-    .reverse()
+  const structuredFailures = journal
     .map((entry) => Number(entry?.cognitiveState?.recentFailures))
-    .find((value) => Number.isFinite(value));
+    .filter((value) => Number.isFinite(value));
+  const structuredFailureDelta = structuredFailures.length > 0
+    ? Math.max(0, structuredFailures[structuredFailures.length - 1] - structuredFailures[0])
+    : null;
   let textFailureMentions = 0;
   for (const j of journal) {
     const text = String(j?.thought || j?.reasoning || '').toLowerCase();
-    if (latestStructuredFailures == null && isActionFailureText(text)) textFailureMentions++;
+    if (structuredFailureDelta == null && isActionFailureText(text)) textFailureMentions++;
     if (text.includes('restart') || text.includes('maintenance') || text.includes('self') || text.includes('engine')) maintenance++;
   }
   return {
-    recentFailures: latestStructuredFailures ?? textFailureMentions,
+    recentFailures: structuredFailureDelta ?? textFailureMentions,
     maintenanceRatio: journal.length ? maintenance / journal.length : 0,
   };
 }
