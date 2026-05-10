@@ -122,6 +122,8 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
       resolvedRows.push({
         id: problem.id || '',
         claim: problem.claim || '',
+        openedAt: problem.openedAt || null,
+        firstSeenAt: problem.firstSeenAt || null,
         resolvedAt: problem.resolvedAt || null,
         ageMin: resolvedMs ? Math.max(0, Math.round((nowMs - resolvedMs) / 60000)) : null,
         fixRecipe: problem.fixRecipe || null,
@@ -1143,7 +1145,10 @@ function latestResolutionSummary(latestResolution) {
     || latestResolution.fixRecipe?.verifierStatus
     || latestResolution.evidence?.result
     || null;
-  if (latestResolution.fixRecipe?.summary) {
+  const recipeAt = toTimeMs(latestResolution.fixRecipe?.at);
+  const openedAt = toTimeMs(latestResolution.openedAt);
+  const recipeBelongsToCurrentOpenWindow = !openedAt || (recipeAt && recipeAt >= openedAt);
+  if (latestResolution.fixRecipe?.summary && recipeBelongsToCurrentOpenWindow) {
     return latestResolution.fixRecipe.summary;
   }
   if (verifier) {

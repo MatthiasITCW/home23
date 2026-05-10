@@ -989,6 +989,36 @@ test('Good Life operator handoff summarizes recent verified fixes when clear', (
   assert.equal(model.operatorHandoff.evidence[1].value, 'runtime_fixed');
 });
 
+test('Good Life operator ignores stale fix recipe summaries from previous open windows', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [
+      {
+        id: 'thoughts_flowing',
+        state: 'resolved',
+        claim: 'Cognitive loop producing thoughts',
+        openedAt: '2026-05-08T13:40:00.000Z',
+        resolvedAt: '2026-05-08T13:44:00.000Z',
+        fixRecipe: {
+          at: '2026-05-08T12:10:00.000Z',
+          summary: 'Forrest cognitive loop resumed after an older repair.',
+          verifierStatus: 'pass',
+        },
+        lastResult: { detail: '1 matching entries in last 20m (latest 2026-05-08T13:43:00.000Z)' },
+        evidence: { receiptId: 'ev_thoughts_flowing', result: 'pass' },
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.match(model.operatorHandoff.repair, /Verifier passed: 1 matching entries/);
+  assert.doesNotMatch(model.operatorHandoff.repair, /Forrest cognitive loop/);
+  assert.match(
+    model.operatorAnswer.find((line) => line.startsWith('Latest verified resolution:')),
+    /Verifier passed: 1 matching entries/,
+  );
+});
+
 test('Good Life operator surfaces exhausted self-maintenance budget as paused autonomy', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({
