@@ -3207,9 +3207,25 @@ function goodLifeFleetStatus(row = {}) {
     return { state: 'working', label: 'Working', text: work.statusText || brief.next || 'autonomous work active' };
   }
   if (brief.status === 'Paused') {
-    return { state: 'paused', label: 'Paused', text: brief.next || brief.why || 'self-maintenance paused by budget' };
+    return { state: 'paused', label: 'Paused', text: goodLifePausedFleetText(operator) };
   }
   return { state: 'clear', label: 'Clear', text: brief.next || 'no user intervention needed' };
+}
+
+function goodLifePausedFleetText(operator = {}) {
+  const brief = operator.operatorBrief || {};
+  const activeLane = (operator.lanes || []).find((lane) => lane.active && String(lane.status || '').toLowerCase() !== 'healthy');
+  const activeReason = Array.isArray(activeLane?.reasons) && activeLane.reasons.length
+    ? activeLane.reasons[0]
+    : null;
+  const mode = operator.policy?.mode ? `${operator.policy.mode} requested` : null;
+  const reset = operator.autonomyBudget?.resetText || '';
+  const parts = [
+    mode,
+    activeReason,
+    reset ? `budget ${reset}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' - ') : (brief.next || brief.why || 'self-maintenance paused by budget');
 }
 
 function goodLifeFleetTarget(row = {}) {
