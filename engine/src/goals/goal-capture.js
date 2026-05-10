@@ -39,6 +39,11 @@ class GoalCaptureSystem {
    * Capture goals from output (pattern-based + GPT-5.5 AI analysis)
    */
   async captureGoalsFromOutput(output, options = {}) {
+    if (options.provenance === 'dream') {
+      this.logger?.debug?.('Skipped active goal capture for dream output');
+      return [];
+    }
+
     const patternGoals = this.capturePatternGoals(output);
     
     // Use GPT-5.5 to analyze for implicit goals (only for substantial outputs)
@@ -161,12 +166,12 @@ class GoalCaptureSystem {
       entriesAnalyzed: Math.min(30, journal.length)
     });
 
-    return goals.map(text => ({
+    return this.filterCapturedGoals(goals.map(text => ({
       text,
       source: 'journal_analysis',
       priority: 'medium',
       reason: 'Identified through GPT-5.5 extended reasoning'
-    }));
+    })), { provenance: 'sleep_analysis' });
   }
 
   /**
@@ -267,7 +272,25 @@ class GoalCaptureSystem {
       return false;
     }
 
+    if (provenance === 'sleep_analysis' && this.isLowSignalReflectionGoal(normalized)) {
+      return false;
+    }
+
     return true;
+  }
+
+  isLowSignalReflectionGoal(text) {
+    const labelOnly = text
+      .replace(/[*_`]/g, '')
+      .replace(/[:：]+$/g, '')
+      .trim();
+    if (/^(open question|worth investigating|question|next)$/i.test(labelOnly)) {
+      return true;
+    }
+    if (/^(a|an|or|and|but)\s/i.test(text) && !/[?]/.test(text)) {
+      return true;
+    }
+    return false;
   }
 
   isEncodedPayloadGoal(text) {

@@ -54,3 +54,36 @@ test('runtime health treats timed-out engine health as degraded when PM2 says pr
   assert.match(engine.error, /health endpoint timed out/i);
   assert.equal(engine.pm2.status, 'online');
 });
+
+test('runtime health default timeout is longer than the slow-service threshold', async () => {
+  const server = Object.create(DashboardServer.prototype);
+  server.getHome23AgentContext = () => ({
+    agentName: 'jerry',
+    realtimePort: 5001,
+    bridgePort: 5004,
+  });
+  server._home23RuntimeProcessSnapshot = () => ({});
+  const originalAbortSignal = globalThis.AbortSignal;
+  const timeouts = [];
+  globalThis.AbortSignal = {
+    ...originalAbortSignal,
+    timeout(ms) {
+      timeouts.push(ms);
+      return originalAbortSignal.timeout(ms);
+    },
+  };
+  server._home23RuntimeHealthFetch = async () => ({
+    ok: true,
+    status: 200,
+  });
+
+  try {
+    const health = await server.getHome23RuntimeHealth('jerry');
+
+    assert.equal(health.ok, true);
+    assert.ok(health.services.every((service) => service.ok));
+    assert.deepEqual(timeouts, [7500, 7500]);
+  } finally {
+    globalThis.AbortSignal = originalAbortSignal;
+  }
+});

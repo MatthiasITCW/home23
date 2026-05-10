@@ -61,3 +61,36 @@ test('completed goal descriptions suppress rediscovery loops', () => {
   assert.equal(goals.getGoals().length, 0);
   assert.equal(goals.completedGoals.length, 1);
 });
+
+test('observation-only dream, sleep, and notice outputs are not promoted to active goals', () => {
+  const goals = makeGoals();
+
+  assert.equal(goals.addGoal({
+    description: 'Explore the motif of language as architecture.',
+    source: 'dream_gpt5',
+  }), null);
+
+  assert.equal(goals.addGoal({
+    description: 'Is the current inspection cadence still net-positive?',
+    source: { label: 'sleep_analysis_gpt5' },
+  }), null);
+
+  assert.equal(goals.addGoal({
+    description: 'NoticePass: Stale memory in active cluster 2.',
+    source: 'notice_pass',
+  }), null);
+
+  assert.equal(goals.getGoals().length, 0);
+});
+
+test('explicit promotion can turn an observation into an active goal', () => {
+  const goals = makeGoals();
+  const goal = goals.addGoal({
+    description: 'Review whether the sleep analysis points to a concrete operator task.',
+    source: 'sleep_analysis_gpt5',
+    metadata: { allowActiveGoal: true },
+  });
+
+  assert.ok(goal);
+  assert.equal(goals.getGoals().length, 1);
+});

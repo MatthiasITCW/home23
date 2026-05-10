@@ -36,6 +36,17 @@ function normalizeGoalDescription(description) {
     .trim();
 }
 
+function goalSourceLabel(source) {
+  if (source && typeof source === 'object') {
+    return String(source.label || source.origin || '').toLowerCase();
+  }
+  return String(source || '').toLowerCase();
+}
+
+function isAutoObservationGoalSource(source) {
+  return ['dream', 'dream_gpt5', 'sleep_analysis_gpt5', 'notice_pass'].includes(goalSourceLabel(source));
+}
+
 /**
  * Intrinsic Goal System
  * Self-discovered objectives based on curiosity and uncertainty
@@ -100,7 +111,7 @@ class IntrinsicGoalSystem {
   }
 
   isDreamSeedGoal(goal) {
-    return goal?.source === 'dream_gpt5' || goal?.source === 'dream';
+    return ['dream_gpt5', 'dream'].includes(goalSourceLabel(goal?.source));
   }
 
   initializeSpecialization(clusterConfig) {
@@ -360,6 +371,15 @@ Format as JSON array: [{"description": "...", "reason": "...", "uncertainty": 0.
         length: goalData?.description?.length || 0,
         type: typeof goalData?.description
       });
+      return null;
+    }
+
+    if (isAutoObservationGoalSource(goalData.source) && goalData.metadata?.allowActiveGoal !== true) {
+      this.logger?.warn('⚠️  Skipped observation-only auto goal', {
+        source: goalSourceLabel(goalData.source),
+        description: goalData.description.substring(0, 80)
+      });
+      this._rejectedObservationOnlyGoalCount24h = (this._rejectedObservationOnlyGoalCount24h || 0) + 1;
       return null;
     }
 

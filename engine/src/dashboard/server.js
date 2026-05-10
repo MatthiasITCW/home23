@@ -760,7 +760,7 @@ class DashboardServer {
       ? target.agentName.charAt(0).toUpperCase() + target.agentName.slice(1)
       : 'Agent';
     const slowMs = 5000;
-    const timeoutMs = Number(this._home23RuntimeHealthTimeoutMs || 2500);
+    const timeoutMs = Number(this._home23RuntimeHealthTimeoutMs || 7500);
     const fetchImpl = this._home23RuntimeHealthFetch || fetch;
     const processSnapshot = this._home23RuntimeProcessSnapshot?.()
       || this.getHome23RuntimeProcessSnapshot?.()
