@@ -60,8 +60,10 @@ class ConfigValidator {
 
     if (mode === 'quantum') {
       const branches = this.config.architecture.reasoning.parallelBranches;
-      if (branches < 2 || branches > 10) {
-        this.warnings.push(`Parallel branches (${branches}) outside recommended range (2-10)`);
+      if (branches < 1 || branches > 10) {
+        this.warnings.push(`Parallel branches (${branches}) outside supported range (1-10)`);
+      } else if (branches === 1) {
+        this.info.push('✓ Quantum reasoning: single-branch pressure mode');
       } else {
         this.info.push(`✓ Quantum reasoning: ${branches} parallel branches`);
       }
