@@ -7,6 +7,7 @@ const path = require('path');
 const AUTO_ACT_MODES = new Set(['repair', 'recover', 'help']);
 const DEFAULT_THROTTLE_MS = 60 * 60 * 1000;
 const MAX_DAILY_SELF_MAINTENANCE_ACTIONS = 4;
+const SELF_MAINTENANCE_DAILY_LIMIT = MAX_DAILY_SELF_MAINTENANCE_ACTIONS;
 
 class GoodLifeRegulator {
   constructor(opts = {}) {
@@ -596,4 +597,4 @@ class GoodLifeRegulator {
   }
 }
 
-module.exports = { GoodLifeRegulator };
+module.exports = { GoodLifeRegulator, SELF_MAINTENANCE_DAILY_LIMIT };

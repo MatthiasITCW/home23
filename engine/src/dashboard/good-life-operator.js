@@ -2,6 +2,7 @@ const GOOD_LIFE_STALE_MS = 10 * 60 * 1000;
 const RECENT_RESOLUTION_MS = 30 * 60 * 1000;
 const GOOD_LIFE_AGENDA_REVIEW_MIN = 60;
 const ACTIVE_AGENDA_REVIEW_MIN = 24 * 60;
+const { SELF_MAINTENANCE_DAILY_LIMIT } = require('../good-life/regulator');
 const USER_INTERVENTION_REMEDIATORS = new Set([
   'notify_jtr',
   'request_user_input',
@@ -507,6 +508,32 @@ function summarizeWork(obligations = {}) {
   };
 }
 
+function buildAutonomyBudget(regulator = {}, policy = {}) {
+  const daily = regulator?.daily || null;
+  const used = finiteCount(daily?.selfMaintenanceActions) || 0;
+  const limit = SELF_MAINTENANCE_DAILY_LIMIT;
+  const remaining = Math.max(0, limit - used);
+  const mode = String(policy?.mode || '').toLowerCase();
+  const budgetedMode = !['repair', 'help'].includes(mode);
+  const exhausted = budgetedMode && used >= limit;
+  const bypassed = !budgetedMode && used >= limit;
+  return {
+    date: daily?.date || null,
+    used,
+    limit,
+    remaining,
+    exhausted,
+    bypassed,
+    mode,
+    status: exhausted ? 'exhausted' : (bypassed ? 'bypassed' : 'available'),
+    reason: exhausted
+      ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode || 'current'} work is paused unless repair/help evidence appears`
+      : bypassed
+        ? `Good Life self-maintenance budget is ${used}/${limit}; ${mode} work can still run because repair/help bypasses the budget gate`
+      : `Good Life self-maintenance budget is ${used}/${limit}`,
+  };
+}
+
 function summarizeWorkStatus({
   activeAgenda = [],
   activeGoals = [],
@@ -865,7 +892,7 @@ function buildProjectionMismatchText(projection = {}, liveProblems = {}) {
   return fields.length ? fields.join('; ') : null;
 }
 
-function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAction, projection, freshness }) {
+function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAction, projection, freshness, budget }) {
   const counts = liveProblems.counts || {};
   const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
   const interventionCount = Number(counts.interventionRequired || 0);
@@ -964,6 +991,18 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
         : (latestActionAgendaActive ? `Open ${latestAction.workerRoute.worker}` : 'Review Work'),
       worker: work.topAgenda?.review?.recommended ? null : (latestActionAgendaActive ? latestAction.workerRoute.worker : null),
     };
+  } else if (budget?.exhausted) {
+    severity = 'attention';
+    status = 'Paused';
+    headline = 'Good Life self-maintenance budget is spent';
+    why = budget.reason;
+    next = 'Autonomous repair/help can still run if drift appears; learning/rest work resumes when the daily budget resets.';
+    target = {
+      tab: 'insights',
+      id: null,
+      label: 'Review Budget',
+      worker: null,
+    };
   } else if (latestResolution) {
     headline = 'No active issues after recent repairs';
     why = latestResolution.claim || latestResolution.id || policy?.reason || why;
@@ -997,7 +1036,7 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
   };
 }
 
-function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, latestAction }) {
+function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, latestAction, budget }) {
   const lines = [];
   if (state?.summary || state?.policy?.reason) {
     lines.push(state.summary || state.policy.reason);
@@ -1052,6 +1091,10 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
     lines.push(`Worker route: ${route.worker}${route.reason ? ` - ${route.reason}` : ''}`);
   }
 
+  if (budget?.exhausted) {
+    lines.push(`Autonomy budget: ${budget.used}/${budget.limit} self-maintenance actions used; ${budget.mode || 'current'} work is paused until reset or repair/help drift appears`);
+  }
+
   for (const lane of lanes.filter((candidate) => candidate.active)) {
     const reason = lane.reasons?.[0] || lane.status;
     lines.push(`${lane.name}: ${reason}`);
@@ -1064,7 +1107,7 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
   return lines;
 }
 
-function buildOperatorDigest({ brief, liveProblems, work }) {
+function buildOperatorDigest({ brief, liveProblems, work, budget }) {
   const counts = liveProblems?.counts || {};
   const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
   const interventionCount = Number(counts.interventionRequired || 0);
@@ -1081,9 +1124,11 @@ function buildOperatorDigest({ brief, liveProblems, work }) {
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
   } else if (brief?.severity === 'attention') {
-    userAction = brief.headline
-      ? `No user action needed; Home23 is watching: ${brief.headline}`
-      : 'No user action needed; Home23 is watching the warning.';
+    userAction = budget?.exhausted
+      ? 'No user action needed; Good Life self-maintenance is paused by daily budget.'
+      : (brief.headline
+        ? `No user action needed; Home23 is watching: ${brief.headline}`
+        : 'No user action needed; Home23 is watching the warning.');
   }
 
   return {
@@ -1106,7 +1151,7 @@ function buildOperatorDigest({ brief, liveProblems, work }) {
   };
 }
 
-function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAction }) {
+function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAction, budget }) {
   const counts = liveProblems?.counts || {};
   const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
   const interventionCount = Number(counts.interventionRequired || 0);
@@ -1126,6 +1171,8 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
       || 'Autonomous remediation can continue from the recorded plan.';
   } else if (work?.activeTotal > 0) {
     repair = work.statusText || `${work.activeTotal} active Good Life work item${work.activeTotal === 1 ? '' : 's'}`;
+  } else if (budget?.exhausted) {
+    repair = budget.reason;
   } else if (latestResolution) {
     repair = latestResolution.fixRecipe?.summary
       ? compactText(latestResolution.fixRecipe.summary, 240)
@@ -1140,6 +1187,8 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
     userAction = work.statusText || 'Operator review is recommended for active work.';
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
+  } else if (budget?.exhausted) {
+    userAction = 'No user action needed; repair/help can still run if drift appears, and self-maintenance resumes after the daily reset.';
   }
 
   const evidence = [
@@ -1174,6 +1223,13 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
       detail: actionableWarnings[0].message || '',
     });
   }
+  if (budget?.exhausted) {
+    evidence.push({
+      label: 'Autonomy budget',
+      value: `${budget.used}/${budget.limit}`,
+      detail: 'self-maintenance paused until reset',
+    });
+  }
 
   return {
     status: brief?.status || 'Unknown',
@@ -1186,7 +1242,7 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
   };
 }
 
-function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail, obligations }) {
+function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail, obligations, budget }) {
   const activeRows = [
     ...(Array.isArray(liveProblems.open) ? liveProblems.open : []),
     ...(Array.isArray(liveProblems.chronic) ? liveProblems.chronic : []),
@@ -1216,6 +1272,9 @@ function buildDetailSections({ commitments, trends, regulator, liveProblems, led
       daily: regulator?.daily ? {
         date: regulator.daily.date || null,
         selfMaintenanceActions: regulator.daily.selfMaintenanceActions || 0,
+        selfMaintenanceLimit: budget?.limit ?? SELF_MAINTENANCE_DAILY_LIMIT,
+        selfMaintenanceRemaining: budget?.remaining ?? null,
+        selfMaintenanceExhausted: budget?.exhausted === true,
       } : null,
       obligations: compactObligations,
       summary: summarizeWork(obligations || {}),
@@ -1230,6 +1289,7 @@ function buildDetailSections({ commitments, trends, regulator, liveProblems, led
       commitments: commitmentsList,
       trendMetrics: trends?.latest?.metrics || null,
       trend: trends?.latest || null,
+      autonomyBudget: budget || null,
       ledgerTail: Array.isArray(ledgerTail) ? ledgerTail.slice(-12).reverse().map(compactLedgerEntry) : [],
     },
   };
@@ -1262,6 +1322,7 @@ function buildGoodLifeOperatorModel({
   });
   const latestAction = annotateLatestRegulatorAction(latestRegulatorAction(regulator || {}), currentObligations);
   const work = summarizeWork(currentObligations || {});
+  const budget = buildAutonomyBudget(regulator || {}, policy);
   const consistency = buildConsistency({
     state,
     projection,
@@ -1294,6 +1355,7 @@ function buildGoodLifeOperatorModel({
     runtime,
     consistency,
     latestRegulatorAction: latestAction,
+    autonomyBudget: budget,
     trends: trends?.latest || null,
     ledgerTail: Array.isArray(ledgerTail) ? ledgerTail.slice(-5).map(compactLedgerEntry) : [],
   };
@@ -1304,6 +1366,7 @@ function buildGoodLifeOperatorModel({
     liveProblems: directLiveProblems,
     ledgerTail,
     obligations: currentObligations,
+    budget,
   });
   model.work = work;
   model.operatorAnswer = buildOperatorAnswer({
@@ -1313,6 +1376,7 @@ function buildGoodLifeOperatorModel({
     consistency,
     work,
     latestAction,
+    budget,
   });
   model.operatorBrief = buildOperatorBrief({
     policy,
@@ -1322,11 +1386,13 @@ function buildGoodLifeOperatorModel({
     latestAction,
     projection,
     freshness,
+    budget,
   });
   model.operatorDigest = buildOperatorDigest({
     brief: model.operatorBrief,
     liveProblems: directLiveProblems,
     work,
+    budget,
   });
   model.operatorHandoff = buildOperatorHandoff({
     brief: model.operatorBrief,
@@ -1334,6 +1400,7 @@ function buildGoodLifeOperatorModel({
     work,
     consistency,
     latestAction,
+    budget,
   });
   return model;
 }

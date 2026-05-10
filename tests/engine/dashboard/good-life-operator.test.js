@@ -882,6 +882,106 @@ test('Good Life operator handoff summarizes recent verified fixes when clear', (
   assert.equal(model.operatorHandoff.evidence[1].value, 'runtime_fixed');
 });
 
+test('Good Life operator surfaces exhausted self-maintenance budget as paused autonomy', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      summary: 'learn - no critical drift; pursue learning progress while staying useful (usefulness:watch)',
+      policy: {
+        mode: 'learn',
+        reason: 'no critical drift; pursue learning progress while staying useful',
+        actionCard: {
+          intent: 'learn',
+          goodLifeLanes: ['usefulness'],
+          evidenceRequired: true,
+          riskTier: 0,
+          reversible: true,
+          expectedOutcome: 'new learning-progress evidence is produced and grounded',
+          stopCondition: 'finding is crystallized or discarded with evidence',
+        },
+      },
+      lanes: {
+        viability: { status: 'healthy', reasons: ['core engine evidence is flowing'] },
+        usefulness: { status: 'watch', reasons: ['usefulness must be proven by visible progress'] },
+      },
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0 },
+        goals: { open: 0, total: 0 },
+        agenda: { pending: 0 },
+      },
+    }),
+    regulator: {
+      daily: {
+        date: '2026-05-08',
+        selfMaintenanceActions: 4,
+        actions: [
+          { at: '2026-05-08T09:00:00.000Z', agendaId: 'ag-learn-1', mode: 'learn', category: 'grounded-learning' },
+          { at: '2026-05-08T10:00:00.000Z', agendaId: 'ag-rest-1', mode: 'rest', category: 'reduces-friction' },
+        ],
+      },
+    },
+    liveProblems: [],
+    obligations: { activeAgenda: [], activeGoals: [], counts: { activeAgenda: 0, activeGoals: 0, activeGoalsTrusted: true } },
+    now: NOW,
+  });
+
+  assert.equal(model.autonomyBudget.exhausted, true);
+  assert.equal(model.autonomyBudget.used, 4);
+  assert.equal(model.autonomyBudget.limit, 4);
+  assert.equal(model.operatorBrief.status, 'Paused');
+  assert.match(model.operatorBrief.headline, /self-maintenance budget is spent/);
+  assert.match(model.operatorHandoff.repair, /self-maintenance budget is 4\/4/);
+  assert.match(model.operatorHandoff.userAction, /No user action needed/);
+  assert.equal(model.operatorHandoff.evidence[1].label, 'Autonomy budget');
+  assert.match(model.operatorAnswer.find((line) => line.startsWith('Autonomy budget:')), /4\/4 self-maintenance actions used/);
+  assert.equal(model.detail.work.daily.selfMaintenanceLimit, 4);
+  assert.equal(model.detail.work.daily.selfMaintenanceExhausted, true);
+  assert.equal(model.detail.insights.autonomyBudget.status, 'exhausted');
+});
+
+test('Good Life operator shows repair mode bypasses spent self-maintenance budget', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      summary: 'repair - critical viability drift',
+      policy: {
+        mode: 'repair',
+        reason: 'critical viability drift',
+        actionCard: {
+          intent: 'repair',
+          goodLifeLanes: ['viability'],
+          evidenceRequired: true,
+          riskTier: 1,
+          reversible: true,
+          expectedOutcome: 'verified system evidence returns to healthy bounds',
+          stopCondition: 'verifier passes or repair path escalates',
+        },
+      },
+      lanes: {
+        viability: { status: 'critical', reasons: ['1 unresolved live problem'] },
+      },
+      evidence: {
+        liveProblems: { open: 1, chronic: 0, resolved: 0, unverifiable: 0, total: 1 },
+      },
+    }),
+    regulator: {
+      daily: {
+        date: '2026-05-08',
+        selfMaintenanceActions: 5,
+        actions: [],
+      },
+    },
+    liveProblems: [
+      { id: 'engine_repair', state: 'open', claim: 'Engine repair needed', remediation: [{ type: 'dispatch_to_worker' }] },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.autonomyBudget.exhausted, false);
+  assert.equal(model.autonomyBudget.bypassed, true);
+  assert.equal(model.autonomyBudget.status, 'bypassed');
+  assert.match(model.autonomyBudget.reason, /repair work can still run/);
+  assert.equal(model.operatorBrief.status, 'Repairing');
+});
+
 test('Good Life operator answer names reviewed goal before first active goal', () => {
   const obligations = buildGoodLifeObligationSnapshot({
     goals: {

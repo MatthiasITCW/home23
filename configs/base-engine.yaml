@@ -544,6 +544,7 @@ execution:
   adaptiveTimingEnabled: true
 timeouts:
   cycleTimeoutMs: 300000
+  sleepConsolidationTimeoutMs: 900000
   operationTimeoutMs: 180000
   quantumRequestTimeoutMs: 60000
   cyclePauseMs: 45000

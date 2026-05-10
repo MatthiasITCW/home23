@@ -1183,13 +1183,26 @@ class Orchestrator {
 
       // Phase A: Start cycle timeout (default 60s, configurable)
       const cycleTimeout = this.config.timeouts?.cycleTimeoutMs || 60000;
-      this.timeoutManager.startCycleTimer(this.cycleCount, cycleTimeout, (cycle, elapsedMs) => {
-        this.logger.error('[cycle-phase] timeout context', {
-          cycle,
-          elapsedMs,
-          ...cyclePhaseContext(),
+      const startCycleTimeoutTimer = (timeoutMs = cycleTimeout) => {
+        this.timeoutManager.startCycleTimer(this.cycleCount, timeoutMs, (cycle, elapsedMs) => {
+          this.logger.error('[cycle-phase] timeout context', {
+            cycle,
+            elapsedMs,
+            ...cyclePhaseContext(),
+          });
         });
-      });
+      };
+      startCycleTimeoutTimer(cycleTimeout);
+      const runWithCycleTimeoutBudget = async (timeoutMs, fn) => {
+        this.timeoutManager.cancelCycleTimer();
+        startCycleTimeoutTimer(timeoutMs);
+        try {
+          return await fn();
+        } finally {
+          this.timeoutManager.cancelCycleTimer();
+          startCycleTimeoutTimer(cycleTimeout);
+        }
+      };
 
       // Long-cycle heartbeat: the live-problem verifier checks thoughts.jsonl freshness,
       // but legitimate meta-coordinator/scoring cycles can run longer than the verifier
@@ -1632,7 +1645,12 @@ class Orchestrator {
         if (!this.sleepSession.consolidationRun) {
           enterCyclePhase('deep_sleep_consolidation');
           this.logger.info(`🛌 Sleep Cycle ${cyclesAsleep + 1}: Running deep consolidation...`);
-          const consolidationResult = await this.performDeepSleepConsolidation();
+          const sleepConsolidationTimeout = Number(this.config.timeouts?.sleepConsolidationTimeoutMs)
+            || Math.max(cycleTimeout * 3, 15 * 60 * 1000);
+          const consolidationResult = await runWithCycleTimeoutBudget(
+            sleepConsolidationTimeout,
+            () => this.performDeepSleepConsolidation()
+          );
 
           if (consolidationResult.consolidated) {
             // Only set flag if NOT in dream mode (dream mode runs consolidation every cycle)

@@ -3506,11 +3506,22 @@ function renderGoodLifeInsightsDetail(data) {
   const detail = data?.operator?.detail || {};
   const metrics = detail.insights?.trendMetrics || {};
   const ledger = detail.insights?.ledgerTail || [];
+  const budget = detail.insights?.autonomyBudget || data?.operator?.autonomyBudget || null;
+  const budgetHtml = budget ? `
+    <section><h4>Autonomy Budget</h4>
+      <div class="h23-goodlife-evidence-row">
+        <strong>${escapeHtml(budget.status || 'available')}</strong>
+        <span>${escapeHtml(budget.reason || '')}</span>
+        <small>${escapeHtml(`${Number(budget.used || 0)}/${Number(budget.limit || 0)} used${budget.remaining != null ? ` - ${Number(budget.remaining || 0)} remaining` : ''}`)}</small>
+      </div>
+    </section>
+  ` : '';
   return `
     <h3>Learned Signals</h3>
     <div class="h23-goodlife-detail-grid">
       ${Object.entries(metrics).slice(0, 8).map(([key, value]) => `<div><label>${escapeHtml(key)}</label><p>${escapeHtml(value)}</p></div>`).join('') || '<div><label>Trend Metrics</label><p>not recorded</p></div>'}
     </div>
+    ${budgetHtml}
     <section><h4>Recent Good Life Ledger</h4>${ledger.length ? ledger.map((entry) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(entry.event || entry.type || 'entry')}</strong><span>${escapeHtml(entry.summary || entry.message || entry.mode || '')}</span><small>${entry.at || entry.timestamp ? escapeHtml(timeSince(new Date(entry.at || entry.timestamp))) : ''}</small></div>`).join('') : '<div class="h23-goodlife-empty">No ledger entries</div>'}</section>
   `;
 }
