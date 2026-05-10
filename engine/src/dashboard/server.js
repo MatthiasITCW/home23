@@ -944,6 +944,17 @@ class DashboardServer {
       res.set('content-type', upstream.headers.get('content-type') || 'application/json');
       res.send(text || '{}');
     } catch (error) {
+      const fallback = this.readWorkerConnectorFallback({
+        method,
+        connectorPath,
+        query,
+        target,
+        error,
+      });
+      if (fallback) {
+        res.status(200).json(fallback);
+        return;
+      }
       res.status(502).json({
         ok: false,
         error: `Worker connector unavailable on ${baseUrl}: ${error.message}`,
@@ -951,6 +962,150 @@ class DashboardServer {
         bridgePort: target.bridgePort,
       });
     }
+  }
+
+  readWorkerConnectorFallback({ method, connectorPath, query, target, error }) {
+    if (method !== 'GET') return null;
+    const fsSync = require('fs');
+    const yaml = require('js-yaml');
+    const root = this.getHome23Root();
+    const workersDir = path.join(root, 'instances', 'workers');
+    const meta = {
+      ok: true,
+      degraded: true,
+      source: 'dashboard-worker-disk-fallback',
+      agent: target.agentName,
+      connectorError: error?.message || String(error || 'worker connector unavailable'),
+    };
+
+    const readWorkers = () => {
+      if (!fsSync.existsSync(workersDir)) return [];
+      return fsSync.readdirSync(workersDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => {
+          const workerPath = path.join(workersDir, entry.name);
+          const configPath = path.join(workerPath, 'worker.yaml');
+          let config = {};
+          try {
+            if (fsSync.existsSync(configPath)) {
+              config = yaml.load(fsSync.readFileSync(configPath, 'utf8')) || {};
+            }
+          } catch {
+            config = {};
+          }
+          return {
+            name: config.name || entry.name,
+            displayName: config.displayName || config.name || entry.name,
+            ownerAgent: config.ownerAgent || null,
+            class: config.class || null,
+            purpose: config.purpose || '',
+            rootPath: workerPath,
+          };
+        });
+    };
+
+    const readReceipt = (runId) => {
+      for (const worker of readWorkers()) {
+        const receiptPath = path.join(worker.rootPath, 'runs', runId, 'receipt.json');
+        try {
+          if (fsSync.existsSync(receiptPath)) {
+            return {
+              receipt: JSON.parse(fsSync.readFileSync(receiptPath, 'utf8')),
+              receiptPath,
+              runPath: path.dirname(receiptPath),
+              worker,
+            };
+          }
+        } catch {
+          // Keep scanning workers; one malformed receipt should not break the fallback.
+        }
+      }
+      return null;
+    };
+
+    const runStartedAtFromId = (runId) => {
+      const match = String(runId || '').match(/^wr_(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z_/);
+      if (!match) return null;
+      const [, year, month, day, hour, minute, second] = match;
+      const iso = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
+      return Number.isFinite(Date.parse(iso)) ? iso : null;
+    };
+
+    const readRuns = () => {
+      const ownerAgent = query.get('ownerAgent');
+      const rows = [];
+      for (const worker of readWorkers()) {
+        const runsDir = path.join(worker.rootPath, 'runs');
+        if (!fsSync.existsSync(runsDir)) continue;
+        for (const entry of fsSync.readdirSync(runsDir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const runPath = path.join(runsDir, entry.name);
+          const receiptPath = path.join(runPath, 'receipt.json');
+          let summary = null;
+          try {
+            if (fsSync.existsSync(receiptPath)) {
+              const receipt = JSON.parse(fsSync.readFileSync(receiptPath, 'utf8'));
+              summary = {
+                runId: receipt.runId || entry.name,
+                worker: receipt.worker || worker.name,
+                ownerAgent: receipt.ownerAgent || worker.ownerAgent || null,
+                requestedBy: receipt.requestedBy,
+                requester: receipt.requester,
+                source: receipt.source,
+                status: receipt.status || 'unknown',
+                verifierStatus: receipt.verifierStatus,
+                startedAt: receipt.startedAt,
+                finishedAt: receipt.finishedAt,
+                summary: receipt.summary,
+                runPath,
+                receiptPath,
+              };
+            } else {
+              let startedAt = runStartedAtFromId(entry.name);
+              if (!startedAt) {
+                try { startedAt = fsSync.statSync(runPath).mtime.toISOString(); } catch {}
+              }
+              summary = {
+                runId: entry.name,
+                worker: worker.name,
+                ownerAgent: worker.ownerAgent || null,
+                status: 'running',
+                startedAt,
+                runPath,
+              };
+            }
+          } catch {
+            continue;
+          }
+          if (summary && (!ownerAgent || summary.ownerAgent === ownerAgent)) rows.push(summary);
+        }
+      }
+      return rows.sort((a, b) => String(b.finishedAt || b.startedAt || b.runId).localeCompare(String(a.finishedAt || a.startedAt || a.runId)));
+    };
+
+    if (connectorPath === '/api/workers') {
+      return {
+        ...meta,
+        workers: readWorkers().map(({ rootPath, ...worker }) => worker),
+      };
+    }
+    if (connectorPath === '/api/workers/templates') {
+      return { ...meta, templates: [] };
+    }
+    if (connectorPath === '/api/workers/runs') {
+      return { ...meta, runs: readRuns() };
+    }
+    const receiptMatch = connectorPath.match(/^\/api\/workers\/runs\/([^/]+)\/receipt$/);
+    if (receiptMatch) {
+      const found = readReceipt(decodeURIComponent(receiptMatch[1]));
+      return found ? { ...meta, ...found.receipt } : null;
+    }
+    const runMatch = connectorPath.match(/^\/api\/workers\/runs\/([^/]+)$/);
+    if (runMatch) {
+      const run = readRuns().find((item) => item.runId === decodeURIComponent(runMatch[1]));
+      return run ? { ...meta, run } : null;
+    }
+    return null;
   }
 
   setupRoutes() {
