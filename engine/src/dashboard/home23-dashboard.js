@@ -2826,7 +2826,32 @@ function renderGoodLifeProblems(operator, data) {
   </div>`;
 }
 
+function goodLifeHasClearRegistryProjectionMismatch(operator) {
+  const counts = operator?.liveProblems?.counts || {};
+  const brief = operator?.operatorBrief || {};
+  const liveOpen = Number(counts.open || 0) + Number(counts.chronic || 0) + Number(counts.interventionRequired || 0);
+  const headline = String(brief.headline || '');
+  return liveOpen === 0
+    && (operator?.status === 'conflicted' || /projection disagrees/i.test(headline))
+    && /registry is clear/i.test(headline);
+}
+
 function renderGoodLifeActionCard(operator, state) {
+  if (goodLifeHasClearRegistryProjectionMismatch(operator)) {
+    const rows = [
+      ['Intent', 'reconcile'],
+      ['Outcome', 'Good Life projection catches up to the clear live registry'],
+      ['Stop', 'next evaluation agrees with live-problem registry'],
+      ['Checks', 'registry open 0, chronic 0, need you 0'],
+    ];
+    return rows.map(([label, value]) => `
+      <div class="h23-goodlife-action-row">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `).join('');
+  }
+
   const card = operator?.actionCard || state?.policy?.actionCard || null;
   if (!card) return '<div class="h23-goodlife-empty">No routed action card</div>';
 
@@ -2927,8 +2952,14 @@ function updateGoodLifeTile(data, scope = 'home') {
   }
   const operator = data?.operator || null;
   const policy = operator?.policy?.mode || state.policy?.mode || 'observe';
-  setText(id('goodlife-policy'), policy.toUpperCase());
-  setText(id('goodlife-summary'), operator?.summary || state.summary || state.policy?.reason || '');
+  const projectionMismatch = goodLifeHasClearRegistryProjectionMismatch(operator);
+  setText(id('goodlife-policy'), projectionMismatch ? 'RECONCILE' : policy.toUpperCase());
+  setText(
+    id('goodlife-summary'),
+    projectionMismatch
+      ? `projection stale - ${operator?.operatorBrief?.headline || 'live registry is clear'}`
+      : operator?.summary || state.summary || state.policy?.reason || ''
+  );
   setGoodLifeStatus(scope, operator || { status: 'current', safeToInherit: true });
   setHtml(id('goodlife-brief'), renderGoodLifeBrief(operator, scope));
 
@@ -2942,7 +2973,22 @@ function updateGoodLifeTile(data, scope = 'home') {
   setHtml(id('goodlife-problems'), renderGoodLifeProblems(operator, data));
   setHtml(id('goodlife-action'), renderGoodLifeActionCard(operator, state));
 
-  const lanes = operator?.lanes || Object.entries(state.lanes || {}).map(([name, lane]) => ({
+  const lanes = projectionMismatch
+    ? [
+        {
+          name: 'live registry',
+          status: 'clear',
+          reasons: ['0 open live problems, 0 chronic, 0 need user intervention'],
+          active: true,
+        },
+        {
+          name: 'projection',
+          status: 'stale',
+          reasons: [operator?.operatorBrief?.why || 'Good Life state is older than the verifier receipts'],
+          active: true,
+        },
+      ]
+    : operator?.lanes || Object.entries(state.lanes || {}).map(([name, lane]) => ({
     name,
     status: lane?.status || 'unknown',
     reasons: lane?.reasons || [],
@@ -3029,9 +3075,9 @@ function goodLifeFleetRank(row = {}) {
   if (brief.needsUser || Number(counts.interventionRequired || 0) > 0 || work.status === 'needs-user') return 0;
   if (['critical', 'needs-user'].includes(brief.severity)) return 1;
   if (brief.severity === 'repairing' || Number(counts.open || 0) + Number(counts.chronic || 0) > 0) return 2;
-  if (work.status === 'review' || Number(work.agendaNeedingReview || 0) + Number(work.goalsNeedingReview || 0) > 0) return 3;
-  if (brief.severity === 'working' || work.status === 'working' || Number(work.activeTotal || 0) > 0) return 4;
-  if (brief.severity === 'attention' || operator.status === 'conflicted' || operator.status === 'stale') return 5;
+  if (brief.severity === 'attention' || operator.status === 'conflicted' || operator.status === 'stale') return 3;
+  if (work.status === 'review' || Number(work.agendaNeedingReview || 0) + Number(work.goalsNeedingReview || 0) > 0) return 4;
+  if (brief.severity === 'working' || work.status === 'working' || Number(work.activeTotal || 0) > 0) return 5;
   return 6;
 }
 
@@ -3049,14 +3095,14 @@ function goodLifeFleetStatus(row = {}) {
   if (brief.severity === 'repairing' || Number(counts.open || 0) + Number(counts.chronic || 0) > 0) {
     return { state: 'repairing', label: 'Repairing', text: brief.next || 'autonomous repair is running' };
   }
+  if (brief.severity === 'attention' || operator.status === 'conflicted' || operator.status === 'stale') {
+    return { state: 'attention', label: 'Attention', text: brief.next || brief.why || 'operator warning present' };
+  }
   if (work.status === 'review' || Number(work.agendaNeedingReview || 0) + Number(work.goalsNeedingReview || 0) > 0) {
     return { state: 'review', label: 'Review', text: work.statusText || brief.next || 'operator review recommended' };
   }
   if (brief.severity === 'working' || work.status === 'working' || Number(work.activeTotal || 0) > 0) {
     return { state: 'working', label: 'Working', text: work.statusText || brief.next || 'autonomous work active' };
-  }
-  if (brief.severity === 'attention' || operator.status === 'conflicted' || operator.status === 'stale') {
-    return { state: 'attention', label: 'Attention', text: brief.next || brief.why || 'operator warning present' };
   }
   return { state: 'clear', label: 'Clear', text: brief.next || 'no user intervention needed' };
 }
