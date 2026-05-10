@@ -23,6 +23,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const fsp = fs.promises;
 
 const BACKUPS_DIR = 'backups';
 const BACKUP_FILES = [
@@ -104,8 +105,8 @@ async function maybeBackup(brainDir, opts = {}) {
   const finalDir = path.join(root, backupName);
 
   // Clean any leftover tmp from a previous crashed run.
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-  fs.mkdirSync(tmpDir);
+  try { await fsp.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  await fsp.mkdir(tmpDir);
 
   let bytes = 0;
   try {
@@ -113,12 +114,12 @@ async function maybeBackup(brainDir, opts = {}) {
       const src = path.join(brainDir, f);
       if (!fs.existsSync(src)) continue;
       const dst = path.join(tmpDir, f);
-      fs.copyFileSync(src, dst);
-      bytes += fs.statSync(dst).size;
+      await fsp.copyFile(src, dst);
+      bytes += (await fsp.stat(dst)).size;
     }
-    fs.renameSync(tmpDir, finalDir);
+    await fsp.rename(tmpDir, finalDir);
   } catch (err) {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    try { await fsp.rm(tmpDir, { recursive: true, force: true }); } catch {}
     logger?.warn?.('[brain-backup] create failed', { error: err.message });
     return { created: false, reason: `copy-failed:${err.message}` };
   }
@@ -129,7 +130,7 @@ async function maybeBackup(brainDir, opts = {}) {
   if (all.length > retention) {
     for (const old of all.slice(0, all.length - retention)) {
       try {
-        fs.rmSync(old.path, { recursive: true, force: true });
+        await fsp.rm(old.path, { recursive: true, force: true });
         pruned++;
       } catch (err) {
         logger?.warn?.('[brain-backup] prune failed', { backup: old.name, error: err.message });

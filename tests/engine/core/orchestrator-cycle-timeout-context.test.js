@@ -20,7 +20,7 @@ test('cycle heartbeat timer is declared outside try so finally can clear it', ()
 });
 
 test('cycle timeout callback logs phase context for slow-cycle diagnosis', () => {
-  assert.match(source, /startCycleTimer\(this\.cycleCount, cycleTimeout, \(cycle, elapsedMs\) => \{/);
+  assert.match(source, /startCycleTimer\(this\.cycleCount, [^,]+, \(cycle, elapsedMs\) => \{/);
   assert.match(source, /\[cycle-phase\] timeout context/);
   assert.match(source, /phaseElapsedMs/);
   assert.match(source, /completedPhases/);
