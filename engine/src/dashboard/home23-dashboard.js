@@ -3824,12 +3824,38 @@ function renderGoodLifeHostPressure(host) {
   `;
 }
 
+function renderGoodLifePm2Changes(pm2) {
+  if (!pm2 || !Array.isArray(pm2.processes) || pm2.processes.length === 0) return '';
+  const invalid = Number(pm2.invalidRestartCounters || 0);
+  return `
+    <section><h4>Runtime Changes</h4>
+      <div class="h23-goodlife-evidence-row ${invalid ? 'watch' : 'info'}">
+        <strong>PM2 changes</strong>
+        <span>${escapeHtml(`${Number(pm2.recentHome23Changes || 0)} Home23 process change${Number(pm2.recentHome23Changes || 0) === 1 ? '' : 's'}`)}</span>
+        <small>${escapeHtml(invalid ? `${invalid} unknown restart counter${invalid === 1 ? '' : 's'}` : 'restart counters normal')}</small>
+        <em>${escapeHtml(invalid ? 'verify counter' : 'observed')}</em>
+      </div>
+      ${pm2.processes.slice(0, 6).map((row) => `<div class="h23-goodlife-evidence-row">
+        <strong>${escapeHtml(row.name || 'pm2 process')}</strong>
+        <span>${escapeHtml(`${Number(row.changes || 0)} change${Number(row.changes || 0) === 1 ? '' : 's'}`)}</span>
+        <small>${escapeHtml([
+    row.lastChangeStatus ? `last change ${row.lastChangeStatus}` : null,
+    row.role || null,
+    row.lastRestartCount == null ? (row.rawRestartCount ? 'restart counter unknown' : null) : `restart ${row.lastRestartCount}`,
+  ].filter(Boolean).join(' - '))}</small>
+        <em>${escapeHtml(row.lastAt ? timeSince(new Date(row.lastAt)) : 'observed')}</em>
+      </div>`).join('')}
+    </section>
+  `;
+}
+
 function renderGoodLifeInsightsDetail(data) {
   const detail = data?.operator?.detail || {};
   const metrics = detail.insights?.trendMetrics || {};
   const ledger = detail.insights?.ledgerTail || [];
   const budget = detail.insights?.autonomyBudget || data?.operator?.autonomyBudget || null;
   const host = detail.insights?.host || data?.state?.evidence?.host || null;
+  const pm2 = detail.insights?.pm2 || data?.state?.evidence?.pm2 || null;
   const budgetHtml = budget ? `
     <section><h4>Autonomy Budget</h4>
       <div class="h23-goodlife-evidence-row">
@@ -3846,6 +3872,7 @@ function renderGoodLifeInsightsDetail(data) {
     </div>
     ${budgetHtml}
     ${renderGoodLifeHostPressure(host)}
+    ${renderGoodLifePm2Changes(pm2)}
     <section><h4>Recent Good Life Ledger</h4>${ledger.length ? ledger.map((entry) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(entry.event || entry.type || 'entry')}</strong><span>${escapeHtml(entry.summary || entry.message || entry.mode || '')}</span><small>${entry.at || entry.timestamp ? escapeHtml(timeSince(new Date(entry.at || entry.timestamp))) : ''}</small></div>`).join('') : '<div class="h23-goodlife-empty">No ledger entries</div>'}</section>
   `;
 }

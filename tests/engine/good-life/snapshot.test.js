@@ -149,6 +149,69 @@ test('Good Life snapshot includes latest machine host pressure evidence', () => 
   }
 });
 
+test('Good Life snapshot summarizes recent PM2 restart observations', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-snapshot-'));
+  try {
+    const channelsDir = join(dir, 'channels');
+    mkdirSync(channelsDir, { recursive: true });
+    const rows = [
+      {
+        payload: {
+          name: 'home23-jerry-dash',
+          status: 'online',
+          restartCount: 951,
+          prevRestartCount: 950,
+          topology: { family: 'home23', role: 'agent-dashboard' },
+          at: '2026-05-10T09:13:00.000Z',
+        },
+      },
+      {
+        payload: {
+          name: 'home23-jerry-dash',
+          status: 'online',
+          restartCount: 952,
+          prevRestartCount: 951,
+          topology: { family: 'home23', role: 'agent-dashboard' },
+          at: '2026-05-10T09:17:00.000Z',
+        },
+      },
+      {
+        payload: {
+          name: 'home23-forrest-dash',
+          status: 'online',
+          restartCount: null,
+          rawRestartCount: '171111111111111111111111',
+          topology: { family: 'home23', role: 'agent-dashboard' },
+          at: '2026-05-10T09:18:00.000Z',
+        },
+      },
+      {
+        payload: {
+          name: 'external-tool',
+          status: 'online',
+          restartCount: 2,
+          prevRestartCount: 1,
+          topology: { family: null, role: 'external-workload' },
+          at: '2026-05-10T09:19:00.000Z',
+        },
+      },
+    ];
+    writeFileSync(join(channelsDir, 'os.pm2.jsonl'), `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
+
+    const snapshot = buildGoodLifeSnapshot({ runtimeRoot: dir });
+
+    assert.equal(snapshot.pm2.recentHome23Changes, 3);
+    assert.equal(snapshot.pm2.invalidRestartCounters, 1);
+    assert.equal(snapshot.pm2.processes[0].name, 'home23-jerry-dash');
+    assert.equal(snapshot.pm2.processes[0].changes, 2);
+    assert.equal(snapshot.pm2.processes[0].lastRestartCount, 952);
+    assert.equal(snapshot.pm2.processes[1].name, 'home23-forrest-dash');
+    assert.equal(snapshot.pm2.processes[1].lastRestartCount, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('Good Life action summary prefers structured recent failure counter over prose mentions', () => {
   const snapshot = buildGoodLifeSnapshot({
     runtimeRoot: '',

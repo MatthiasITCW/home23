@@ -73,6 +73,26 @@ test('GoodLifeObjective treats host resource pressure as friction drift', () => 
   assert.equal(evaluation.evidence.host.swap.usedPct, 91.6);
 });
 
+test('GoodLifeObjective preserves PM2 runtime-change evidence', () => {
+  const objective = new GoodLifeObjective();
+  const pm2 = {
+    recentHome23Changes: 3,
+    invalidRestartCounters: 1,
+    processes: [
+      { name: 'home23-jerry-dash', changes: 2, lastChangeStatus: 'online', lastRestartCount: 952 },
+    ],
+  };
+  const evaluation = objective.evaluate({
+    now: '2026-05-10T09:20:00.000Z',
+    liveProblems: { open: 0, chronic: 0 },
+    crystallization: { lastReceiptAt: '2026-05-10T09:19:00.000Z' },
+    memory: { nodes: 100, edges: 180 },
+    pm2,
+  });
+
+  assert.deepEqual(evaluation.evidence.pm2, pm2);
+});
+
 test('GoodLifeObjective treats critical host pressure as repair drift', () => {
   const objective = new GoodLifeObjective();
   const evaluation = objective.evaluate({

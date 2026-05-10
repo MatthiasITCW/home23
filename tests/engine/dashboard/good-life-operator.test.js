@@ -379,6 +379,31 @@ test('Good Life operator detail carries host pressure evidence for the UI', () =
   assert.deepEqual(model.detail.insights.host, host);
 });
 
+test('Good Life operator detail carries PM2 restart evidence for the UI', () => {
+  const pm2 = {
+    recentHome23Changes: 3,
+    invalidRestartCounters: 1,
+    processes: [
+      { name: 'home23-jerry-dash', role: 'agent-dashboard', lastChangeStatus: 'online', changes: 2, lastRestartCount: 952, lastAt: '2026-05-10T09:17:00.000Z' },
+      { name: 'home23-forrest-dash', role: 'agent-dashboard', lastChangeStatus: 'online', changes: 1, lastRestartCount: null, rawRestartCount: '171111111111111111111111', lastAt: '2026-05-10T09:18:00.000Z' },
+    ],
+  };
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 12, unverifiable: 0, total: 12 },
+        goals: { open: 0, total: 0 },
+        agenda: { pending: 0 },
+        pm2,
+      },
+    }),
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.deepEqual(model.detail.insights.pm2, pm2);
+});
+
 test('Good Life operator model annotates latest routed agenda status', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState(),

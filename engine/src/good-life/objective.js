@@ -187,6 +187,7 @@ class GoodLifeObjective {
       publish: s.publish || null,
       actions: s.actions || null,
       host: s.host || null,
+      pm2: s.pm2 || null,
       goodLife: s.goodLife || null,
     };
   }

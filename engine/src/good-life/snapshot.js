@@ -26,6 +26,7 @@ function buildGoodLifeSnapshot({
     thinkingMachine: orchestrator?.thinkingMachine?.getStats?.() || null,
     publish: summarizePublish(runtimeRoot),
     goodLife: summarizeGoodLife(runtimeRoot),
+    pm2: summarizePm2(runtimeRoot),
     surfaces: summarizeSurfaces(workspacePath),
     sleep: {
       active: Boolean(orchestrator?.sleepSession?.active),
@@ -102,6 +103,42 @@ function summarizeHostPressure(runtimeRoot) {
         }
         : null,
     } : null,
+  };
+}
+
+function summarizePm2(runtimeRoot) {
+  const rows = tailJsonl(path.join(runtimeRoot || '', 'channels', 'os.pm2.jsonl'), 80)
+    .map((row) => row?.payload)
+    .filter((payload) => payload && payload.topology?.family === 'home23');
+  const byName = new Map();
+  let invalidRestartCounters = 0;
+  for (const payload of rows) {
+    if (payload.restartCount === null && payload.rawRestartCount != null) invalidRestartCounters++;
+    const rec = byName.get(payload.name) || {
+      name: payload.name,
+      role: payload.topology?.role || null,
+      lastChangeStatus: payload.status || null,
+      changes: 0,
+      lastAt: null,
+      lastRestartCount: null,
+      rawRestartCount: null,
+    };
+    rec.changes++;
+    rec.lastChangeStatus = payload.status || rec.lastChangeStatus;
+    rec.lastAt = toIsoTime(payload.at) || rec.lastAt;
+    rec.lastRestartCount = payload.restartCount == null
+      ? null
+      : (Number.isFinite(Number(payload.restartCount)) ? Number(payload.restartCount) : null);
+    rec.rawRestartCount = payload.rawRestartCount != null ? String(payload.rawRestartCount) : rec.rawRestartCount;
+    byName.set(payload.name, rec);
+  }
+  const processes = [...byName.values()]
+    .sort((a, b) => b.changes - a.changes || String(a.name).localeCompare(String(b.name)))
+    .slice(0, 8);
+  return {
+    recentHome23Changes: rows.length,
+    invalidRestartCounters,
+    processes,
   };
 }
 
