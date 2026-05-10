@@ -1055,6 +1055,44 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
   return lines;
 }
 
+function buildOperatorDigest({ brief, liveProblems, work }) {
+  const counts = liveProblems?.counts || {};
+  const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
+  const interventionCount = Number(counts.interventionRequired || 0);
+  const latestResolution = Array.isArray(liveProblems?.resolved) ? liveProblems.resolved[0] || null : null;
+  const activeProblem = firstActiveLiveProblem(liveProblems || {});
+  const workStatus = work?.statusText || 'no active routed work';
+
+  let userAction = 'No user action needed right now.';
+  if (interventionCount > 0) {
+    userAction = formatRemediationLine('User action', activeProblem?.nextRemediation)
+      || 'User decision is required before autonomous repair can continue.';
+  } else if (work?.agendaNeedingReview > 0 || work?.goalsNeedingReview > 0) {
+    userAction = workStatus || 'Operator review is recommended for active work.';
+  } else if (brief?.severity === 'attention' || brief?.severity === 'critical') {
+    userAction = brief.next || 'Review the warning before treating the projection as current.';
+  }
+
+  return {
+    issue: activeCount > 0
+      ? `${activeCount} active live problem${activeCount === 1 ? '' : 's'}`
+      : 'No active live problems',
+    currentWork: work?.activeTotal > 0 ? workStatus : 'No active routed work',
+    latestFix: latestResolution
+      ? compactText(latestResolution.fixRecipe?.summary || latestResolution.claim || latestResolution.id || 'recent verified resolution', 220)
+      : 'No recent verified repair receipt',
+    userAction: compactText(userAction, 220),
+    evidence: {
+      open: Number(counts.open || 0),
+      chronic: Number(counts.chronic || 0),
+      interventionRequired: interventionCount,
+      activeWork: Number(work?.activeTotal || 0),
+      latestResolutionId: latestResolution?.id || null,
+      targetTab: brief?.target?.tab || null,
+    },
+  };
+}
+
 function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail, obligations }) {
   const activeRows = [
     ...(Array.isArray(liveProblems.open) ? liveProblems.open : []),
@@ -1191,6 +1229,11 @@ function buildGoodLifeOperatorModel({
     latestAction,
     projection,
     freshness,
+  });
+  model.operatorDigest = buildOperatorDigest({
+    brief: model.operatorBrief,
+    liveProblems: directLiveProblems,
+    work,
   });
   return model;
 }

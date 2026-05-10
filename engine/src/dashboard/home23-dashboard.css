@@ -3197,6 +3197,38 @@ body.h23-external-focus #cosmo23-refresh-btn {
   white-space: nowrap;
 }
 
+.h23-goodlife-digest-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.h23-goodlife-digest-card {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255,255,255,0.055);
+  min-width: 0;
+  min-height: 72px;
+}
+
+.h23-goodlife-digest-card label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.h23-goodlife-digest-card span {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .h23-goodlife-operator-answer-panel {
   border: 1px solid rgba(90,200,250,0.24);
   border-radius: 6px;
@@ -3538,6 +3570,7 @@ body.h23-external-focus #cosmo23-refresh-btn {
   }
 
   .h23-goodlife-top-grid,
+  .h23-goodlife-digest-grid,
   .h23-goodlife-overlay-workspace,
   .h23-goodlife-detail-grid {
     grid-template-columns: 1fr;

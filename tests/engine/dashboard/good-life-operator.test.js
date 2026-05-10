@@ -303,6 +303,17 @@ test('Good Life operator model exposes safe current help state with evidence and
   assert.equal(model.latestRegulatorAction.agendaId, 'ag-gl-test');
   assert.equal(model.lanes.find((lane) => lane.name === 'continuity').active, true);
   assert.ok(model.operatorAnswer.some((line) => line.includes('strained continuity drift')));
+  assert.deepEqual(model.operatorDigest.evidence, {
+    open: 0,
+    chronic: 0,
+    interventionRequired: 0,
+    activeWork: 0,
+    latestResolutionId: null,
+    targetTab: 'issues',
+  });
+  assert.equal(model.operatorDigest.issue, 'No active live problems');
+  assert.equal(model.operatorDigest.currentWork, 'No active routed work');
+  assert.equal(model.operatorDigest.userAction, 'No user action needed right now.');
 });
 
 test('Good Life operator model annotates latest routed agenda status', () => {
@@ -363,6 +374,9 @@ test('Good Life operator answer surfaces live problems that need user interventi
     label: 'Review Issue',
     worker: null,
   });
+  assert.equal(model.operatorDigest.issue, '1 active live problem');
+  assert.match(model.operatorDigest.userAction, /User action: notify_jtr - Pick the bridge owner/);
+  assert.equal(model.operatorDigest.evidence.interventionRequired, 1);
 });
 
 test('Good Life operator answer names open live problem and latest fix attempt', () => {

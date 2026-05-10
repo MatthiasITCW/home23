@@ -3210,11 +3210,18 @@ function renderGoodLifeTop(data) {
   const work = operator.work || operator.detail?.work?.summary || {};
   const activeWork = Number(workCounts.activeAgenda || 0) + Number(workCounts.activeGoals || 0);
   const warnings = operator.consistency?.warnings || [];
+  const digest = operator.operatorDigest || null;
   const answerLines = (operator.operatorAnswer || [])
     .filter(Boolean)
     .slice(0, 5);
   return `
     ${renderGoodLifeBrief(operator, data?._scope || goodLifeOverlayState.scope || 'home')}
+    ${digest ? `<div class="h23-goodlife-digest-grid">
+      <div class="h23-goodlife-digest-card"><label>Issue</label><span>${escapeHtml(digest.issue || '')}</span></div>
+      <div class="h23-goodlife-digest-card"><label>Now</label><span>${escapeHtml(digest.currentWork || '')}</span></div>
+      <div class="h23-goodlife-digest-card"><label>Fixed</label><span>${escapeHtml(digest.latestFix || '')}</span></div>
+      <div class="h23-goodlife-digest-card"><label>You</label><span>${escapeHtml(digest.userAction || '')}</span></div>
+    </div>` : ''}
     <div class="h23-goodlife-top-grid">
       <div class="h23-goodlife-top-card">
         <label>Mode</label>
