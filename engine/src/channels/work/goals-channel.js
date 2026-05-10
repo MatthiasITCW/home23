@@ -13,8 +13,14 @@ import { ChannelClass, makeObservation } from '../contract.js';
 const LIFECYCLE = ['pending', 'assigned', 'acks', 'complete', 'revoked'];
 
 export class GoalsChannel extends WatchChannel {
-  constructor({ goalsDir, id = 'work.goals' }) {
-    super({ id, class: ChannelClass.WORK, paths: LIFECYCLE.map((s) => `${goalsDir}/${s}`) });
+  constructor({ goalsDir, id = 'work.goals', usePolling = false, interval = 1000 }) {
+    super({
+      id,
+      class: ChannelClass.WORK,
+      paths: LIFECYCLE.map((s) => `${goalsDir}/${s}`),
+      usePolling,
+      interval,
+    });
     this.goalsDir = goalsDir;
   }
 

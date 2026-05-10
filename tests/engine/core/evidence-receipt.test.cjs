@@ -57,3 +57,18 @@ test('orchestrator full-loop finally uses outer evidence context, not try-scoped
   assert.doesNotMatch(source, /roleId: role\?\.id \|\| 'unknown'/);
   assert.doesNotMatch(source, /energy: cognitiveState\?\.energy \|\| 0/);
 });
+
+test('executive no-viable-goals skip exits before expensive thought generation', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'engine/src/core/orchestrator.js'), 'utf8');
+  const skipIdx = source.indexOf("executiveDecision.action === 'SKIP'");
+  const idleIdx = source.indexOf("role: 'executive-idle'", skipIdx);
+  const returnIdx = source.indexOf('return;', idleIdx);
+  const superpositionIdx = source.indexOf('this.quantum.generateSuperposition', skipIdx);
+
+  assert.notEqual(skipIdx, -1);
+  assert.notEqual(idleIdx, -1);
+  assert.notEqual(returnIdx, -1);
+  assert.notEqual(superpositionIdx, -1);
+  assert.ok(returnIdx < superpositionIdx);
+  assert.match(source.slice(skipIdx, returnIdx), /no\[_ -\]\?viable\[_ -\]\?goals/);
+});

@@ -7,13 +7,19 @@ import { WatchChannel } from '../../../../engine/src/channels/base/watch-channel
 import { ChannelClass } from '../../../../engine/src/channels/contract.js';
 
 class FakeWatch extends WatchChannel {
-  constructor(dir) { super({ id: 'test.watch', class: ChannelClass.BUILD, paths: [dir] }); }
+  constructor(dir) { super({ id: 'test.watch', class: ChannelClass.BUILD, paths: [dir], usePolling: true, interval: 50 }); }
   parseEvent(evt) { return { payload: evt, sourceRef: `${evt.type}:${evt.path}`, producedAt: evt.ts }; }
 }
 
 test('WatchChannel constructor rejects empty paths', () => {
   assert.throws(() => new WatchChannel({ id: 'x.y', class: ChannelClass.BUILD, paths: [] }), /at least one path/);
   assert.throws(() => new WatchChannel({ id: 'x.y', class: ChannelClass.BUILD }), /at least one path/);
+});
+
+test('WatchChannel defaults to native events instead of hot polling', () => {
+  const ch = new WatchChannel({ id: 'x.y', class: ChannelClass.BUILD, paths: ['/tmp'] });
+  assert.equal(ch.usePolling, false);
+  assert.equal(ch.interval, 1000);
 });
 
 test('WatchChannel emits events on file add', async () => {

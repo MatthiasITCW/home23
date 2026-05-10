@@ -10,13 +10,15 @@ import chokidar from 'chokidar';
 import { Channel } from '../contract.js';
 
 export class WatchChannel extends Channel {
-  constructor({ id, class: cls, paths, ignored }) {
+  constructor({ id, class: cls, paths, ignored, usePolling = false, interval = 1000 }) {
     super({ id, class: cls });
     if (!Array.isArray(paths) || paths.length === 0) {
       throw new Error('WatchChannel requires at least one path');
     }
     this.paths = paths;
     this.ignored = ignored || /(^|[/\\])\.[^/\\]/;
+    this.usePolling = Boolean(usePolling);
+    this.interval = interval;
     this._running = false;
     this._queue = [];
     this._waiters = [];
@@ -30,8 +32,8 @@ export class WatchChannel extends Channel {
       ignored: this.ignored,
       ignoreInitial: true,
       persistent: false,
-      usePolling: true,
-      interval: 250,
+      usePolling: this.usePolling,
+      interval: this.interval,
       awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
     });
     for (const type of ['add', 'change', 'unlink', 'addDir', 'unlinkDir']) {

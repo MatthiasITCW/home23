@@ -8,7 +8,7 @@ import { GoalsChannel } from '../../../../engine/src/channels/work/goals-channel
 test('GoalsChannel emits state from parent directory name', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'goals-'));
   for (const sub of ['pending', 'assigned', 'acks', 'complete', 'revoked']) mkdirSync(join(dir, sub));
-  const ch = new GoalsChannel({ goalsDir: dir });
+  const ch = new GoalsChannel({ goalsDir: dir, usePolling: true, interval: 50 });
   await ch.start();
   writeFileSync(join(dir, 'pending', 'g1.json'), JSON.stringify({ id: 'g1' }));
   const out = [];

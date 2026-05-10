@@ -11,7 +11,7 @@ import { ChannelClass, makeObservation } from '../contract.js';
 
 export class FsWatchHome23Channel extends WatchChannel {
   constructor({ repoPath, id = 'os.fswatch-home23' }) {
-    const paths = [`${repoPath}/engine`, `${repoPath}/src`, `${repoPath}/cli`, `${repoPath}/scripts`];
+    const paths = [`${repoPath}/engine/src`, `${repoPath}/src`, `${repoPath}/cli`, `${repoPath}/scripts`];
     super({ id, class: ChannelClass.OS, paths });
   }
 

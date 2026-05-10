@@ -1839,36 +1839,9 @@ class Orchestrator {
           this.logger.info('Skipping thought generation; writing idle status thought for freshness');
 
           const cognitiveState = this.stateModulator.getState();
-          const idleEntry = {
-            cycle: this.cycleCount,
+          await this._logInternalThought({
             role: 'idle',
             thought: `Idle cycle — conserving energy at ${(cognitiveState.energy * 100).toFixed(0)}%`,
-            reasoning: null,
-            goal: null,
-            surprise: 0,
-            cognitiveState: { ...cognitiveState },
-            oscillatorMode: this.oscillator.getCurrentMode(),
-            perturbation: null,
-            tunnel: false,
-            goalsAutoCaptured: 0,
-            usedWebSearch: false,
-            temporalContext: this.currentTemporalContext,
-            model: 'internal',
-            timestamp: new Date()
-          };
-
-          this.journal.push(idleEntry);
-          await this.logThought(idleEntry);
-
-          cosmoEvents.emitThought({
-            cycle: this.cycleCount,
-            thought: idleEntry.thought,
-            role: 'idle',
-            surprise: 0,
-            model: 'internal',
-            reasoning: null,
-            usedWebSearch: false,
-            temporalContext: this.currentTemporalContext,
           });
 
           await this.saveState();
@@ -1900,6 +1873,26 @@ class Orchestrator {
           this.logger.info('⏭️  Executive intervention - skipping spawn logic', { 
             action: executiveDecision.action 
           }, 2);
+        }
+
+        const executiveSkipReason = String(executiveDecision.reason || '');
+        if (
+          executiveDecision.action === 'SKIP' &&
+          /no[_ -]?viable[_ -]?goals/i.test(executiveSkipReason)
+        ) {
+          // Empty-board executive skips are idle cycles. Do not fall through into
+          // branch generation or web search just to prove nothing is runnable.
+          await this._logInternalThought({
+            role: 'executive-idle',
+            thought: `Executive idle cycle — no viable goals; conserving energy at ${(cognitiveState.energy * 100).toFixed(0)}%`,
+            metadata: {
+              executiveAction: executiveDecision.action,
+              executiveReason: executiveSkipReason,
+              executiveCoherence: this.executiveRing?.getCoherenceScore?.() ?? null,
+            },
+          });
+          await this.saveState();
+          return;
         }
       }
       
@@ -6357,6 +6350,43 @@ class Orchestrator {
     } catch (error) {
       this.logger.error('Failed to log', { error: error.message });
     }
+  }
+
+  async _logInternalThought({ role, thought, metadata = {} }) {
+    const entry = {
+      cycle: this.cycleCount,
+      role,
+      thought,
+      reasoning: null,
+      goal: null,
+      surprise: 0,
+      cognitiveState: { ...this.stateModulator.getState() },
+      oscillatorMode: this.oscillator.getCurrentMode(),
+      perturbation: null,
+      tunnel: false,
+      goalsAutoCaptured: 0,
+      usedWebSearch: false,
+      temporalContext: this.currentTemporalContext,
+      model: 'internal',
+      timestamp: new Date(),
+      ...metadata,
+    };
+
+    this.journal.push(entry);
+    await this.logThought(entry);
+
+    cosmoEvents.emitThought({
+      cycle: this.cycleCount,
+      thought: entry.thought,
+      role: entry.role,
+      surprise: 0,
+      model: 'internal',
+      reasoning: null,
+      usedWebSearch: false,
+      temporalContext: this.currentTemporalContext,
+    });
+
+    return entry;
   }
 
   async _logThoughtJournalFreshnessMarker({ roleId = null, reason = 'discarded', preview = '' } = {}) {
