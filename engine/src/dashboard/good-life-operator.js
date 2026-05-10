@@ -1175,7 +1175,7 @@ function buildOperatorDigest({ brief, liveProblems, work, budget }) {
 
   return {
     issue: activeCount > 0
-      ? `${activeCount} active live problem${activeCount === 1 ? '' : 's'}`
+      ? compactText(`${activeCount} active live problem${activeCount === 1 ? '' : 's'}: ${activeProblem?.issue || activeProblem?.claim || activeProblem?.id || 'operator issue'}`, 220)
       : 'No active live problems',
     currentWork: work?.activeTotal > 0 ? workStatus : 'No active routed work',
     latestFix: latestResolution

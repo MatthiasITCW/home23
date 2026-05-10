@@ -399,7 +399,7 @@ test('Good Life operator answer surfaces live problems that need user interventi
     label: 'Review Issue',
     worker: null,
   });
-  assert.equal(model.operatorDigest.issue, '1 active live problem');
+  assert.match(model.operatorDigest.issue, /1 active live problem: .*Needs a human decision/);
   assert.match(model.operatorDigest.userAction, /User action: notify_jtr - Pick the bridge owner/);
   assert.equal(model.operatorDigest.evidence.interventionRequired, 1);
 });
@@ -436,6 +436,7 @@ test('Good Life operator answer names open live problem and latest fix attempt',
   assert.ok(model.operatorAnswer.some((line) => line.includes('Top live problem: forrest_engine_cycle_timeouts_clear')));
   assert.equal(model.liveProblems.open[0].issue, 'forrest engine has recent cycle timeout exceeded events in the last 30 minutes');
   assert.match(model.operatorBrief.why, /forrest engine has recent cycle timeout exceeded events/);
+  assert.match(model.operatorDigest.issue, /forrest engine has recent cycle timeout exceeded events/);
   assert.ok(model.operatorAnswer.some((line) => line.includes('Verifier: 2 matching log entries in last 30m')));
   assert.ok(model.operatorAnswer.some((line) => line.includes('Latest fix attempt: dispatch_to_worker dispatched')));
   assert.ok(model.operatorAnswer.some((line) => line.includes('Next autonomous step: dispatch_to_agent')));
