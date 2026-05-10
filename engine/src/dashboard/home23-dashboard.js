@@ -2968,6 +2968,10 @@ function goodLifeBaseForScope(scope = 'home') {
   return agent ? apiBase(agent) : '';
 }
 
+function goodLifeOwnerAgentForScope(scope = 'home') {
+  return goodLifeAgentForScope(scope)?.name || primaryAgent?.name || undefined;
+}
+
 async function loadGoodLifeForScope(scope = 'home') {
   const base = goodLifeBaseForScope(scope);
   const data = await apiFetch(`${base}/api/good-life`, { timeoutMs: GOOD_LIFE_API_TIMEOUT_MS }).catch(() => null);
@@ -3800,7 +3804,7 @@ async function runGoodLifeWorkerCheck(problemId) {
         prompt: buildGoodLifeWorkerPrompt(problem),
         requestedBy: 'good-life-operator',
         requester: 'home23-dashboard',
-        ownerAgent: primaryAgent?.name,
+        ownerAgent: goodLifeOwnerAgentForScope(goodLifeOverlayState.scope),
         source: { type: 'live-problem', id: problem.id },
         metadata: {
           surface: 'good-life',
@@ -3835,7 +3839,7 @@ async function runGoodLifeAgendaWorkerCheck(agendaId) {
     return;
   }
 
-  const owner = goodLifeAgentForScope(goodLifeOverlayState.scope)?.name || primaryAgent?.name || undefined;
+  const owner = goodLifeOwnerAgentForScope(goodLifeOverlayState.scope);
   setText('goodlife-overlay-action-status', `Starting ${workerName} worker for ${agendaId}...`);
   try {
     const result = await workerApi(`/${encodeURIComponent(workerName)}/runs`, {
