@@ -100,11 +100,6 @@ async function withTimeout(promise, timeoutMs, label, controller = null) {
   }
 }
 
-function remainingTimeoutMs(deadlineMs) {
-  if (!deadlineMs) return null;
-  return Math.max(1, deadlineMs - Date.now());
-}
-
 async function createWithGateAndRetry(client, payload, logger, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
   const baseURL = String(client.baseURL || '');
   const gate = getGate(baseURL);
@@ -187,6 +182,10 @@ class ChatCompletionsClient {
       config.requestTimeoutMs ?? config.timeoutMs ?? config.operationTimeoutMs,
       DEFAULT_REQUEST_TIMEOUT_MS
     );
+    this.streamIdleTimeoutMs = normalizeTimeoutMs(
+      config.streamIdleTimeoutMs ?? config.streamTimeoutMs,
+      this.requestTimeoutMs
+    );
 
     this.logger?.info?.('ChatCompletionsClient initialized', {
       baseURL,
@@ -194,7 +193,8 @@ class ChatCompletionsClient {
       hasApiKey: apiKey !== 'not-needed',
       supportsTools: this.supportsTools,
       supportsStreaming: this.supportsStreaming,
-      requestTimeoutMs: this.requestTimeoutMs
+      requestTimeoutMs: this.requestTimeoutMs,
+      streamIdleTimeoutMs: this.streamIdleTimeoutMs
     });
   }
 
@@ -466,9 +466,8 @@ class ChatCompletionsClient {
    * Generate with streaming (preferred method)
    */
   async generateStreaming(payload, originalModel, timeoutMs = this.requestTimeoutMs) {
-    const startedAt = Date.now();
-    const deadlineMs = timeoutMs ? startedAt + timeoutMs : null;
     const stream = await createWithGateAndRetry(this.client, payload, this.logger, timeoutMs);
+    const streamIdleTimeoutMs = this.streamIdleTimeoutMs || timeoutMs;
 
     let aggregatedText = '';
     let finalResponse = null;
@@ -485,7 +484,7 @@ class ChatCompletionsClient {
       while (true) {
         const next = await withTimeout(
           iterator.next(),
-          remainingTimeoutMs(deadlineMs),
+          streamIdleTimeoutMs,
           'Chat Completions stream'
         );
         if (next.done) break;

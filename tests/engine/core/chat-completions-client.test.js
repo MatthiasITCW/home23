@@ -65,3 +65,26 @@ test('streaming chat completions stalls time out while waiting for chunks', asyn
     messages: [{ role: 'user', content: 'hello' }],
   }));
 });
+
+test('streaming chat completions use a fresh timeout after the stream opens', async () => {
+  async function* delayedHealthyStream() {
+    await new Promise((resolve) => setTimeout(resolve, 8));
+    yield { choices: [{ delta: { content: 'ok' } }] };
+  }
+
+  const client = makeClient({
+    supportsStreaming: true,
+    requestTimeoutMs: 25,
+    create: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 24));
+      return delayedHealthyStream();
+    },
+  });
+
+  const result = await client.generate({
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+
+  assert.equal(result.content, 'ok');
+  assert.equal(result.hadError, false);
+});
