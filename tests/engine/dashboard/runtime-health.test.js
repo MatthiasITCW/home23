@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { DashboardServer } = require('../../../engine/src/dashboard/server.js');
+const { DashboardServer, readJsonlTail } = require('../../../engine/src/dashboard/server.js');
 
 test('live-problems file resolves through requested agent context', () => {
   const server = Object.create(DashboardServer.prototype);
@@ -17,6 +19,27 @@ test('live-problems file resolves through requested agent context', () => {
     server.getHome23LiveProblemsFile('forrest'),
     path.join('/tmp/home23-test', 'instances', 'forrest', 'brain', 'live-problems.json'),
   );
+});
+
+test('readJsonlTail reads only the requested recent JSONL rows from a bounded window', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'home23-jsonl-tail-'));
+  const file = path.join(dir, 'good-life-ledger.jsonl');
+  try {
+    const rows = [];
+    for (let i = 0; i < 200; i++) {
+      rows.push(JSON.stringify({
+        index: i,
+        payload: 'x'.repeat(120),
+      }));
+    }
+    writeFileSync(file, rows.join('\n') + '\n');
+
+    const tail = readJsonlTail(file, 3, 2048);
+
+    assert.deepEqual(tail.map((row) => row.index), [197, 198, 199]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('runtime health treats timed-out engine health as degraded when PM2 says process is online', async () => {

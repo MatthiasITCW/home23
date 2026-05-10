@@ -23,6 +23,41 @@ const {
   buildGoodLifeObligationSnapshot,
 } = require('./good-life-operator');
 
+function readJsonlTail(file, limit = 20, maxBytes = 256 * 1024) {
+  const fsSync = require('fs');
+  const count = Math.max(0, Number(limit) || 0);
+  if (!file || count === 0) return [];
+
+  let fd = null;
+  try {
+    const stat = fsSync.statSync(file);
+    if (!stat.isFile() || stat.size <= 0) return [];
+
+    const bytesToRead = Math.min(stat.size, Math.max(4096, Number(maxBytes) || 256 * 1024));
+    const start = stat.size - bytesToRead;
+    const buffer = Buffer.alloc(bytesToRead);
+    fd = fsSync.openSync(file, 'r');
+    fsSync.readSync(fd, buffer, 0, bytesToRead, start);
+
+    let text = buffer.toString('utf8');
+    if (start > 0) {
+      const firstNewline = text.indexOf('\n');
+      text = firstNewline >= 0 ? text.slice(firstNewline + 1) : '';
+    }
+
+    const lines = text.trim().split('\n').filter(Boolean).slice(-count);
+    return lines.map((line) => {
+      try { return JSON.parse(line); } catch { return null; }
+    }).filter(Boolean);
+  } catch {
+    return [];
+  } finally {
+    if (fd !== null) {
+      try { fsSync.closeSync(fd); } catch {}
+    }
+  }
+}
+
 /**
  * Phase 2B Dashboard Server
  * Real-time visualization of all Phase 2B features
@@ -5136,15 +5171,7 @@ Be specific, actionable, and maintain research continuity.`;
           }
         };
         const tailJsonl = (name, limit = 20) => {
-          try {
-            const file = path.join(goodLifeLogsDir, name);
-            if (!fsSync.existsSync(file)) return [];
-            return fsSync.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).slice(-limit).map(line => {
-              try { return JSON.parse(line); } catch { return null; }
-            }).filter(Boolean);
-          } catch {
-            return [];
-          }
+          return readJsonlTail(path.join(goodLifeLogsDir, name), limit);
         };
         const readJsonl = (name) => {
           try {
@@ -11061,4 +11088,4 @@ if (require.main === module) {
   server.start();
 }
 
-module.exports = { DashboardServer };
+module.exports = { DashboardServer, readJsonlTail };
