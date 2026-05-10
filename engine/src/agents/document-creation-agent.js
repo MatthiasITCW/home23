@@ -91,6 +91,10 @@ class DocumentCreationAgent extends BaseAgent {
       missionText.includes('scaffold') ||
       missionText.includes('checklist') ||
       missionText.includes('schema') ||
+      missionText.includes('specification') ||
+      missionText.includes('selection criteria') ||
+      missionText.includes('failure mode') ||
+      missionText.includes('technical stakeholder') ||
       missionText.includes('workflow') ||
       missionText.includes('/outputs/') && (
         missionText.includes('.csv') ||

@@ -123,3 +123,49 @@ test('force-output document missions bypass claim intake and emit deliverables',
   assert.equal(result.success, true);
   assert.equal(agent.results.some((entry) => entry.type === 'deliverable'), true);
 });
+
+test('technical specification document missions bypass claim intake and emit deliverables', async () => {
+  process.env.OPENAI_API_KEY ||= 'test-key';
+  const agent = new DocumentCreationAgent({
+    goalId: 'goal_spec',
+    triggerSource: 'orchestrator',
+    spawningReason: 'goal_execution',
+    description: 'Create a comprehensive specification document on platform selection criteria that explicitly incorporates failure mode sensitivity, tailored for the Home23 AI operating system context. The document should include at least five key selection criteria, each with a failure mode analysis table, and be structured as a formal specification suitable for technical stakeholders.',
+  }, { logsDir: os.tmpdir() }, { info() {}, warn() {}, error() {}, debug() {} });
+
+  let generated = false;
+  agent.memory = { nodes: new Map([[1, { concept: 'selection criterion' }], [2, { concept: 'failure mode' }], [3, { concept: 'technical stakeholder' }]]) };
+  agent.documentManager = { initialize: async () => {}, setCapabilities() {} };
+  agent.loadDefaultTemplates = async () => {};
+  agent.queryMemoryForKnowledge = async () => [];
+  agent.parseDocumentRequirements = async () => ({
+    type: 'specification',
+    format: 'markdown',
+    audience: 'technical_stakeholders',
+    purpose: 'selection_criteria',
+    requirements: [],
+  });
+  agent.generateDocument = async () => {
+    generated = true;
+    return { title: 'Platform Selection Criteria', content: '# Platform Selection Criteria\n\nFailure mode sensitive criteria.' };
+  };
+  agent.formatDocument = async (document) => document;
+  agent.saveDocument = async () => ({
+    title: 'Platform Selection Criteria',
+    filePath: path.join(os.tmpdir(), 'platform-selection-criteria.md'),
+    deliverablePath: path.join(os.tmpdir(), 'platform-selection-criteria.md'),
+    metadataPath: null,
+    format: 'markdown',
+    wordCount: 42,
+    createdAt: new Date().toISOString(),
+  });
+  agent.addDocumentToMemory = async () => {};
+  agent.triggerQualityAssurance = async () => {};
+  agent.writeCompletionMarker = async () => {};
+
+  const result = await agent.execute();
+
+  assert.equal(generated, true);
+  assert.equal(result.success, true);
+  assert.equal(agent.results.some((entry) => entry.type === 'deliverable'), true);
+});
