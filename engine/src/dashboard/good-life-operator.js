@@ -1449,6 +1449,9 @@ function buildGoodLifeOperatorModel({
     freshness,
     budget,
   });
+  if (status === 'conflicted') {
+    model.summary = `${String(model.operatorBrief.status || 'Reconciling').toLowerCase()} - ${model.operatorBrief.headline}`;
+  }
   model.operatorDigest = buildOperatorDigest({
     brief: model.operatorBrief,
     liveProblems: directLiveProblems,

@@ -462,13 +462,24 @@ function defaultSeeds({ agentName, dashboardPort, bridgePort }) {
 function seedAll(store, opts) {
   const seeds = defaultSeeds(opts || {});
   const agent = opts?.agentName || process.env.HOME23_AGENT || 'agent';
+  const seedIds = new Set(seeds.map(s => s.id));
+  const scopedSuffixes = new Set(
+    seeds
+      .map(s => s.id)
+      .filter(id => id.startsWith(`${agent}_`))
+      .map(id => id.slice(agent.length + 1))
+  );
   if (agent !== 'agent') {
     for (const p of store.all()) {
       const isObsoleteGeneric =
         p?.seedOrigin === 'system'
         && (p.id === 'agent_harness_online' || p.id === 'agent_dashboard_ping')
         && /home23-agent(?:-harness|-dash)?/.test(JSON.stringify(p));
-      if (isObsoleteGeneric) store.remove(p.id);
+      const isCrossAgentSystemSeed =
+        p?.seedOrigin === 'system'
+        && !seedIds.has(p.id)
+        && [...scopedSuffixes].some(suffix => p.id.endsWith(`_${suffix}`));
+      if (isObsoleteGeneric || isCrossAgentSystemSeed) store.remove(p.id);
     }
   }
   for (const s of seeds) store.upsert(s);

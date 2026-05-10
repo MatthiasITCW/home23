@@ -40,6 +40,41 @@ test('seedAll prunes obsolete generic agent live-problem seeds', () => {
   }
 });
 
+test('seedAll prunes cross-agent system seeds from an agent store', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-live-problems-'));
+  try {
+    writeFileSync(join(dir, 'live-problems.json'), JSON.stringify({
+      problems: [
+        {
+          id: 'jerry_dashboard_port_owner',
+          seedOrigin: 'system',
+          state: 'open',
+          claim: 'Dashboard port :5012 is owned by home23-jerry-dash, not a stale listener',
+          verifier: { type: 'pm2_port_owner', args: { name: 'home23-jerry-dash', port: '5012' } },
+          remediation: [{ type: 'pm2_restart', args: { name: 'home23-jerry-dash' } }],
+        },
+        {
+          id: 'forrest_dashboard_port_owner',
+          seedOrigin: 'system',
+          state: 'resolved',
+          claim: 'Dashboard port :5012 is owned by home23-forrest-dash, not a stale listener',
+          verifier: { type: 'pm2_port_owner', args: { name: 'home23-forrest-dash', port: '5012' } },
+          remediation: [{ type: 'pm2_restart', args: { name: 'home23-forrest-dash' } }],
+        },
+      ],
+    }));
+
+    const store = new LiveProblemStore({ brainDir: dir });
+    seedAll(store, { agentName: 'forrest', dashboardPort: '5012', bridgePort: '5014' });
+
+    assert.equal(store.get('jerry_dashboard_port_owner'), undefined);
+    assert.equal(store.get('forrest_dashboard_port_owner')?.verifier?.args?.name, 'home23-forrest-dash');
+    assert.equal(store.get('forrest_dashboard_port_owner')?.verifier?.args?.port, '5012');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('default seeds include agent-local operational log pressure invariants', () => {
   const seeds = defaultSeeds({ agentName: 'forrest', dashboardPort: '5012', bridgePort: '5014' });
   const byId = new Map(seeds.map((seed) => [seed.id, seed]));

@@ -508,6 +508,7 @@ test('Good Life operator brief calls out projection mismatch when registry is cl
   assert.equal(model.operatorBrief.severity, 'attention');
   assert.equal(model.operatorBrief.status, 'Reconciling');
   assert.match(model.operatorBrief.headline, /projection disagrees/);
+  assert.equal(model.summary, 'reconciling - Registry is clear; Good Life projection disagrees');
   assert.match(model.operatorBrief.why, /open projected 1, registry 0/);
   assert.equal(model.operatorBrief.target.tab, 'insights');
 });
