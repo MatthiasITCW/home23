@@ -410,7 +410,7 @@ function addTrigger(brainDir, { condition, source, cycle }) {
 async function routeThoughtAction(opts) {
   const {
     hypothesis, role, cycle, brainDir, workspaceDir, agentName,
-    agentExecutor, logger, sensors, memory, goalSystem, writeReceipt,
+    agentExecutor, logger, sensors, memory, goalSystem, artifactRegistry, writeReceipt,
   } = opts;
   const parsed = parseThoughtAction(hypothesis);
 
@@ -424,7 +424,7 @@ async function routeThoughtAction(opts) {
       const result = await executeAction({
         action: parsed.payload,
         role, cycle, brainDir, workspaceDir, agentName,
-        sensors, memory, goalSystem, logger, writeReceipt,
+        sensors, memory, goalSystem, artifactRegistry, logger, writeReceipt,
       });
       return {
         action: 'act',

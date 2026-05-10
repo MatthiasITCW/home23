@@ -53,6 +53,10 @@ const { executeAction } = require('../cognition/action-dispatcher');
 // to ground their reasoning in real data (surface files, brain memory, goals,
 // pending notifications).
 const { buildCycleTools, buildCycleToolExecutor } = require('../cognition/cycle-tools');
+const { ArtifactRegistry } = require('../artifacts/artifact-registry');
+const { ArtifactIngestor } = require('../artifacts/artifact-ingestor');
+const { ArtifactLifecycle } = require('../artifacts/artifact-lifecycle');
+const { ArtifactAudit } = require('../artifacts/artifact-audit');
 
 // EXECUTIVE RING: Executive function layer (dlPFC)
 const { ExecutiveCoordinator } = require('../coordinator/executive-coordinator');
@@ -193,6 +197,12 @@ class Orchestrator {
     
     // Evaluation Framework (initialized after loadState)
     this.evaluation = null;
+
+    // Graph-native artifacts: durable outputs, memory promotions, and reuse lineage.
+    this.artifactRegistry = null;
+    this.artifactIngestor = null;
+    this.artifactLifecycle = null;
+    this.artifactAudit = null;
     
     // Introspection module (self-awareness layer)
     this.introspection = null;
@@ -548,6 +558,43 @@ class Orchestrator {
       this.config.architecture?.goals?.curator || {},
       this.evaluation // Pass evaluation framework
     );
+
+    try {
+      this.artifactRegistry = new ArtifactRegistry({
+        logsDir: this.logsDir,
+        memory: this.memory,
+        logger: this.logger
+      });
+      await this.artifactRegistry.initialize();
+      this.artifactIngestor = new ArtifactIngestor({
+        registry: this.artifactRegistry,
+        memory: this.memory,
+        logger: this.logger
+      });
+      this.artifactLifecycle = new ArtifactLifecycle({
+        registry: this.artifactRegistry,
+        memory: this.memory,
+        logger: this.logger
+      });
+      this.artifactAudit = new ArtifactAudit({
+        registry: this.artifactRegistry,
+        logger: this.logger
+      });
+      if (this.agentExecutor) {
+        this.agentExecutor.artifactRegistry = this.artifactRegistry;
+        this.agentExecutor.artifactLifecycle = this.artifactLifecycle;
+      }
+      this.logger.info('✅ Artifact loop substrate initialized', {
+        registryPath: this.artifactRegistry.registryPath,
+        records: this.artifactRegistry.records.size
+      });
+    } catch (err) {
+      this.logger.warn('Artifact loop substrate initialization failed (non-fatal)', { error: err.message });
+      this.artifactRegistry = null;
+      this.artifactIngestor = null;
+      this.artifactLifecycle = null;
+      this.artifactAudit = null;
+    }
     
     // Pass evaluation framework to agent executor
     if (this.agentExecutor) {
@@ -603,11 +650,14 @@ class Orchestrator {
           this.logger,
           this.executiveRing,
           this.agentExecutor.frontierGate,
-          this.pathResolver
+          this.pathResolver,
+          this.artifactRegistry
         );
         
         // Inject into AgentExecutor so agents receive it
         this.agentExecutor.capabilities = this.capabilities;
+        this.agentExecutor.artifactRegistry = this.artifactRegistry;
+        this.agentExecutor.artifactLifecycle = this.artifactLifecycle;
         
         this.logger.info('✅ Capabilities initialized with Executive Ring', {
           enabled: this.capabilities.enabled,
@@ -2747,6 +2797,7 @@ class Orchestrator {
           sensors: sensorsModule,
           memory: this.memory,
           goalSystem: this.goals,
+          artifactRegistry: this.artifactRegistry,
         });
         if (actionResult.action !== 'none') {
           this.logger.info('🎬 Thought produced action', {
@@ -7883,6 +7934,7 @@ class Orchestrator {
       sensors: sensorsModule,
       memory: this.memory,
       goalSystem: this.goals,
+      artifactRegistry: this.artifactRegistry,
       logger: this.logger,
     });
 

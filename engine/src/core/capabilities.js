@@ -31,12 +31,13 @@ const { spawn } = require('child_process');
  * - Null checks (defensive programming)
  */
 class Capabilities {
-  constructor(config, logger, executiveRing, frontierGate, pathResolver) {
+  constructor(config, logger, executiveRing, frontierGate, pathResolver, artifactRegistry = null) {
     this.config = config;
     this.logger = logger;
     this.executiveRing = executiveRing;
     this.frontierGate = frontierGate;
     this.pathResolver = pathResolver;
+    this.artifactRegistry = artifactRegistry;
 
     // Feature flags
     this.enabled = config.capabilities?.enabled !== false;
@@ -80,6 +81,10 @@ class Capabilities {
       clusterMode: this.clusterEnabled,
       workingDir
     });
+  }
+
+  setArtifactRegistry(artifactRegistry) {
+    this.artifactRegistry = artifactRegistry || null;
   }
 
   /**
@@ -511,7 +516,12 @@ class Capabilities {
           });
         }
         
-        return { success: true, path: resolvedPath };
+        const artifact = await this.registerWrittenArtifact(resolvedPath, contentToAppend, {
+          ...agentContext,
+          operation: 'append',
+          kind: agentContext.artifactKind || 'append_log'
+        });
+        return { success: true, path: resolvedPath, artifactId: artifact?.id || null };
       } finally {
         if (lockAcquired && lockPath) {
           await this.fsHelpers.releaseLock(lockPath);
@@ -563,7 +573,11 @@ class Capabilities {
       // Feature disabled - direct write via PathResolver
       const resolved = this.pathResolver.resolve(logicalPath);
       await this._atomicWrite(resolved, content);
-      return { success: true, path: resolved };
+      const artifact = await this.registerWrittenArtifact(resolved, content, {
+        ...agentContext,
+        operation: 'write'
+      });
+      return { success: true, path: resolved, artifactId: artifact?.id || null };
     }
     
     const actionId = `write_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -672,7 +686,11 @@ class Capabilities {
           agent: agentContext.agentId
         });
         
-        return { success: true, path: resolvedPath };
+        const artifact = await this.registerWrittenArtifact(resolvedPath, content, {
+          ...agentContext,
+          operation: 'write'
+        });
+        return { success: true, path: resolvedPath, artifactId: artifact?.id || null };
         
       } finally {
         // Always release lock
@@ -718,6 +736,37 @@ class Capabilities {
       
     } finally {
       this.pendingActions.delete(actionId);
+    }
+  }
+
+  async registerWrittenArtifact(resolvedPath, content, agentContext = {}) {
+    if (!this.artifactRegistry || typeof this.artifactRegistry.registerFile !== 'function') {
+      return null;
+    }
+    try {
+      return await this.artifactRegistry.registerFile({
+        absolutePath: resolvedPath,
+        content,
+        kind: agentContext.artifactKind || null,
+        status: agentContext.artifactStatus || 'created',
+        producer: 'capabilities',
+        agentId: agentContext.agentId || null,
+        agentType: agentContext.agentType || null,
+        goalId: agentContext.missionGoal || agentContext.goalId || null,
+        taskId: agentContext.taskId || null,
+        cycle: agentContext.cycleCount ?? null,
+        metadata: {
+          operation: agentContext.operation || 'write',
+          logicalPath: agentContext.logicalPath || null,
+          mirrorToMemory: agentContext.artifactMirrorToMemory === true
+        }
+      });
+    } catch (error) {
+      this.logger?.warn?.('[artifact-registry] capability write registration failed', {
+        path: resolvedPath,
+        error: error.message
+      });
+      return null;
     }
   }
   
@@ -1083,4 +1132,3 @@ class Capabilities {
 }
 
 module.exports = { Capabilities };
-

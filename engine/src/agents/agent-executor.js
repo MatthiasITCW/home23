@@ -47,6 +47,8 @@ class AgentExecutor {
     this.externalBridge = new ExternalBridge(config, logger);  // External API integrations
     this.frontierGate = new FrontierGate(config, logger);  // FrontierGate for governance
     this.capabilities = null;  // NEW: Capabilities (injected by Orchestrator after ExecutiveRing init)
+    this.artifactRegistry = phase2bSubsystems.artifactRegistry || null;
+    this.artifactLifecycle = phase2bSubsystems.artifactLifecycle || null;
     
     // Configuration
     this.maxConcurrent = config.coordinator?.maxConcurrent || 2;
@@ -917,6 +919,37 @@ class AgentExecutor {
           }, 3);
         }
       }
+
+      if (this.artifactRegistry && info.path) {
+        try {
+          const record = await this.artifactRegistry.registerFile({
+            absolutePath: info.path,
+            kind: 'deliverable',
+            status: info.verified ? 'committed' : 'created',
+            producer: 'agent_executor',
+            agentId,
+            agentType,
+            goalId,
+            taskId: mission.taskId || null,
+            cycle: info.cycle,
+            metadata: {
+              title: info.title,
+              format: info.format,
+              wordCount: info.wordCount,
+              metadataPath: info.metadataPath,
+              verified: info.verified,
+              verificationError: info.verificationError || null
+            }
+          });
+          info.artifactId = record?.id || null;
+        } catch (error) {
+          this.logger.warn('Deliverable artifact registration failed (non-fatal)', {
+            path: info.path,
+            agentId,
+            error: error.message
+          }, 3);
+        }
+      }
     }
   }
 
@@ -1116,6 +1149,7 @@ class AgentExecutor {
             agentType: this.normalizeAgentTypeDir(agentType),
             goalId,
             taskId,
+            kind: 'file',
             recordedAt: new Date().toISOString()
           });
         }
@@ -1134,6 +1168,7 @@ class AgentExecutor {
             agentType: this.normalizeAgentTypeDir(agentType),
             goalId,
             taskId,
+            kind: 'file',
             recordedAt: new Date().toISOString()
           });
         }
@@ -1157,6 +1192,7 @@ class AgentExecutor {
             agentType: this.normalizeAgentTypeDir(agentType),
             goalId,
             taskId,
+            kind: 'file',
             recordedAt: new Date().toISOString()
           });
         } catch (_) {}
@@ -1171,6 +1207,31 @@ class AgentExecutor {
 
     const merged = [...existing];
     for (const a of artifacts) {
+      if (this.artifactRegistry && a.absolutePath) {
+        try {
+          const record = await this.artifactRegistry.registerFile({
+            absolutePath: a.absolutePath,
+            kind: a.kind || 'task_artifact',
+            status: 'created',
+            producer: 'agent_task_output',
+            agentId: a.agentId,
+            agentType: a.agentType,
+            goalId: a.goalId,
+            taskId: a.taskId,
+            metadata: {
+              relativeTaskPath: a.path || null,
+              checksum: a.checksum || null
+            }
+          });
+          a.artifactId = record?.id || a.artifactId || null;
+        } catch (error) {
+          this.logger.warn('Task output artifact registry write failed (non-fatal)', {
+            path: a.absolutePath,
+            taskId,
+            error: error.message
+          }, 3);
+        }
+      }
       const key = `${a.absolutePath || a.path}::${a.agentId || ''}`;
       if (existingKey.has(key)) continue;
       merged.push({
@@ -1605,6 +1666,42 @@ class AgentExecutor {
           this.logger.debug('Task not found in state store', { taskId });
           return;
         }
+
+        const taskArtifacts = Array.isArray(task.artifacts) ? task.artifacts : [];
+        const registryArtifacts = this.artifactRegistry
+          ? this.artifactRegistry.find({ taskId })
+          : [];
+        const structuredArtifacts = [...taskArtifacts, ...registryArtifacts];
+        for (const artifact of structuredArtifacts) {
+          if (artifacts.length >= MAX_ARTIFACTS || totalSize >= MAX_TOTAL_SIZE) {
+            break;
+          }
+          const absolutePath = artifact.absolutePath || artifact.path;
+          const relativePath = artifact.relativePath || artifact.path || absolutePath;
+          if (!absolutePath && !relativePath) continue;
+          const fileSize = artifact.size || 0;
+          if (totalSize + fileSize > MAX_TOTAL_SIZE) {
+            continue;
+          }
+          const isDuplicate = artifacts.some(a =>
+            (a.artifactId && artifact.id && a.artifactId === artifact.id) ||
+            (a.absolutePath && absolutePath && a.absolutePath === absolutePath)
+          );
+          if (isDuplicate) continue;
+          totalSize += fileSize;
+          artifacts.push({
+            artifactId: artifact.id || artifact.artifactId || null,
+            filename: artifact.filename || path.basename(relativePath || absolutePath),
+            relativePath,
+            absolutePath,
+            size: fileSize,
+            sourceAgentId: artifact.agentId || artifact.assignedAgentId || task.assignedAgentId || null,
+            goalId: artifact.goalId || task.metadata?.goalId || mission.goalId || null,
+            sourceTaskId: taskId,
+            depth,
+            tag: artifact.kind || artifact.type || 'artifact_registry'
+          });
+        }
         
         // If task has an assigned agent, gather its artifacts
         if (task.assignedAgentId) {
@@ -1745,6 +1842,16 @@ class AgentExecutor {
       if (artifacts.length > 0) {
         // Add artifacts to mission
         mission.artifactsToUpload = artifacts;
+        for (const artifact of artifacts) {
+          if (artifact.artifactId && this.artifactLifecycle) {
+            await this.artifactLifecycle.markConsumed(artifact.artifactId, {
+              agentType: mission.agentType,
+              goalId: mission.goalId || null,
+              taskId: mission.taskId || null,
+              reason: 'mission_predecessor_context'
+            }).catch(() => {});
+          }
+        }
         
         // Enhance mission context with artifact information
         mission.artifactContext = this.buildArtifactContext(artifacts);

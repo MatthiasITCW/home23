@@ -114,7 +114,7 @@ function loadHandler(handlerName) {
 async function executeAction(opts) {
   const {
     action, role, cycle, brainDir, workspaceDir, agentName, logger,
-    sensors, memory, goalSystem, writeReceipt,
+    sensors, memory, goalSystem, artifactRegistry, writeReceipt,
   } = opts;
 
   const ts = new Date().toISOString();
@@ -229,7 +229,7 @@ async function executeAction(opts) {
       action, target, reason, role, cycle,
       brainDir, workspaceDir, agentName,
       integrations: allowlist.integrations || {},
-      sensors, memory, goalSystem, logger,
+      sensors, memory, goalSystem, artifactRegistry, logger,
     });
   } catch (err) {
     return finaliseReject(brainDir, intentReceipt, 'handler_threw', err.message, writeReceipt);
