@@ -101,11 +101,21 @@ function summarizeHostPressure(runtimeRoot) {
       at: toIsoTime(process.at),
       topCpuPct: Number.isFinite(Number(process.topCpuPct)) ? Number(process.topCpuPct) : null,
       totalCpuPctTopN: Number.isFinite(Number(process.totalCpuPctTopN)) ? Number(process.totalCpuPctTopN) : null,
+      topRssBytes: Number.isFinite(Number(process.topRssBytes)) ? Number(process.topRssBytes) : null,
+      totalRssBytesTopN: Number.isFinite(Number(process.totalRssBytesTopN)) ? Number(process.totalRssBytesTopN) : null,
       topProcess: Array.isArray(process.processes) && process.processes[0]
         ? {
           command: process.processes[0].command || null,
           pm2Name: process.processes[0].pm2Name || null,
           cpuPct: Number.isFinite(Number(process.processes[0].cpuPct)) ? Number(process.processes[0].cpuPct) : null,
+        }
+        : null,
+      topMemoryProcess: Array.isArray(process.memoryProcesses) && process.memoryProcesses[0]
+        ? {
+          command: process.memoryProcesses[0].command || null,
+          pm2Name: process.memoryProcesses[0].pm2Name || null,
+          rssBytes: Number.isFinite(Number(process.memoryProcesses[0].rssBytes)) ? Number(process.memoryProcesses[0].rssBytes) : null,
+          memPct: Number.isFinite(Number(process.memoryProcesses[0].memPct)) ? Number(process.memoryProcesses[0].memPct) : null,
         }
         : null,
     } : null,

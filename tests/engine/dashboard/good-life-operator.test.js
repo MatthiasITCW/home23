@@ -360,7 +360,9 @@ test('Good Life operator detail carries host pressure evidence for the UI', () =
     process: {
       topCpuPct: 126,
       totalCpuPctTopN: 403.9,
+      topRssBytes: 1073741824,
       topProcess: { command: 'node engine/src/dashboard/server.js', cpuPct: 126 },
+      topMemoryProcess: { command: 'node engine/src/index.js', pm2Name: 'home23-jerry', rssBytes: 1073741824, memPct: 6.3 },
     },
   };
   const model = buildGoodLifeOperatorModel({
@@ -1278,6 +1280,14 @@ test('Good Life operator shows friction rest remains active through sleep wake w
         liveProblems: { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0 },
         goals: { open: 0, total: 0 },
         agenda: { pending: 0 },
+        host: {
+          memory: { freePct: 1.8 },
+          swap: { usedPct: 90.1 },
+          process: {
+            topMemoryProcess: { pm2Name: 'home23-jerry', command: 'node engine/src/index.js', rssBytes: 1073741824 },
+            topProcess: { command: 'Google Chrome Helper (GPU)', cpuPct: 42 },
+          },
+        },
       },
     }),
     regulator: {
@@ -1299,11 +1309,14 @@ test('Good Life operator shows friction rest remains active through sleep wake w
   assert.equal(model.autonomyBudget.pressureRest, true);
   assert.equal(model.operatorBrief.status, 'Resting');
   assert.match(model.operatorBrief.headline, /rest remains active/);
-  assert.match(model.operatorBrief.next, /sleep\/wake/);
+  assert.match(model.operatorBrief.next, /Sleep\/wake/);
+  assert.match(model.operatorBrief.next, /top memory home23-jerry 1.0GB/);
   assert.doesNotMatch(model.operatorBrief.next, /learning\/rest work resumes/);
   assert.match(model.operatorAnswer.find((line) => line.startsWith('Autonomy budget:')), /pressure rest remains active through sleep\/wake/);
-  assert.match(model.operatorDigest.userAction, /resting to reduce host pressure/);
+  assert.match(model.operatorAnswer.find((line) => line.startsWith('Host pressure:')), /swap 90% used/);
+  assert.match(model.operatorDigest.userAction, /top memory home23-jerry 1.0GB/);
   assert.match(model.operatorHandoff.repair, /pressure rest remains active through sleep\/wake/);
+  assert.ok(model.operatorHandoff.evidence.some((entry) => entry.label === 'Host pressure' && /top memory home23-jerry/.test(entry.value)));
 });
 
 test('Good Life operator shows repair mode bypasses spent self-maintenance budget', () => {

@@ -29,7 +29,7 @@ function normalizePm2RestartCount(value) {
   return null;
 }
 
-function parsePsOutput(stdout, topN) {
+function parsePsRows(stdout) {
   return String(stdout || '')
     .split(/\n/)
     .map((line) => line.trim())
@@ -48,7 +48,11 @@ function parsePsOutput(stdout, topN) {
         command,
       };
     })
-    .filter((p) => p && Number.isFinite(p.pid) && Number.isFinite(p.cpuPct))
+    .filter((p) => p && Number.isFinite(p.pid) && Number.isFinite(p.cpuPct));
+}
+
+function parsePsOutput(stdout, topN) {
+  return parsePsRows(stdout)
     .sort((a, b) => b.cpuPct - a.cpuPct)
     .slice(0, topN);
 }
@@ -61,18 +65,32 @@ async function defaultSample({ topN = 15 } = {}) {
     '-r',
   ], { encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024 });
 
+  const rows = parsePsRows(stdout);
   const pm2ByPid = await readPm2ByPid();
-  const processes = annotateHome23ProcessList(parsePsOutput(stdout, topN).map((process) => ({
+  const enrich = (process) => ({
     ...process,
     ...(pm2ByPid.get(process.pid) || {}),
-  })));
+  });
+  const processes = annotateHome23ProcessList(rows
+    .slice()
+    .sort((a, b) => b.cpuPct - a.cpuPct)
+    .slice(0, topN)
+    .map(enrich));
+  const memoryProcesses = annotateHome23ProcessList(rows
+    .slice()
+    .sort((a, b) => b.rssBytes - a.rssBytes)
+    .slice(0, topN)
+    .map(enrich));
   return {
     at,
     topN,
     processCount: processes.length,
     topCpuPct: processes[0]?.cpuPct ?? 0,
     totalCpuPctTopN: +processes.reduce((sum, p) => sum + (p.cpuPct || 0), 0).toFixed(1),
+    topRssBytes: memoryProcesses[0]?.rssBytes ?? 0,
+    totalRssBytesTopN: memoryProcesses.reduce((sum, p) => sum + (p.rssBytes || 0), 0),
     processes,
+    memoryProcesses,
   };
 }
 
@@ -122,6 +140,7 @@ export class ProcessChannel extends PollChannel {
     return [{
       ...sample,
       processes: annotateHome23ProcessList(sample?.processes || []),
+      memoryProcesses: annotateHome23ProcessList(sample?.memoryProcesses || []),
     }];
   }
 
@@ -151,4 +170,4 @@ export class ProcessChannel extends PollChannel {
   }
 }
 
-export const _test = { parsePsOutput, readPm2ByPid, normalizePm2RestartCount };
+export const _test = { parsePsOutput, parsePsRows, readPm2ByPid, normalizePm2RestartCount };

@@ -134,6 +134,17 @@ test('Good Life snapshot includes latest machine host pressure evidence', () => 
         swap: { totalMb: 8192, usedMb: 7502.75, usedPct: 91.6 },
       },
     })}\n`);
+    writeFileSync(join(channelsDir, 'machine.process.jsonl'), `${JSON.stringify({
+      payload: {
+        at: '2026-05-10T08:54:42.000Z',
+        topCpuPct: 25,
+        totalCpuPctTopN: 40,
+        topRssBytes: 1073741824,
+        totalRssBytesTopN: 2147483648,
+        processes: [{ command: 'node engine/src/index.js', pm2Name: 'home23-forrest', cpuPct: 25 }],
+        memoryProcesses: [{ command: 'node engine/src/index.js', pm2Name: 'home23-jerry', rssBytes: 1073741824, memPct: 6.3 }],
+      },
+    })}\n`);
     writeFileSync(join(channelsDir, 'machine.disk.jsonl'), `${JSON.stringify({
       payload: { at: '2026-05-10T08:52:09.784Z', mount: '/', usagePct: 32 },
     })}\n`);
@@ -143,6 +154,8 @@ test('Good Life snapshot includes latest machine host pressure evidence', () => 
     assert.equal(snapshot.host.cpu.loadRatio, 1.03);
     assert.equal(snapshot.host.memory.freePct, 2.2);
     assert.equal(snapshot.host.swap.usedPct, 91.6);
+    assert.equal(snapshot.host.process.topMemoryProcess.pm2Name, 'home23-jerry');
+    assert.equal(snapshot.host.process.topMemoryProcess.rssBytes, 1073741824);
     assert.equal(snapshot.host.disk.usagePct, 32);
   } finally {
     rmSync(dir, { recursive: true, force: true });

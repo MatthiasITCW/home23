@@ -367,6 +367,51 @@ function formatMinutes(minutes) {
   return `${value}m`;
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const gb = value / (1024 * 1024 * 1024);
+  if (gb >= 1) return `${gb.toFixed(1)}GB`;
+  const mb = value / (1024 * 1024);
+  if (mb >= 1) return `${Math.round(mb)}MB`;
+  return `${Math.round(value / 1024)}KB`;
+}
+
+function compactCommand(command) {
+  const text = String(command || '').trim();
+  if (!text) return null;
+  const home23Match = text.match(/home23\/([^ ]+)/);
+  if (home23Match?.[1]) return `home23/${home23Match[1]}`;
+  const chromeMatch = text.match(/Google Chrome(?: Helper)?(?: \(([^)]+)\))?/);
+  if (chromeMatch) return chromeMatch[1] ? `Google Chrome ${chromeMatch[1]}` : 'Google Chrome';
+  return compactText(text, 80);
+}
+
+function summarizeHostPressureForOperator(host) {
+  if (!host) return null;
+  const parts = [];
+  const swapPct = finiteCount(host.swap?.usedPct);
+  if (swapPct != null) parts.push(`swap ${Math.round(swapPct)}% used`);
+  const freePct = finiteCount(host.memory?.freePct);
+  if (freePct != null) parts.push(`memory ${Number(freePct).toFixed(freePct < 10 ? 1 : 0)}% free`);
+
+  const topMemory = host.process?.topMemoryProcess;
+  const topMemoryBytes = formatBytes(topMemory?.rssBytes || host.process?.topRssBytes);
+  const topMemoryName = compactCommand(topMemory?.pm2Name || topMemory?.command);
+  if (topMemoryName && topMemoryBytes) {
+    parts.push(`top memory ${topMemoryName} ${topMemoryBytes}`);
+  }
+
+  const topCpu = host.process?.topProcess;
+  const topCpuPct = finiteCount(topCpu?.cpuPct || host.process?.topCpuPct);
+  const topCpuName = compactCommand(topCpu?.pm2Name || topCpu?.command);
+  if (topCpuName && topCpuPct != null) {
+    parts.push(`top CPU ${topCpuName} ${Math.round(topCpuPct)}%`);
+  }
+
+  return parts.length ? parts.join('; ') : null;
+}
+
 function buildDailyReset(date, nowMs) {
   const match = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return { resetAt: null, resetInMin: null, resetText: null };
@@ -992,7 +1037,7 @@ function buildProjectionMismatchText(projection = {}, liveProblems = {}) {
   return fields.length ? fields.join('; ') : null;
 }
 
-function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAction, projection, freshness, budget }) {
+function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAction, projection, freshness, budget, host }) {
   const counts = liveProblems.counts || {};
   const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
   const interventionCount = Number(counts.interventionRequired || 0);
@@ -1076,7 +1121,10 @@ function buildOperatorBrief({ policy, liveProblems, consistency, work, latestAct
     status = 'Resting';
     headline = 'Good Life rest remains active under host pressure';
     why = policy?.reason ? `${budget.reason}; current signal: ${policy.reason}` : budget.reason;
-    next = 'sleep/wake can continue lowering pressure; new self-maintenance agenda work waits for budget reset or repair/help drift.';
+    const pressure = summarizeHostPressureForOperator(host);
+    next = pressure
+      ? `${pressure}. Sleep/wake can continue lowering pressure; new self-maintenance agenda work waits for budget reset or repair/help drift.`
+      : 'sleep/wake can continue lowering pressure; new self-maintenance agenda work waits for budget reset or repair/help drift.';
     target = {
       tab: 'insights',
       id: null,
@@ -1180,7 +1228,7 @@ function latestResolutionSummary(latestResolution) {
   return latestResolution.claim || latestResolution.id || 'recent verified resolution';
 }
 
-function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, latestAction, budget }) {
+function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, latestAction, budget, host }) {
   const lines = [];
   if (state?.summary || state?.policy?.reason) {
     lines.push(state.summary || state.policy.reason);
@@ -1234,6 +1282,8 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
   if (budget?.pressureRest && budget?.exhausted) {
     const resetText = budget.resetText ? `; ${budget.resetText}` : '';
     lines.push(`Autonomy budget: ${budget.used}/${budget.limit} self-maintenance actions used; pressure rest remains active through sleep/wake; new agenda work waits for reset${resetText}`);
+    const pressure = summarizeHostPressureForOperator(host);
+    if (pressure) lines.push(`Host pressure: ${pressure}`);
   } else if (budget?.exhausted) {
     const resetText = budget.resetText ? `; ${budget.resetText}` : '';
     lines.push(`Autonomy budget: ${budget.used}/${budget.limit} self-maintenance actions used; ${budget.mode || 'current'} work is paused until reset or repair/help drift appears${resetText}`);
@@ -1251,7 +1301,7 @@ function buildOperatorAnswer({ state, lanes, liveProblems, consistency, work, la
   return lines;
 }
 
-function buildOperatorDigest({ brief, liveProblems, work, budget }) {
+function buildOperatorDigest({ brief, liveProblems, work, budget, host }) {
   const counts = liveProblems?.counts || {};
   const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
   const interventionCount = Number(counts.interventionRequired || 0);
@@ -1268,7 +1318,8 @@ function buildOperatorDigest({ brief, liveProblems, work, budget }) {
   } else if (brief?.severity === 'critical') {
     userAction = brief.next || 'Review the warning before treating the projection as current.';
   } else if (budget?.pressureRest && budget?.exhausted) {
-    userAction = `No user action needed; Good Life is resting to reduce host pressure${budget.resetText ? ` and self-maintenance ${budget.resetText}` : ''}.`;
+    const pressure = summarizeHostPressureForOperator(host);
+    userAction = `No user action needed; Good Life is resting to reduce host pressure${pressure ? ` (${pressure})` : ''}${budget.resetText ? ` and self-maintenance ${budget.resetText}` : ''}.`;
   } else if (budget?.exhausted) {
     userAction = `No user action needed; Good Life self-maintenance is paused by daily budget${budget.resetText ? ` and ${budget.resetText}` : ''}.`;
   } else if (brief?.severity === 'attention') {
@@ -1299,7 +1350,7 @@ function buildOperatorDigest({ brief, liveProblems, work, budget }) {
   };
 }
 
-function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAction, budget }) {
+function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAction, budget, host }) {
   const counts = liveProblems?.counts || {};
   const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
   const interventionCount = Number(counts.interventionRequired || 0);
@@ -1355,6 +1406,14 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
       detail: budget.pressureRest
         ? (budget.resetText ? `pressure rest active; ${budget.resetText}` : 'pressure rest active; agenda work waits for reset')
         : (budget.resetText ? `self-maintenance paused; ${budget.resetText}` : 'self-maintenance paused until reset'),
+    });
+  }
+  const pressure = summarizeHostPressureForOperator(host);
+  if (pressure) {
+    evidence.push({
+      label: 'Host pressure',
+      value: pressure,
+      detail: host?.process?.topMemoryProcess?.command || host?.process?.topProcess?.command || '',
     });
   }
   if (actionableWarnings.length > 0) {
@@ -1535,6 +1594,7 @@ function buildGoodLifeOperatorModel({
     work,
     latestAction,
     budget,
+    host: state?.evidence?.host || null,
   });
   model.operatorBrief = buildOperatorBrief({
     policy,
@@ -1545,6 +1605,7 @@ function buildGoodLifeOperatorModel({
     projection,
     freshness,
     budget,
+    host: state?.evidence?.host || null,
   });
   if (status === 'conflicted') {
     model.summary = `${String(model.operatorBrief.status || 'Reconciling').toLowerCase()} - ${model.operatorBrief.headline}`;
@@ -1554,6 +1615,7 @@ function buildGoodLifeOperatorModel({
     liveProblems: directLiveProblems,
     work,
     budget,
+    host: state?.evidence?.host || null,
   });
   model.operatorHandoff = buildOperatorHandoff({
     brief: model.operatorBrief,
@@ -1562,6 +1624,7 @@ function buildGoodLifeOperatorModel({
     consistency,
     latestAction,
     budget,
+    host: state?.evidence?.host || null,
   });
   return model;
 }
