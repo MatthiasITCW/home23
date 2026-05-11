@@ -40,6 +40,9 @@ export interface JobState {
   lastStatus?: 'ok' | 'error';
   lastDurationMs?: number;
   consecutiveErrors: number;
+  lastDecisionAtMs?: number;
+  lastDecisionAction?: JobDecisionAction;
+  lastDecisionReason?: string;
 }
 
 export interface CronJob {
@@ -62,6 +65,32 @@ export interface JobResult {
 }
 
 export type JobHandler = (job: CronJob) => Promise<JobResult>;
+
+export type JobDecisionAction = 'run' | 'repair' | 'skip' | 'catch_up' | 'defer' | 'escalate';
+
+export interface JobDecision {
+  schema: 'home23.scheduler.job-decision.v1';
+  decisionId: string;
+  jobId: string;
+  jobName: string;
+  decidedAt: string;
+  source: 'scheduled' | 'manual';
+  action: JobDecisionAction;
+  reason: string;
+  durableState: 'allowed_after_decision' | 'withheld_after_decision';
+  willExecute: boolean;
+  scheduleKind: ScheduleSpec['kind'];
+  payloadKind: JobPayload['kind'];
+  dueAt: string | null;
+  overdueMs: number;
+  consecutiveErrors: number;
+  inputFreshness: {
+    status: 'unknown' | 'current' | 'stale' | 'invalid';
+    reason: string;
+  };
+  sourceIssue: number;
+  nextReviewAtMs?: number;
+}
 
 // ─── Cron Expression Parser ─────────────────────────────────
 
@@ -197,6 +226,7 @@ export class CronScheduler {
   private running = false;
   private jobsFilePath: string;
   private runsDirPath: string;
+  private decisionsFilePath: string;
 
   constructor(config: SchedulerConfig, handler: JobHandler, runtimeDir: string) {
     this.config = config;
@@ -204,6 +234,7 @@ export class CronScheduler {
     this.runtimeDir = runtimeDir;
     this.jobsFilePath = join(runtimeDir, config.jobsFile);
     this.runsDirPath = join(runtimeDir, config.runsDir);
+    this.decisionsFilePath = join(runtimeDir, 'cron-decisions.jsonl');
 
     // Ensure directories exist
     mkdirSync(dirname(this.jobsFilePath), { recursive: true });
@@ -221,8 +252,8 @@ export class CronScheduler {
     console.log(`[scheduler] Started — ${this.jobs.size} job(s) loaded, tick every 30s`);
 
     // Run first tick immediately, then every 30 seconds
-    this.tick();
-    this.tickTimer = setInterval(() => this.tick(), 30_000);
+    void this.tick();
+    this.tickTimer = setInterval(() => void this.tick(), 30_000);
   }
 
   stop(): void {
@@ -303,12 +334,18 @@ export class CronScheduler {
       };
     }
 
-    return await this.executeJob(job);
+    const decision = this.decideJobPreflight(job, Date.now(), 'manual');
+    this.appendDecisionLog(decision);
+    if (!decision.willExecute) {
+      return this.withholdJob(job, decision);
+    }
+
+    return await this.executeJob(job, decision);
   }
 
   // ─── Tick Loop ─────────────────────────────────────────
 
-  private tick(): void {
+  private async tick(): Promise<void> {
     const now = Date.now();
     const dueJobs: CronJob[] = [];
 
@@ -319,27 +356,38 @@ export class CronScheduler {
     }
 
     if (dueJobs.length > 0) {
+      const runnable: Array<{ job: CronJob; decision: JobDecision }> = [];
+
       // Pre-compute next run BEFORE firing to prevent double-fire
       // (if a job takes >30s, the next tick would see it as still due).
       // One-shot 'at' jobs: disable here so the next tick won't re-queue.
       for (const job of dueJobs) {
+        const decision = this.decideJobPreflight(job, now, 'scheduled');
+        this.appendDecisionLog(decision);
+        if (!decision.willExecute) {
+          this.withholdJob(job, decision);
+          continue;
+        }
+
         if (job.schedule.kind === 'at') {
           job.enabled = false;
         }
         job.state.nextRunAtMs = this.computeNextRun(job);
+        job.state.lastDecisionAtMs = now;
+        job.state.lastDecisionAction = decision.action;
+        job.state.lastDecisionReason = decision.reason;
+        runnable.push({ job, decision });
       }
       this.saveJobs();
 
       // Fire all due jobs concurrently (don't block tick)
-      for (const job of dueJobs) {
-        this.executeJob(job).catch(err => {
+      await Promise.allSettled(runnable.map(({ job, decision }) => this.executeJob(job, decision).catch(err => {
           console.error(`[scheduler] Unhandled error executing job ${job.id}:`, err);
-        });
-      }
+      })));
     }
   }
 
-  private async executeJob(job: CronJob): Promise<JobResult> {
+  private async executeJob(job: CronJob, decision?: JobDecision): Promise<JobResult> {
     const startMs = Date.now();
     let result: JobResult;
 
@@ -382,10 +430,138 @@ export class CronScheduler {
       response: result.response,
       error: result.error,
       durationMs: result.durationMs,
+      decision,
     });
 
     const statusTag = result.status === 'ok' ? 'OK' : 'ERROR';
     console.log(`[scheduler] Job ${job.id} ${statusTag} (${result.durationMs}ms)`);
+    return result;
+  }
+
+  private decideJobPreflight(job: CronJob, now: number, source: JobDecision['source']): JobDecision {
+    const dueAtMs = Number(job.state?.nextRunAtMs);
+    const overdueMs = Number.isFinite(dueAtMs) ? Math.max(0, now - dueAtMs) : 0;
+    const invalidReason = this.invalidJobReason(job);
+    let action: JobDecisionAction = 'run';
+    let reason = source === 'manual' ? 'manual scheduler invocation' : 'job due and eligible';
+    let willExecute = true;
+    let nextReviewAtMs: number | undefined;
+
+    if (!job.enabled) {
+      action = 'skip';
+      reason = 'job disabled';
+      willExecute = false;
+      nextReviewAtMs = now + 60 * 60 * 1000;
+    } else if (invalidReason) {
+      action = 'repair';
+      reason = invalidReason;
+      willExecute = false;
+      nextReviewAtMs = now + 60 * 60 * 1000;
+    } else if (job.state.consecutiveErrors >= 3) {
+      action = 'escalate';
+      reason = `${job.state.consecutiveErrors} consecutive errors; withheld until operator or repair loop reviews job`;
+      willExecute = false;
+      nextReviewAtMs = now + 15 * 60 * 1000;
+    } else if (source === 'scheduled' && overdueMs >= this.catchUpThresholdMs(job)) {
+      action = 'catch_up';
+      reason = `job overdue by ${overdueMs}ms; executing once as catch-up`;
+    } else if (source === 'scheduled' && Number.isFinite(dueAtMs) && now < dueAtMs) {
+      action = 'defer';
+      reason = 'job not due yet';
+      willExecute = false;
+      nextReviewAtMs = dueAtMs;
+    }
+
+    return {
+      schema: 'home23.scheduler.job-decision.v1',
+      decisionId: `sched-dec-${randomUUID().slice(0, 12)}`,
+      jobId: job.id,
+      jobName: job.name,
+      decidedAt: new Date(now).toISOString(),
+      source,
+      action,
+      reason,
+      durableState: willExecute ? 'allowed_after_decision' : 'withheld_after_decision',
+      willExecute,
+      scheduleKind: job.schedule.kind,
+      payloadKind: job.payload.kind,
+      dueAt: Number.isFinite(dueAtMs) ? new Date(dueAtMs).toISOString() : null,
+      overdueMs,
+      consecutiveErrors: job.state.consecutiveErrors,
+      inputFreshness: invalidReason
+        ? { status: 'invalid', reason: invalidReason }
+        : { status: 'unknown', reason: 'no job-specific freshness contract configured' },
+      sourceIssue: 82,
+      nextReviewAtMs,
+    };
+  }
+
+  private invalidJobReason(job: CronJob): string | null {
+    if (!job.id || !job.name) return 'job identity missing';
+    if (!job.schedule?.kind) return 'schedule missing';
+    if (!job.payload?.kind) return 'payload missing';
+
+    if (job.schedule.kind === 'cron' && !(job.schedule as { expr?: string }).expr) {
+      return 'cron expression missing';
+    }
+    if (job.schedule.kind === 'every' && !Number.isFinite((job.schedule as { everyMs?: number }).everyMs)) {
+      return 'interval schedule missing everyMs';
+    }
+    if (job.schedule.kind === 'at') {
+      const at = (job.schedule as { at?: string }).at;
+      if (!at || Number.isNaN(new Date(at).getTime())) return 'one-shot schedule has invalid at time';
+    }
+
+    switch (job.payload.kind) {
+      case 'exec':
+        return job.payload.command ? null : 'exec payload missing command';
+      case 'query':
+        return job.payload.message ? null : 'query payload missing message';
+      case 'systemEvent':
+        return job.payload.text ? null : 'systemEvent payload missing text';
+      case 'agentTurn':
+        return job.payload.message || job.payload.messagePath ? null : 'agentTurn payload missing message or messagePath';
+      default:
+        return 'unknown payload kind';
+    }
+  }
+
+  private catchUpThresholdMs(job: CronJob): number {
+    if (job.schedule.kind === 'every') {
+      return Math.max(job.schedule.everyMs * 2, 5 * 60 * 1000);
+    }
+    if (job.schedule.kind === 'at') {
+      return 60 * 1000;
+    }
+    return 60 * 60 * 1000;
+  }
+
+  private withholdJob(job: CronJob, decision: JobDecision): JobResult {
+    const decidedAtMs = Date.parse(decision.decidedAt);
+    const reviewAtMs = decision.nextReviewAtMs ?? decidedAtMs + 15 * 60 * 1000;
+    const result: JobResult = {
+      status: 'error',
+      error: `${decision.action}: ${decision.reason}`,
+      durationMs: 0,
+    };
+
+    job.state.lastStatus = 'error';
+    job.state.lastDurationMs = 0;
+    job.state.lastDecisionAtMs = decidedAtMs;
+    job.state.lastDecisionAction = decision.action;
+    job.state.lastDecisionReason = decision.reason;
+    job.state.nextRunAtMs = Math.max(reviewAtMs, Date.now() + 60_000);
+    this.saveJobs();
+    this.appendRunLog(job.id, {
+      jobId: job.id,
+      timestamp: decision.decidedAt,
+      status: result.status,
+      error: result.error,
+      durationMs: 0,
+      withheld: true,
+      decision,
+    });
+    console.warn(`[scheduler] Job ${job.id} withheld: ${decision.action} (${decision.reason})`);
     return result;
   }
 
@@ -509,6 +685,14 @@ export class CronScheduler {
       appendFileSync(logPath, JSON.stringify(entry) + '\n');
     } catch (err) {
       console.error(`[scheduler] Failed to append run log for ${jobId}:`, err);
+    }
+  }
+
+  private appendDecisionLog(decision: JobDecision): void {
+    try {
+      appendFileSync(this.decisionsFilePath, JSON.stringify(decision) + '\n');
+    } catch (err) {
+      console.error(`[scheduler] Failed to append decision log for ${decision.jobId}:`, err);
     }
   }
 }
