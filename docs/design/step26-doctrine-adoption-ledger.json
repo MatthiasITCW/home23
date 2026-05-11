@@ -228,6 +228,23 @@
         "engine/src/channels/domain/health-channel.js",
         "tests/engine/channels/domain/health-channel.test.js"
       ]
+    },
+    {
+      "id": "context-aware-home-surfaces",
+      "title": "Home surfaces respond to context, not just events",
+      "status": "adopted",
+      "sourceIssues": [79, 80],
+      "requirement": "The dashboard home layout must be derived through a context layer so family-evening can hide project-facing surfaces while preserving home, system, and governance surfaces.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/dashboard/home23-tiles.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/home23-tiles.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/home23-tiles.js",
+        "tests/engine/dashboard/home23-tiles.test.js"
+      ]
     }
   ]
 }

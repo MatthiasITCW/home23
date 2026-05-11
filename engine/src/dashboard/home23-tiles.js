@@ -68,6 +68,7 @@ const CORE_TILES = [
     icon: '🌊',
     mode: 'core-thought-feed',
     description: 'Latest thought rotation from this dashboard agent.',
+    contextClass: 'project',
     sizeDefault: 'third',
     refreshMs: 30_000,
   },
@@ -78,6 +79,7 @@ const CORE_TILES = [
     icon: '🎨',
     mode: 'core-vibe',
     description: 'Current dashboard vibe image and gallery link.',
+    contextClass: 'project',
     sizeDefault: 'third',
     refreshMs: 30_000,
   },
@@ -88,6 +90,7 @@ const CORE_TILES = [
     icon: '💬',
     mode: 'core-chat',
     description: 'Native dashboard chat to this dashboard agent.',
+    contextClass: 'project',
     sizeDefault: 'third',
     refreshMs: 30_000,
   },
@@ -98,6 +101,7 @@ const CORE_TILES = [
     icon: '⚡',
     mode: 'core-system-summary',
     description: 'Home23 uptime, thought count, node count, and freshness.',
+    contextClass: 'system',
     sizeDefault: 'third',
     refreshMs: 30_000,
   },
@@ -108,6 +112,7 @@ const CORE_TILES = [
     icon: '⊙',
     mode: 'core-good-life',
     description: 'Current autonomous policy, lane health, commitments, and regulator action.',
+    contextClass: 'governance',
     sizeDefault: 'full',
     refreshMs: 30_000,
   },
@@ -118,6 +123,7 @@ const CORE_TILES = [
     icon: '🧠',
     mode: 'core-brain-log',
     description: 'Recent brain thought stream.',
+    contextClass: 'project',
     sizeDefault: 'half',
     refreshMs: 30_000,
   },
@@ -128,6 +134,7 @@ const CORE_TILES = [
     icon: '💭',
     mode: 'core-dream-log',
     description: 'Recent dream narratives.',
+    contextClass: 'project',
     sizeDefault: 'half',
     refreshMs: 30_000,
   },
@@ -138,6 +145,7 @@ const CORE_TILES = [
     icon: '📥',
     mode: 'core-feeder',
     description: 'Live feeder and compiler health.',
+    contextClass: 'project',
     sizeDefault: 'full',
     refreshMs: 30_000,
   },
@@ -509,6 +517,63 @@ function materializeHomeLayout(tilesState) {
     .filter(Boolean);
 }
 
+function isFamilyEveningContext(context) {
+  return context?.active === true && context?.mode === 'family-evening';
+}
+
+function materializeHomeLayoutForContext(tilesState, context = null) {
+  const materialized = materializeHomeLayout(tilesState);
+  if (!isFamilyEveningContext(context)) {
+    return {
+      layout: materialized,
+      hiddenTiles: [],
+      context: context || null,
+    };
+  }
+
+  const hiddenTiles = [];
+  const layout = materialized.filter((item) => {
+    const contextClass = item.tile?.contextClass || (item.tile?.kind === 'custom' ? 'home' : 'system');
+    if (contextClass !== 'project') return true;
+    hiddenTiles.push({
+      tileId: item.tileId,
+      title: item.tile?.title || item.tileId,
+      reason: 'family-evening hides project-facing surfaces',
+    });
+    return false;
+  });
+
+  return { layout, hiddenTiles, context };
+}
+
+function buildHomeTileContext(now = new Date(), timeZone = 'America/New_York') {
+  let hour = now.getHours();
+  try {
+    const hourPart = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      hour12: false,
+    }).formatToParts(now).find((part) => part.type === 'hour');
+    const parsed = Number(hourPart?.value);
+    if (Number.isFinite(parsed)) hour = parsed;
+  } catch {
+    // Fall back to host-local time.
+  }
+
+  const active = hour >= 18 && hour < 22;
+  return {
+    schema: 'home23.home-context.v1',
+    mode: active ? 'family-evening' : 'normal',
+    active,
+    timeZone,
+    hour,
+    sourceIssues: [79, 80],
+    rule: active
+      ? 'family-evening hides project-facing surfaces'
+      : 'normal dashboard layout',
+  };
+}
+
 function publicTile(tile) {
   return {
     id: tile.id,
@@ -517,6 +582,7 @@ function publicTile(tile) {
     icon: tile.icon,
     mode: tile.mode,
     description: tile.description || '',
+    contextClass: tile.contextClass || (tile.kind === 'custom' ? 'home' : 'system'),
     refreshMs: tile.refreshMs,
     sizeDefault: tile.sizeDefault,
     connectionId: tile.connectionId || '',
@@ -958,7 +1024,8 @@ class Home23TileService {
 
   getRuntimeConfig() {
     const tiles = this.getTilesState();
-    const layout = materializeHomeLayout(tiles)
+    const contextualLayout = materializeHomeLayoutForContext(tiles, buildHomeTileContext());
+    const layout = contextualLayout.layout
       .filter((item) => item.enabled !== false)
       .map((item) => ({
         tileId: item.tileId,
@@ -969,6 +1036,8 @@ class Home23TileService {
     return {
       version: tiles.version,
       layout,
+      context: contextualLayout.context,
+      hiddenTiles: contextualLayout.hiddenTiles,
     };
   }
 
@@ -1213,4 +1282,6 @@ module.exports = {
   normalizeDashboardTilesConfig,
   normalizeTileConnectionsConfig,
   materializeHomeLayout,
+  materializeHomeLayoutForContext,
+  buildHomeTileContext,
 };
