@@ -30,10 +30,11 @@ export class BridgeChatPublisher {
         this.logger.info?.(`[publish] bridge-chat suppressed ambient observation: ${attention.reason}`);
         return null;
       }
+      observation.attentionDecision = attention;
     }
     if (!this.sender) return null;
     try {
-      await this.sender({ text: summary, observation });
+      await this.sender({ text: summary, observation, attention: observation?.attentionDecision });
       await this.ledger?.record?.({ target: 'bridge_chat', artifact: `bridge:${new Date().toISOString()}` });
       this.logger.info?.(`[publish] bridge-chat: salience ${salience.toFixed(2)}`);
       return true;

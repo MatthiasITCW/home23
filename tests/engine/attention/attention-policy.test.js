@@ -65,3 +65,32 @@ test('attention policy suppresses non-action observations during deep-work', () 
   assert.equal(action.mode, 'interruptive');
   assert.equal(anomaly.mode, 'interruptive');
 });
+
+test('attention policy defers stale interruptive signals instead of treating old state as live', () => {
+  const decision = classifyAttentionRequest({
+    severity: 'urgent',
+    requiresAction: true,
+    observedAt: '2026-05-11T16:00:00.000Z',
+    maxAgeMs: 10 * 60 * 1000,
+    now: Date.parse('2026-05-11T16:30:00.000Z'),
+  });
+
+  assert.equal(decision.mode, 'ambient');
+  assert.equal(decision.reason, 'stale_signal_deferred');
+  assert.equal(decision.contact.freshness.status, 'stale');
+  assert.equal(decision.contact.freshness.liveState, false);
+  assert.match(decision.contact.interpretationBoundary, /context, not identity/);
+});
+
+test('attention policy protects family rhythm from non-urgent explicit interruptions', () => {
+  const decision = classifyAttentionRequest({
+    attentionMode: 'interruptive',
+    severity: 'normal',
+    temporalContext: { jtrTime: { activeRhythms: ['family-evening'] } },
+  });
+
+  assert.equal(decision.mode, 'ambient');
+  assert.equal(decision.reason, 'protected_rhythm_defers_non_urgent');
+  assert.equal(decision.contact.modeSwitchCost, 'high');
+  assert.deepEqual(decision.contact.activeRhythms, ['family-evening']);
+});

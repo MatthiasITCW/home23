@@ -483,6 +483,29 @@
       ]
     },
     {
+      "id": "attention-contact-layer",
+      "title": "Interruptions prove current contact before touching the human",
+      "status": "adopted",
+      "sourceIssues": [89],
+      "requirement": "Every alert-style publication must treat interruption as a mode-switch request: derive a contact context, check signal freshness, keep body/home telemetry as context rather than identity, defer stale state instead of presenting it as live, and protect high-cost rhythms from non-urgent interruption.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/attention/attention-policy.cjs",
+          "verifier": "node --test --test-concurrency=1 tests/engine/attention/attention-policy.test.js tests/engine/publish/bridge-chat-publisher.test.js"
+        },
+        {
+          "artifact": "engine/src/publish/bridge-chat-publisher.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/attention/attention-policy.test.js tests/engine/publish/bridge-chat-publisher.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/attention/attention-policy.cjs",
+        "engine/src/publish/bridge-chat-publisher.js",
+        "tests/engine/attention/attention-policy.test.js",
+        "tests/engine/publish/bridge-chat-publisher.test.js"
+      ]
+    },
+    {
       "id": "phantom-completion-loop-guard",
       "title": "Completed work cannot remain active without integrity drift",
       "status": "adopted",

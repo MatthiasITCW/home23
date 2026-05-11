@@ -92,6 +92,90 @@ test('BridgeChatPublisher applies deep-work rhythm suppression', async () => {
   assert.equal(sent[0].text, 'action required');
 });
 
+test('BridgeChatPublisher suppresses stale high-salience action requests', async () => {
+  const sent = [];
+  const info = [];
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    sender: async (m) => sent.push(m),
+    ledger: { record: async () => {} },
+    logger: { info: (...args) => info.push(args.join(' ')), warn: () => {} },
+    getTemporalContext: () => ({ now: Date.parse('2026-05-11T16:30:00.000Z') }),
+  });
+
+  const result = await pub.onObservation({
+    salience: 0.95,
+    summary: 'old bridge decision',
+    observation: {
+      flag: 'COLLECTED',
+      confidence: 0.99,
+      payload: {
+        severity: 'urgent',
+        requiresAction: true,
+        observedAt: '2026-05-11T16:00:00.000Z',
+        maxAgeMs: 10 * 60 * 1000,
+      },
+    },
+  });
+
+  assert.equal(result, null);
+  assert.equal(sent.length, 0);
+  assert.ok(info.some((line) => line.includes('stale_signal_deferred')));
+});
+
+test('BridgeChatPublisher sends fresh action requests with attention contact metadata', async () => {
+  const sent = [];
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    sender: async (m) => sent.push(m),
+    ledger: { record: async () => {} },
+    getTemporalContext: () => ({ now: Date.parse('2026-05-11T16:05:00.000Z') }),
+  });
+
+  await pub.onObservation({
+    salience: 0.95,
+    summary: 'fresh bridge decision',
+    observation: {
+      flag: 'COLLECTED',
+      confidence: 0.99,
+      payload: {
+        severity: 'urgent',
+        requiresAction: true,
+        observedAt: '2026-05-11T16:04:00.000Z',
+        maxAgeMs: 10 * 60 * 1000,
+      },
+    },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].attention.reason, 'action_required');
+  assert.equal(sent[0].attention.contact.freshness.status, 'current');
+});
+
+test('BridgeChatPublisher suppresses family-evening non-urgent interruptions', async () => {
+  const sent = [];
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    sender: async (m) => sent.push(m),
+    ledger: { record: async () => {} },
+    logger: { info: () => {}, warn: () => {} },
+    getTemporalContext: () => ({ jtrTime: { activeRhythms: ['family-evening'] } }),
+  });
+
+  const result = await pub.onObservation({
+    salience: 0.95,
+    summary: 'interesting but not urgent',
+    observation: {
+      flag: 'COLLECTED',
+      confidence: 0.99,
+      payload: { attentionMode: 'interruptive', severity: 'normal' },
+    },
+  });
+
+  assert.equal(result, null);
+  assert.equal(sent.length, 0);
+});
+
 test('BridgeChatPublisher does not record success when no sender is configured', async () => {
   let records = 0;
   const pub = new BridgeChatPublisher({
