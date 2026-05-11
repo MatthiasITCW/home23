@@ -43,3 +43,25 @@ test('attention policy allows explicit ambient unless action is required', () =>
   assert.equal(action.mode, 'interruptive');
   assert.equal(shouldInterrupt({ payload: { userInterventionRequired: true } }), true);
 });
+
+test('attention policy suppresses non-action observations during deep-work', () => {
+  const temporalContext = { jtrTime: { activeRhythms: ['deep-work'] } };
+  const routine = classifyAttentionRequest({
+    severity: 'normal',
+    temporalContext,
+  });
+  const action = classifyAttentionRequest({
+    severity: 'normal',
+    requiresAction: true,
+    temporalContext,
+  });
+  const anomaly = classifyAttentionRequest({
+    kind: 'anomaly',
+    temporalContext,
+  });
+
+  assert.equal(routine.mode, 'ambient');
+  assert.equal(routine.reason, 'deep_work_suppresses_non_action');
+  assert.equal(action.mode, 'interruptive');
+  assert.equal(anomaly.mode, 'interruptive');
+});

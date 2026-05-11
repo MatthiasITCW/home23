@@ -12,17 +12,20 @@ import attentionPolicy from '../attention/attention-policy.cjs';
 const { classifyObservationAttention } = attentionPolicy;
 
 export class BridgeChatPublisher {
-  constructor({ salienceThreshold = 0.75, sender, ledger, logger } = {}) {
+  constructor({ salienceThreshold = 0.75, sender, ledger, logger, getTemporalContext } = {}) {
     this.salienceThreshold = salienceThreshold;
     this.sender = typeof sender === 'function' ? sender : null;
     this.ledger = ledger;
     this.logger = logger || console;
+    this.getTemporalContext = typeof getTemporalContext === 'function' ? getTemporalContext : null;
   }
 
   async onObservation({ salience, summary, observation } = {}) {
     if (typeof salience !== 'number' || salience < this.salienceThreshold) return null;
     if (observation) {
-      const attention = classifyObservationAttention(observation);
+      const attention = classifyObservationAttention(observation, {
+        temporalContext: this.getTemporalContext ? this.getTemporalContext() : null,
+      });
       if (attention.mode !== 'interruptive') {
         this.logger.info?.(`[publish] bridge-chat suppressed ambient observation: ${attention.reason}`);
         return null;

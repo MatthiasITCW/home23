@@ -29,8 +29,18 @@ function readPayload(obs) {
   return obs.payload && typeof obs.payload === 'object' ? obs.payload : {};
 }
 
+function activeRhythmsFrom(input = {}) {
+  const temporal = input.temporalContext
+    || input.payload?.temporalContext
+    || input.attention?.temporalContext
+    || null;
+  const rhythms = temporal?.jtrTime?.activeRhythms || temporal?.activeRhythms || input.activeRhythms;
+  return Array.isArray(rhythms) ? rhythms.map(r => String(r).toLowerCase()) : [];
+}
+
 function classifyAttentionRequest(input = {}) {
   const payload = input.payload && typeof input.payload === 'object' ? input.payload : input;
+  const rhythms = activeRhythmsFrom(input);
   const explicitMode = normalizeMode(
     payload.attentionMode
     || payload.deliveryMode
@@ -61,21 +71,26 @@ function classifyAttentionRequest(input = {}) {
   if (exhausted) return { mode: 'interruptive', reason: 'automation_exhausted' };
   if (INTERRUPTIVE_SEVERITIES.has(severity)) return { mode: 'interruptive', reason: `severity_${severity}` };
   if (anomaly) return { mode: 'interruptive', reason: 'anomaly' };
+  if (rhythms.includes('deep-work')) {
+    return { mode: 'ambient', reason: 'deep_work_suppresses_non_action' };
+  }
   if (AMBIENT_SEVERITIES.has(severity)) return { mode: 'ambient', reason: `severity_${severity}` };
   return { mode: 'ambient', reason: 'routine_observation' };
 }
 
-function classifyObservationAttention(obs = {}) {
+function classifyObservationAttention(obs = {}, options = {}) {
   const payload = readPayload(obs);
   return classifyAttentionRequest({
     ...payload,
     payload,
     severity: payload.severity,
+    temporalContext: options.temporalContext || obs.temporalContext || payload.temporalContext,
+    activeRhythms: options.activeRhythms || obs.activeRhythms || payload.activeRhythms,
   });
 }
 
-function shouldInterrupt(obs = {}) {
-  return classifyObservationAttention(obs).mode === 'interruptive';
+function shouldInterrupt(obs = {}, options = {}) {
+  return classifyObservationAttention(obs, options).mode === 'interruptive';
 }
 
 module.exports = {

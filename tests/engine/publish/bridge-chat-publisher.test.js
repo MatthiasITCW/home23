@@ -59,6 +59,39 @@ test('BridgeChatPublisher sends action-required high-salience observations', asy
   assert.equal(sent.length, 1);
 });
 
+test('BridgeChatPublisher applies deep-work rhythm suppression', async () => {
+  const sent = [];
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    sender: async (m) => sent.push(m),
+    ledger: { record: async () => {} },
+    logger: { info: () => {}, warn: () => {} },
+    getTemporalContext: () => ({ jtrTime: { activeRhythms: ['deep-work'] } }),
+  });
+
+  await pub.onObservation({
+    salience: 0.95,
+    summary: 'interesting but non-action update',
+    observation: {
+      flag: 'COLLECTED',
+      confidence: 0.99,
+      payload: { severity: 'normal', summary: 'routine update' },
+    },
+  });
+  await pub.onObservation({
+    salience: 0.95,
+    summary: 'action required',
+    observation: {
+      flag: 'COLLECTED',
+      confidence: 0.99,
+      payload: { severity: 'normal', requiresAction: true },
+    },
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].text, 'action required');
+});
+
 test('BridgeChatPublisher does not record success when no sender is configured', async () => {
   let records = 0;
   const pub = new BridgeChatPublisher({

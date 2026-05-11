@@ -23,6 +23,7 @@ const { GoalCaptureSystem } = require('./goals/goal-capture');
 const { ReflectionAnalyzer } = require('./reflection/analyzer');
 const { EnvironmentInterface } = require('./environment/interface');
 const { TemporalRhythms } = require('./temporal/rhythms');
+const { buildTemporalContext } = require('./core/temporal-context');
 const { FocusExplorationOscillator } = require('./temporal/oscillator');
 const { MetaCoordinator } = require('./coordinator/meta-coordinator');
 const { AgentExecutor } = require('./agents/agent-executor');
@@ -1043,6 +1044,7 @@ async function main() {
 
     const bridgePublisher = new BridgeChatPublisher({
       salienceThreshold: publishCfg.targets?.bridge_chat?.salience_threshold ?? 0.75,
+      getTemporalContext: () => buildTemporalContext({ workspacePath }),
       sender: bridgeInjectUrl
         ? async ({ text }) => {
             const response = await fetch(bridgeInjectUrl, {
