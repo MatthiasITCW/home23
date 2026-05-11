@@ -190,10 +190,10 @@
     },
     {
       "id": "scheduler-preflight-decisions",
-      "title": "Scheduler preflight decisions before durable state",
+      "title": "Scheduler preflight decisions and outcome-layer receipts",
       "status": "adopted",
       "sourceIssues": [82, 96, 101],
-      "requirement": "Scheduled jobs must inspect state and record whether to run, repair, skip, catch up, defer, or escalate before mutating scheduler state or executing work.",
+      "requirement": "Scheduled jobs must inspect state and record whether to run, repair, skip, catch up, defer, or escalate before mutating scheduler state or executing work. After execution, run logs must separate mechanical success from semantic success across calendar, scheduler, process, task, state, artifact, delivery, and intent layers.",
       "implementationReceipts": [
         {
           "commit": "23f3d16",
@@ -204,6 +204,14 @@
           "commit": "23f3d16",
           "artifact": "tests/scheduler/cron.test.ts",
           "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts tests/agent/tools/cron.test.ts"
+        },
+        {
+          "artifact": "src/scheduler/cron.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts"
+        },
+        {
+          "artifact": "tests/scheduler/cron.test.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts"
         }
       ],
       "doctrineFiles": [

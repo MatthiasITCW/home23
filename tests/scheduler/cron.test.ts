@@ -50,6 +50,11 @@ test('due cron jobs write a preflight decision receipt before the handler runs',
   assert.equal(runLog.length, 1);
   assert.equal(runLog[0].status, 'ok');
   assert.equal(runLog[0].decision.action, 'run');
+  assert.equal(runLog[0].outcome.schema, 'home23.scheduler.job-outcome.v1');
+  assert.equal(runLog[0].outcome.mechanicalStatus, 'ok');
+  assert.equal(runLog[0].outcome.semanticStatus, 'unknown');
+  assert.equal(runLog[0].outcome.layers.process.status, 'success');
+  assert.equal(runLog[0].outcome.layers.intent.status, 'unknown');
 });
 
 test('due cron jobs with repeated errors escalate before executing again', async () => {
@@ -81,9 +86,13 @@ test('due cron jobs with repeated errors escalate before executing again', async
   assert.equal(runLog[0].status, 'error');
   assert.equal(runLog[0].withheld, true);
   assert.equal(runLog[0].decision.action, 'escalate');
+  assert.equal(runLog[0].outcome.semanticStatus, 'withheld');
+  assert.equal(runLog[0].outcome.layers.scheduler.status, 'skipped');
+  assert.equal(runLog[0].outcome.layers.process.status, 'skipped');
 
   const savedJobs = JSON.parse(readFileSync(join(dir, 'cron-jobs.json'), 'utf8'));
   assert.equal(savedJobs[0].state.lastStatus, 'error');
+  assert.equal(savedJobs[0].state.lastSemanticStatus, 'withheld');
   assert.ok(savedJobs[0].state.nextRunAtMs > Date.now());
 });
 
@@ -125,6 +134,51 @@ test('background cron jobs defer under mixed due load without counting as failur
   const savedJobs = JSON.parse(readFileSync(join(dir, 'cron-jobs.json'), 'utf8'));
   const savedBackground = savedJobs.find((job: CronJob) => job.id === 'background-work');
   assert.equal(savedBackground.state.lastStatus, 'ok');
+  assert.equal(savedBackground.state.lastSemanticStatus, 'withheld');
   assert.equal(savedBackground.state.consecutiveErrors, 0);
   assert.ok(savedBackground.state.nextRunAtMs > Date.now());
+});
+
+test('run logs separate mechanical completion from failed semantic outcome layers', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-cron-semantic-'));
+  const job = makeDueJob({
+    delivery: { mode: 'none' },
+  });
+  writeFileSync(join(dir, 'cron-jobs.json'), JSON.stringify([job], null, 2));
+
+  const scheduler = new CronScheduler({ timezone: 'America/New_York', jobsFile: 'cron-jobs.json', runsDir: 'cron-runs' }, async (): Promise<JobResult> => {
+    return {
+      status: 'ok',
+      response: 'handler finished but artifact verifier failed',
+      durationMs: 3,
+      semanticStatus: 'failed',
+      outcomeLayers: {
+        artifact: {
+          status: 'failed',
+          reason: 'expected report file was not created',
+          evidence: { expectedPath: 'reports/daily.md' },
+        },
+        intent: {
+          status: 'failed',
+          reason: 'desired daily report outcome was not satisfied',
+        },
+      },
+    };
+  }, dir);
+
+  await (scheduler as any).tick();
+
+  const runLog = readJsonl(join(dir, 'cron-runs', 'job-1.jsonl'));
+  assert.equal(runLog.length, 1);
+  assert.equal(runLog[0].status, 'ok');
+  assert.equal(runLog[0].outcome.mechanicalStatus, 'ok');
+  assert.equal(runLog[0].outcome.semanticStatus, 'failed');
+  assert.equal(runLog[0].outcome.layers.process.status, 'success');
+  assert.equal(runLog[0].outcome.layers.task.status, 'success');
+  assert.equal(runLog[0].outcome.layers.artifact.status, 'failed');
+  assert.equal(runLog[0].outcome.layers.intent.status, 'failed');
+
+  const savedJobs = JSON.parse(readFileSync(join(dir, 'cron-jobs.json'), 'utf8'));
+  assert.equal(savedJobs[0].state.lastStatus, 'ok');
+  assert.equal(savedJobs[0].state.lastSemanticStatus, 'failed');
 });

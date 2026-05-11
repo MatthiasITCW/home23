@@ -38,6 +38,7 @@ export interface JobState {
   nextRunAtMs: number;
   lastRunAtMs?: number;
   lastStatus?: 'ok' | 'error';
+  lastSemanticStatus?: JobSemanticStatus;
   lastDurationMs?: number;
   consecutiveErrors: number;
   lastDecisionAtMs?: number;
@@ -63,11 +64,35 @@ export interface JobResult {
   response?: string;
   error?: string;
   durationMs: number;
+  semanticStatus?: Exclude<JobSemanticStatus, 'withheld'>;
+  outcomeLayers?: Partial<Record<JobOutcomeLayer, JobOutcomeLayerReceipt>>;
+  artifacts?: string[];
 }
 
 export type JobHandler = (job: CronJob) => Promise<JobResult>;
 
 export type JobDecisionAction = 'run' | 'repair' | 'skip' | 'catch_up' | 'defer' | 'escalate';
+export type JobSemanticStatus = 'satisfied' | 'failed' | 'unknown' | 'withheld';
+export type JobOutcomeLayer = 'calendar' | 'scheduler' | 'process' | 'task' | 'state' | 'artifact' | 'delivery' | 'intent';
+export type JobOutcomeLayerStatus = 'success' | 'failed' | 'skipped' | 'unknown' | 'not_applicable';
+
+export interface JobOutcomeLayerReceipt {
+  status: JobOutcomeLayerStatus;
+  reason: string;
+  evidence?: Record<string, unknown>;
+}
+
+export interface JobOutcomeReceipt {
+  schema: 'home23.scheduler.job-outcome.v1';
+  sourceIssue: number;
+  runId: string;
+  jobId: string;
+  jobName: string;
+  recordedAt: string;
+  mechanicalStatus: JobResult['status'];
+  semanticStatus: JobSemanticStatus;
+  layers: Record<JobOutcomeLayer, JobOutcomeLayerReceipt>;
+}
 
 export interface JobDecision {
   schema: 'home23.scheduler.job-decision.v1';
@@ -394,6 +419,7 @@ export class CronScheduler {
 
   private async executeJob(job: CronJob, decision?: JobDecision): Promise<JobResult> {
     const startMs = Date.now();
+    const runId = `sched-run-${randomUUID().slice(0, 12)}`;
     let result: JobResult;
 
     try {
@@ -424,11 +450,29 @@ export class CronScheduler {
       console.log(`[scheduler] One-shot job ${job.id} fired`);
     }
 
-    // Persist
-    this.saveJobs();
+    let outcome = this.buildOutcomeReceipt(job, result, {
+      runId,
+      recordedAtMs: Date.now(),
+      decision,
+      withheld: false,
+      statePersisted: true,
+    });
+    job.state.lastSemanticStatus = outcome.semanticStatus;
+    const statePersisted = this.saveJobs();
+    if (!statePersisted) {
+      outcome = this.buildOutcomeReceipt(job, result, {
+        runId,
+        recordedAtMs: Date.now(),
+        decision,
+        withheld: false,
+        statePersisted: false,
+      });
+      job.state.lastSemanticStatus = outcome.semanticStatus;
+    }
 
     // Append run log
     this.appendRunLog(job.id, {
+      runId,
       jobId: job.id,
       timestamp: new Date(startMs).toISOString(),
       status: result.status,
@@ -436,10 +480,11 @@ export class CronScheduler {
       error: result.error,
       durationMs: result.durationMs,
       decision,
+      outcome,
     });
 
     const statusTag = result.status === 'ok' ? 'OK' : 'ERROR';
-    console.log(`[scheduler] Job ${job.id} ${statusTag} (${result.durationMs}ms)`);
+    console.log(`[scheduler] Job ${job.id} ${statusTag} semantic=${outcome.semanticStatus} (${result.durationMs}ms)`);
     return result;
   }
 
@@ -583,6 +628,7 @@ export class CronScheduler {
     const decidedAtMs = Date.parse(decision.decidedAt);
     const reviewAtMs = decision.nextReviewAtMs ?? decidedAtMs + 15 * 60 * 1000;
     const isLoadDeferral = decision.action === 'defer' && decision.sourceIssue === 71;
+    const runId = `sched-run-${randomUUID().slice(0, 12)}`;
     const result: JobResult = {
       status: isLoadDeferral ? 'ok' : 'error',
       error: `${decision.action}: ${decision.reason}`,
@@ -598,8 +644,27 @@ export class CronScheduler {
     job.state.lastDecisionAction = decision.action;
     job.state.lastDecisionReason = decision.reason;
     job.state.nextRunAtMs = Math.max(reviewAtMs, Date.now() + 60_000);
-    this.saveJobs();
+    let outcome = this.buildOutcomeReceipt(job, result, {
+      runId,
+      recordedAtMs: decidedAtMs,
+      decision,
+      withheld: true,
+      statePersisted: true,
+    });
+    job.state.lastSemanticStatus = outcome.semanticStatus;
+    const statePersisted = this.saveJobs();
+    if (!statePersisted) {
+      outcome = this.buildOutcomeReceipt(job, result, {
+        runId,
+        recordedAtMs: decidedAtMs,
+        decision,
+        withheld: true,
+        statePersisted: false,
+      });
+      job.state.lastSemanticStatus = outcome.semanticStatus;
+    }
     this.appendRunLog(job.id, {
+      runId,
       jobId: job.id,
       timestamp: decision.decidedAt,
       status: result.status,
@@ -607,9 +672,103 @@ export class CronScheduler {
       durationMs: 0,
       withheld: true,
       decision,
+      outcome,
     });
     console.warn(`[scheduler] Job ${job.id} withheld: ${decision.action} (${decision.reason})`);
     return result;
+  }
+
+  private buildOutcomeReceipt(
+    job: CronJob,
+    result: JobResult,
+    options: {
+      runId: string;
+      recordedAtMs: number;
+      decision?: JobDecision;
+      withheld: boolean;
+      statePersisted: boolean;
+    },
+  ): JobOutcomeReceipt {
+    const decisionAction = options.decision?.action ?? 'run';
+    const deliveryConfigured = Boolean(job.delivery && job.delivery.mode !== 'none');
+    const deliveryFailed = result.error?.startsWith('Delivery failed:') ?? false;
+    const processLayer: JobOutcomeLayerReceipt = options.withheld
+      ? { status: 'skipped', reason: `process not invoked because scheduler decision was ${decisionAction}` }
+      : result.status === 'ok'
+        ? { status: 'success', reason: 'handler process completed without throwing' }
+        : { status: 'failed', reason: result.error ?? 'handler process returned error' };
+
+    const layers: Record<JobOutcomeLayer, JobOutcomeLayerReceipt> = {
+      calendar: options.decision
+        ? {
+            status: 'success',
+            reason: options.decision.source === 'manual'
+              ? 'manual scheduler invocation reached decision gate'
+              : 'scheduled wake reached decision gate',
+          }
+        : { status: 'unknown', reason: 'no decision receipt was supplied' },
+      scheduler: options.withheld
+        ? { status: 'skipped', reason: `scheduler withheld execution: ${decisionAction}` }
+        : { status: 'success', reason: `scheduler allowed ${decisionAction} execution before durable state advance` },
+      process: processLayer,
+      task: options.withheld
+        ? { status: 'skipped', reason: 'task not attempted because scheduler withheld execution' }
+        : result.status === 'ok'
+          ? { status: 'success', reason: 'task handler returned ok' }
+          : { status: 'failed', reason: result.error ?? 'task handler returned error' },
+      state: options.statePersisted
+        ? { status: 'success', reason: 'job state persisted after decision/run update' }
+        : { status: 'failed', reason: 'job state persistence failed after decision/run update' },
+      artifact: Array.isArray(result.artifacts) && result.artifacts.length > 0
+        ? { status: 'success', reason: 'handler reported durable artifact output', evidence: { artifacts: result.artifacts } }
+        : { status: 'unknown', reason: 'no artifact contract or artifact output was reported' },
+      delivery: !deliveryConfigured
+        ? { status: 'not_applicable', reason: 'job has no delivery target or delivery mode is none' }
+        : deliveryFailed
+          ? { status: 'failed', reason: result.error ?? 'delivery failed' }
+          : result.status === 'ok'
+            ? { status: 'success', reason: 'configured delivery completed or was skipped by delivery policy' }
+            : { status: 'unknown', reason: 'handler failed before delivery success could be established' },
+      intent: result.semanticStatus === 'satisfied'
+        ? { status: 'success', reason: 'handler reported intended outcome satisfied' }
+        : result.semanticStatus === 'failed'
+          ? { status: 'failed', reason: 'handler reported intended outcome failed' }
+          : { status: 'unknown', reason: 'no intent satisfaction contract was reported' },
+    };
+
+    for (const [layer, receipt] of Object.entries(result.outcomeLayers ?? {}) as Array<[JobOutcomeLayer, JobOutcomeLayerReceipt]>) {
+      if (receipt?.status && receipt.reason) {
+        layers[layer] = receipt;
+      }
+    }
+
+    const semanticStatus = this.deriveSemanticStatus(result, layers, options.withheld);
+    return {
+      schema: 'home23.scheduler.job-outcome.v1',
+      sourceIssue: 82,
+      runId: options.runId,
+      jobId: job.id,
+      jobName: job.name,
+      recordedAt: new Date(options.recordedAtMs).toISOString(),
+      mechanicalStatus: result.status,
+      semanticStatus,
+      layers,
+    };
+  }
+
+  private deriveSemanticStatus(
+    result: JobResult,
+    layers: Record<JobOutcomeLayer, JobOutcomeLayerReceipt>,
+    withheld: boolean,
+  ): JobSemanticStatus {
+    if (withheld) return 'withheld';
+    if (result.status === 'error') return 'failed';
+
+    const failedLayer = Object.values(layers).some((layer) => layer.status === 'failed');
+    if (failedLayer) return 'failed';
+    if (result.semanticStatus === 'satisfied') return 'satisfied';
+    if (layers.intent.status === 'success') return 'satisfied';
+    return 'unknown';
   }
 
   // ─── Next Run Computation ─────────────────────────────
@@ -711,7 +870,7 @@ export class CronScheduler {
     }
   }
 
-  private saveJobs(): void {
+  private saveJobs(): boolean {
     const arr = Array.from(this.jobs.values());
     const json = JSON.stringify(arr, null, 2);
     const tmpPath = this.jobsFilePath + `.tmp-${randomUUID().slice(0, 8)}`;
@@ -719,10 +878,12 @@ export class CronScheduler {
     try {
       writeFileSync(tmpPath, json, 'utf-8');
       renameSync(tmpPath, this.jobsFilePath);
+      return true;
     } catch (err) {
       console.error('[scheduler] Failed to save jobs:', err);
       // Clean up temp file if rename failed
       try { unlinkSync(tmpPath); } catch { /* ignore */ }
+      return false;
     }
   }
 
