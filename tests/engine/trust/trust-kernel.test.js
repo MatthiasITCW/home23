@@ -211,3 +211,59 @@ test('TrustKernel surfaces verified claim conflicts instead of choosing a silent
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('TrustKernel lets user corrections outrank inherited assumptions without erasing the conflict', () => {
+  const { dir, kernel } = tempKernel();
+  try {
+    const inherited = {
+      type: 'bridge.state',
+      subject: 'pressure-bridge',
+      predicate: 'freshness',
+      value: 'stale',
+      actor: 'jerry',
+      observedAt: '2026-05-08T12:00:00.000Z',
+      scope: 'autonomous_action',
+      privacyClass: 'operational_internal',
+      freshnessTTL: 60 * 60 * 1000,
+      authority: 'inherited_assumption',
+      actionPosture: 'do_not_broaden',
+    };
+    kernel.recordClaim({
+      ...inherited,
+      id: 'pressure.freshness.inherited-stale',
+      status: 'durable_memory',
+    });
+    kernel.recordVerifiedClaim({
+      claim: {
+        ...inherited,
+        id: 'pressure.freshness.user-current',
+        value: 'current',
+        actor: 'jtr',
+        authority: 'user_correction',
+        actionPosture: 'inherit_for_subject_only',
+      },
+      receipt: passReceipt('pressure/freshness-user-correction'),
+      receiptPath: join(dir, 'pressure.evidence.json'),
+    });
+
+    const correction = kernel.explain('pressure.freshness.user-current', {
+      now: '2026-05-08T12:10:00.000Z',
+    });
+    const oldAssumption = kernel.explain('pressure.freshness.inherited-stale', {
+      now: '2026-05-08T12:10:00.000Z',
+    });
+
+    assert.equal(correction.status, 'known_verified');
+    assert.equal(correction.safeToInherit, true);
+    assert.equal(correction.claim.authority, 'user_correction');
+    assert.equal(correction.claim.actionPosture, 'inherit_for_subject_only');
+    assert.equal(correction.conflicts[0].claimId, 'pressure.freshness.inherited-stale');
+    assert.equal(correction.conflicts[0].resolution, 'current_claim_overrides_lower_authority');
+    assert.equal(oldAssumption.status, 'known_conflicted');
+    assert.equal(oldAssumption.safeToInherit, false);
+    assert.equal(oldAssumption.conflicts[0].resolution, 'higher_authority_claim_overrides_current');
+    assert.equal(oldAssumption.recommendedAction, 'accept_higher_authority_correction');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

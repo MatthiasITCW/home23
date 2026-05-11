@@ -37,6 +37,15 @@ const CONSEQUENTIAL_SCOPES = new Set([
   'personal_context',
 ]);
 
+const TRUST_AUTHORITY_RANKS = Object.freeze({
+  inherited_assumption: 10,
+  machine_observation: 30,
+  agent_inference: 40,
+  verified_receipt: 60,
+  user_correction: 90,
+  operator_override: 100,
+});
+
 class TrustKernel {
   constructor(opts = {}) {
     if (!opts.storePath && !opts.brainDir) {
@@ -109,6 +118,7 @@ class TrustKernel {
     const evidence = evidenceRefsWithVerification(claim.evidenceRefs || []);
     const freshness = freshnessState(claim, now);
     const conflicts = findConflicts(claim, latestById, now);
+    const blockingConflicts = conflicts.filter((conflict) => conflict.resolution !== 'current_claim_overrides_lower_authority');
     const reasons = [];
     let status = effectiveStatusWithoutConflicts(claim, now);
 
@@ -116,9 +126,14 @@ class TrustKernel {
       status = TRUST_STATUSES.KNOWN_STALE;
       reasons.push('freshness_ttl_expired');
     }
-    if (conflicts.length > 0) {
+    if (blockingConflicts.length > 0) {
       status = TRUST_STATUSES.KNOWN_CONFLICTED;
       reasons.push('claim_conflict_detected');
+      if (blockingConflicts.some((conflict) => conflict.resolution === 'higher_authority_claim_overrides_current')) {
+        reasons.push('higher_authority_correction_present');
+      }
+    } else if (conflicts.length > 0) {
+      reasons.push('lower_authority_conflict_overridden');
     }
 
     const hasVerifiedReceipt = evidence.some((ref) => ref.verified);
@@ -204,6 +219,8 @@ function normalizeClaim(claim = {}) {
     confidence: Number.isFinite(claim.confidence) ? claim.confidence : null,
     freshnessTTL: normalizeTtl(claim.freshnessTTL),
     scope: String(claim.scope || 'operational_internal'),
+    authority: normalizeAuthority(claim.authority || inferAuthority(claim)),
+    actionPosture: String(claim.actionPosture || inferActionPosture(claim)),
     privacyClass: String(claim.privacyClass || 'operational_internal'),
     verifier: claim.verifier || null,
     status: claim.status || TRUST_STATUSES.CANDIDATE_CLAIM,
@@ -278,15 +295,27 @@ function findConflicts(claim, latestById, now) {
     if (other.predicate !== claim.predicate) continue;
     if (!SAFE_STATUSES.has(effectiveStatusWithoutConflicts(other, now))) continue;
     if (canonicalJson(other.value) === canonicalJson(claim.value)) continue;
+    const resolution = compareAuthority(claim, other);
     out.push({
       claimId: other.id,
       status: other.status,
       value: other.value,
       actor: other.actor,
       observedAt: other.observedAt,
+      authority: other.authority || inferAuthority(other),
+      actionPosture: other.actionPosture || inferActionPosture(other),
+      resolution,
     });
   }
   return out;
+}
+
+function compareAuthority(current, other) {
+  const currentRank = authorityRank(current);
+  const otherRank = authorityRank(other);
+  if (currentRank > otherRank) return 'current_claim_overrides_lower_authority';
+  if (otherRank > currentRank) return 'higher_authority_claim_overrides_current';
+  return 'same_authority_requires_reconciliation';
 }
 
 function effectiveStatusWithoutConflicts(claim, now) {
@@ -319,12 +348,39 @@ function freshnessState(claim, now) {
 }
 
 function recommendedAction(reasons) {
+  if (reasons.includes('higher_authority_correction_present')) return 'accept_higher_authority_correction';
   if (reasons.includes('claim_conflict_detected')) return 'write_reconciliation_receipt';
   if (reasons.includes('freshness_ttl_expired')) return 'refresh_claim_verification';
   if (reasons.includes('sensitive_claim_cannot_be_public_artifact')) return 'redact_or_reclassify_claim';
   if (reasons.includes('consequential_claim_requires_verified_receipt')) return 'run_or_attach_verifier_receipt';
   if (reasons.includes('claim_not_verified')) return 'run_or_attach_verifier_receipt';
   return null;
+}
+
+function normalizeAuthority(value) {
+  const key = String(value || '').trim();
+  return TRUST_AUTHORITY_RANKS[key] ? key : 'agent_inference';
+}
+
+function inferAuthority(claim = {}) {
+  const actor = String(claim.actor || '').toLowerCase();
+  if (actor === 'jtr' || actor === 'user') return 'user_correction';
+  if (claim.status === TRUST_STATUSES.KNOWN_VERIFIED || Array.isArray(claim.evidenceRefs) && claim.evidenceRefs.length > 0) {
+    return 'verified_receipt';
+  }
+  if (claim.type === 'observation' || String(claim.type || '').includes('observation')) return 'machine_observation';
+  return 'agent_inference';
+}
+
+function inferActionPosture(claim = {}) {
+  if (claim.authority === 'user_correction') return 'inherit_for_subject_only';
+  if (claim.status === TRUST_STATUSES.RAW_OBSERVATION || claim.status === TRUST_STATUSES.CANDIDATE_CLAIM) return 'verify_before_action';
+  if (isConsequential(claim)) return 'inherit_only_with_fresh_receipt';
+  return 'context_only';
+}
+
+function authorityRank(claim = {}) {
+  return TRUST_AUTHORITY_RANKS[normalizeAuthority(claim.authority || inferAuthority(claim))] || 0;
 }
 
 function isConsequential(claim) {
@@ -368,7 +424,9 @@ module.exports = {
   TRUST_EVENT_SCHEMA,
   TRUST_STATUSES,
   TrustKernel,
+  TRUST_AUTHORITY_RANKS,
   _test: {
+    authorityRank,
     evidenceRefFromReceipt,
     freshnessState,
     normalizeClaim,
