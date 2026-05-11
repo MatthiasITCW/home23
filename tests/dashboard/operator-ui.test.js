@@ -55,6 +55,9 @@ test('live-problems panel exposes an operator readout, not only raw verifier row
   assert.match(js, /Work Manifest/);
   assert.match(js, /manifest\.allowedTransition/);
   assert.match(js, /manifest\.sourceSurface/);
+  assert.match(js, /Correction Tombstones/);
+  assert.match(js, /correctionTombstones/);
+  assert.match(js, /do_not_inherit_old_projection/);
   assert.match(js, /renderGoodLifeRings/);
   assert.match(js, /Good Life three-ring status/);
   assert.match(js, /operatorRings/);

@@ -1040,6 +1040,13 @@ function buildProjectionProvenance({
   const services = Array.isArray(runtime?.services) ? runtime.services : [];
   const source = (key, fallback) => sources[key] || fallback;
   const warnings = Array.isArray(consistency?.warnings) ? consistency.warnings : [];
+  const correctionTombstones = buildCorrectionTombstones({
+    projection: normalizeProjection(state),
+    liveProblems,
+    obligations,
+    warnings,
+    source,
+  });
   return {
     schema: 'home23.good-life.provenance.v1',
     generatedAt: new Date(toNowMs(now)).toISOString(),
@@ -1138,6 +1145,7 @@ function buildProjectionProvenance({
       tombstoneRequired: true,
       rule: 'operator corrections must demote the old governing claim without deleting the historical fact that it existed',
     },
+    correctionTombstones,
     conflicts: warnings.map((warning) => ({
       code: warning.code || 'warning',
       severity: warning.severity || 'warning',
@@ -1145,6 +1153,59 @@ function buildProjectionProvenance({
       fields: Array.isArray(warning.fields) ? warning.fields : [],
     })),
   };
+}
+
+function buildCorrectionTombstones({
+  projection,
+  liveProblems,
+  obligations,
+  warnings = [],
+  source = (_key, fallback) => fallback,
+} = {}) {
+  const tombstones = [];
+  const warningCodes = new Set((Array.isArray(warnings) ? warnings : []).map((warning) => warning?.code));
+  if (warningCodes.has('good_life_projection_mismatch')) {
+    for (const key of ['open', 'chronic', 'unverifiable']) {
+      const projected = finiteCount(projection?.liveProblems?.[key]);
+      const direct = finiteCount(liveProblems?.counts?.[key]);
+      if (projected == null || direct == null || projected === direct) continue;
+      tombstones.push({
+        schema: 'home23.good-life.correction-tombstone.v1',
+        id: `good-life:${key}:projection-demoted`,
+        subject: `liveProblems.${key}`,
+        oldClaim: `Good Life projected ${projected} ${key} live problem${projected === 1 ? '' : 's'}`,
+        correctedClaim: `live-problem registry reports ${direct} ${key} live problem${direct === 1 ? '' : 's'}`,
+        oldSurface: source('state', 'good-life-state.json'),
+        correctingSurface: source('liveProblems', 'live-problems.json'),
+        authority: 'direct live-problem registry supersedes Good Life projection for current live-problem state',
+        status: 'demotes_governing_claim',
+        actionPosture: 'do_not_inherit_old_projection',
+        sourceIssue: 102,
+      });
+    }
+  }
+
+  if (warningCodes.has('good_life_goal_projection_superseded')) {
+    const projected = finiteCount(projection?.goals?.open);
+    const direct = finiteCount(obligations?.counts?.activeGoals);
+    if (projected != null && direct != null && projected !== direct) {
+      tombstones.push({
+        schema: 'home23.good-life.correction-tombstone.v1',
+        id: 'good-life:goals:projection-demoted',
+        subject: 'goals.open',
+        oldClaim: `Good Life projected ${projected} open goal${projected === 1 ? '' : 's'}`,
+        correctedClaim: `active goal snapshot reports ${direct} open goal${direct === 1 ? '' : 's'}`,
+        oldSurface: source('state', 'good-life-state.json'),
+        correctingSurface: source('agenda', 'agenda.jsonl'),
+        authority: 'newer active-goal snapshot supersedes stale Good Life goal projection',
+        status: 'demotes_governing_claim',
+        actionPosture: 'do_not_inherit_old_projection',
+        sourceIssue: 102,
+      });
+    }
+  }
+
+  return tombstones;
 }
 
 function summarizeTopLiveProblem(liveProblems = {}) {
@@ -1822,6 +1883,7 @@ function buildDetailSections({ commitments, trends, regulator, liveProblems, led
       pm2: pm2 || null,
       autonomyBudget: budget || null,
       ledgerTail: Array.isArray(ledgerTail) ? ledgerTail.slice(-12).reverse().map(compactLedgerEntry) : [],
+      correctionTombstones: [],
     },
   };
 }
@@ -1916,6 +1978,7 @@ function buildGoodLifeOperatorModel({
     host: state?.evidence?.host || null,
     pm2: state?.evidence?.pm2 || null,
   });
+  model.detail.insights.correctionTombstones = model.provenance.correctionTombstones;
   model.work = work;
   model.operatorAnswer = buildOperatorAnswer({
     state,

@@ -4067,6 +4067,7 @@ function renderGoodLifeInsightsDetail(data) {
   const metrics = detail.insights?.trendMetrics || {};
   const ledger = detail.insights?.ledgerTail || [];
   const provenance = data?.operator?.provenance || null;
+  const correctionTombstones = provenance?.correctionTombstones || detail.insights?.correctionTombstones || [];
   const budget = detail.insights?.autonomyBudget || data?.operator?.autonomyBudget || null;
   const host = detail.insights?.host || data?.state?.evidence?.host || null;
   const pm2 = detail.insights?.pm2 || data?.state?.evidence?.pm2 || null;
@@ -4096,6 +4097,12 @@ function renderGoodLifeInsightsDetail(data) {
         <small>${escapeHtml((row.fields || []).join(', '))}</small>
         <em>${escapeHtml(row.severity || 'warning')}</em>
       </div>`).join('')}
+      ${correctionTombstones.length ? `<h5>Correction Tombstones</h5>${correctionTombstones.slice(0, 5).map((row) => `<div class="h23-goodlife-evidence-row watch">
+        <strong>${escapeHtml(row.subject || 'correction')}</strong>
+        <span>${escapeHtml(row.correctedClaim || '')}</span>
+        <small>${escapeHtml([row.oldClaim, row.correctingSurface].filter(Boolean).join(' - '))}</small>
+        <em>${escapeHtml(row.actionPosture || 'do_not_inherit_old_projection')}</em>
+      </div>`).join('')}` : ''}
     </section>
   ` : '';
   const budgetHtml = budget ? `

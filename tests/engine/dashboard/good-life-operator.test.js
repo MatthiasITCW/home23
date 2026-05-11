@@ -476,6 +476,48 @@ test('Good Life operator provenance preserves explicit source surfaces and confl
   assert.ok(model.provenance.conflicts.some((warning) => warning.code === 'good_life_projection_mismatch'));
 });
 
+test('Good Life operator emits correction tombstones when direct evidence demotes projection claims', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      evaluatedAt: '2026-05-08T13:43:00.000Z',
+      evidence: {
+        liveProblems: { open: 1, chronic: 0, resolved: 0, unverifiable: 0, total: 1 },
+        goals: { open: 4, total: 4 },
+      },
+    }),
+    liveProblems: [],
+    obligations: {
+      activeAgenda: [],
+      activeGoals: [],
+      counts: {
+        activeAgenda: 0,
+        activeGoals: 2,
+        activeGoalsTrusted: true,
+        sourceUpdatedAt: '2026-05-08T13:44:00.000Z',
+      },
+    },
+    sources: {
+      state: '/tmp/good-life-state.json',
+      liveProblems: '/tmp/live-problems.json',
+      agenda: '/tmp/agenda.jsonl',
+    },
+    now: NOW,
+  });
+
+  assert.deepEqual(model.provenance.correctionTombstones.map((row) => row.subject), [
+    'liveProblems.open',
+    'goals.open',
+  ]);
+  assert.deepEqual(model.detail.insights.correctionTombstones, model.provenance.correctionTombstones);
+  assert.match(model.provenance.correctionTombstones[0].oldClaim, /projected 1 open live problem/);
+  assert.match(model.provenance.correctionTombstones[0].correctedClaim, /registry reports 0 open live problem/);
+  assert.equal(model.provenance.correctionTombstones[0].oldSurface, '/tmp/good-life-state.json');
+  assert.equal(model.provenance.correctionTombstones[0].correctingSurface, '/tmp/live-problems.json');
+  assert.equal(model.provenance.correctionTombstones[0].actionPosture, 'do_not_inherit_old_projection');
+  assert.equal(model.provenance.correctionTombstones[1].correctingSurface, '/tmp/agenda.jsonl');
+  assert.equal(model.provenance.correctionTombstones[1].sourceIssue, 102);
+});
+
 test('Good Life operator detail carries host pressure evidence for the UI', () => {
   const host = {
     cpu: { load1: 8.4, cpuCount: 10, loadRatio: 0.84 },
