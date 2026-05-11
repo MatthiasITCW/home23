@@ -381,6 +381,23 @@
         "engine/src/dashboard/good-life-operator.js",
         "tests/engine/dashboard/good-life-operator.test.js"
       ]
+    },
+    {
+      "id": "phantom-completion-loop-guard",
+      "title": "Completed work cannot remain active without integrity drift",
+      "status": "adopted",
+      "sourceIssues": [42, 52],
+      "requirement": "If a goal or study topic appears both active and complete, Home23 must count only genuinely open work and surface a state-integrity warning instead of letting a green loop silently reprocess completed work.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "tests/engine/dashboard/good-life-operator.test.js"
+      ]
     }
   ]
 }

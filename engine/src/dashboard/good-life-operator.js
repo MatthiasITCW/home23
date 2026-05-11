@@ -278,7 +278,15 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, output
     });
 
   const allActiveGoals = normalizeActiveGoals(goals);
-  const activeGoals = allActiveGoals
+  const integrity = activeGoalIntegrity(allActiveGoals);
+  const openWorkGoals = allActiveGoals.filter(isOpenWorkGoal);
+  const configuredActiveCount = finiteCount(goals?.counts?.active);
+  const preserveCappedActiveCount = configuredActiveCount != null
+    && integrity.completedInActive === 0
+    && allActiveGoals.length >= 12
+    && configuredActiveCount > allActiveGoals.length;
+  const effectiveActiveCount = preserveCappedActiveCount ? configuredActiveCount : openWorkGoals.length;
+  const activeGoals = openWorkGoals
     .sort((a, b) => toTimeMs(b.createdAt || b.created) - toTimeMs(a.createdAt || a.created))
     .slice(0, 12)
     .map((goal) => {
@@ -325,10 +333,11 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, output
     latestAgendaById,
     counts: {
       activeAgenda: activeAgenda.length,
-      activeGoals: Number.isFinite(goals?.counts?.active) ? goals.counts.active : allActiveGoals.length,
+      activeGoals: effectiveActiveCount,
       activeGoalsShown: activeGoals.length,
-      activeGoalsTrusted: Number.isFinite(goals?.counts?.active),
+      activeGoalsTrusted: configuredActiveCount != null && integrity.completedInActive === 0,
       sourceUpdatedAt: goals?.counts?.sourceUpdatedAt || goals?.sourceUpdatedAt || null,
+      integrity,
     },
   };
 }
@@ -383,6 +392,32 @@ function normalizeActiveGoals(goals) {
     if (Array.isArray(entry)) return entry[1] || { id: entry[0] };
     return entry || {};
   }).filter(Boolean);
+}
+
+function isOpenWorkGoal(goal) {
+  if (!goal) return false;
+  const status = String(goal.status || 'active').toLowerCase();
+  if (['completed', 'complete', 'archived', 'cancelled', 'canceled', 'resolved'].includes(status)) {
+    return false;
+  }
+  if (goal.completed || goal.completedAt || goal.completed_at) return false;
+  const progress = Number.isFinite(Number(goal.progress)) ? Number(goal.progress) : null;
+  return progress === null || progress < 1;
+}
+
+function activeGoalIntegrity(allGoals = []) {
+  const completedInActiveIds = [];
+  for (const goal of Array.isArray(allGoals) ? allGoals : []) {
+    if (!isOpenWorkGoal(goal)) {
+      completedInActiveIds.push(goal.id || goal.description || 'unknown-goal');
+    }
+  }
+  return {
+    schema: 'home23.goal-state-integrity.v1',
+    sourceIssues: [42, 52],
+    completedInActive: completedInActiveIds.length,
+    completedInActiveIds: completedInActiveIds.slice(0, 12),
+  };
 }
 
 function summarizeGoalDescription(description) {
@@ -989,6 +1024,16 @@ function buildConsistency({ state, projection, liveProblems, obligations, hasObl
 
   const projectedOpenGoals = finiteCount(projection.goals?.open);
   const activeGoalRows = finiteCount(obligations?.counts?.activeGoals);
+  const completedInActive = finiteCount(obligations?.counts?.integrity?.completedInActive);
+  if (completedInActive != null && completedInActive > 0) {
+    warnings.push({
+      code: 'good_life_goal_state_integrity',
+      severity: 'warning',
+      message: `${completedInActive} completed goal${completedInActive === 1 ? '' : 's'} still appear active; repair goal state before treating the work loop as healthy`,
+      fields: ['goals.active', 'goals.completed'],
+      sourceIssues: [42, 52],
+    });
+  }
   if (
     hasObligationEvidence
     && obligations?.counts?.activeGoalsTrusted

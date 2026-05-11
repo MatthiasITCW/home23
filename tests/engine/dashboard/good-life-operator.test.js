@@ -936,6 +936,40 @@ test('Good Life operator warns when projected open goals disagree with active go
   assert.equal(model.operatorBrief.target.tab, 'insights');
 });
 
+test('Good Life operator flags phantom active goals that are already complete', () => {
+  const obligations = buildGoodLifeObligationSnapshot({
+    goals: {
+      active: [
+        ['goal-active', { id: 'goal-active', description: 'Current useful work', status: 'active', progress: 0.25 }],
+        ['goal-completed', { id: 'goal-completed', description: 'Already completed work', status: 'completed', progress: 1 }],
+        ['goal-progress-done', { id: 'goal-progress-done', description: 'Done by progress', status: 'active', progress: 1 }],
+      ],
+      counts: { active: 3, completed: 12, archived: 2 },
+    },
+    now: NOW,
+  });
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      evidence: {
+        goals: { open: 3, complete: 12, total: 15 },
+      },
+    }),
+    obligations,
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.equal(obligations.counts.activeGoals, 1);
+  assert.equal(obligations.counts.integrity.completedInActive, 2);
+  assert.deepEqual(obligations.counts.integrity.completedInActiveIds, ['goal-completed', 'goal-progress-done']);
+  assert.ok(model.consistency.warnings.some((warning) => (
+    warning.code === 'good_life_goal_state_integrity'
+    && warning.severity === 'warning'
+    && /2 completed goal/.test(warning.message)
+  )));
+  assert.ok(model.operatorAnswer.some((line) => line.includes('completed goals still appear active')));
+});
+
 test('Good Life operator treats newer goal snapshots as superseding stale goal projections', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({
