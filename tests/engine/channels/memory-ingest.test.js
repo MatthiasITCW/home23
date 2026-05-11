@@ -52,6 +52,51 @@ test('MemoryIngest.writeFromObservation creates a full MemoryObject and a receip
   assert.equal(r.memoryObjectId, mo.memory_id);
 });
 
+test('MemoryIngest classifies source role and doctrine posture before reuse', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mi-source-class-'));
+  const ingest = new MemoryIngest({ brainDir: dir });
+
+  const publicChange = await ingest.writeFromObservation({
+    channelId: 'from-the-inside.publish',
+    sourceRef: 'from-the-inside/099',
+    receivedAt: '2026-05-11T14:16:15Z',
+    producedAt: '2026-05-11T14:16:15Z',
+    flag: 'COLLECTED',
+    confidence: 0.99,
+    payload: { subject: 'from-the-inside/099', published: true },
+    verifierId: 'verify-from-the-inside-publish',
+  }, {
+    method: 'work_event',
+    type: 'observation',
+    topic: 'publish',
+    tags: ['public-facing', 'publish', 'receipt:ev_099'],
+  });
+
+  assert.equal(publicChange.provenance.source_class, 'public_facing_change');
+  assert.equal(publicChange.provenance.memory_role, 'public_record');
+  assert.equal(publicChange.provenance.action_posture, 'verify_before_reuse');
+  assert.equal(publicChange.provenance.doctrine_eligible, false);
+
+  const lowProvenance = await ingest.writeFromObservation({
+    channelId: 'notice.pass',
+    sourceRef: 'notice:stale-cluster',
+    receivedAt: '2026-05-11T14:16:15Z',
+    producedAt: '2026-05-11T14:16:15Z',
+    flag: 'ZERO_CONTEXT',
+    confidence: 0.9,
+    payload: { summary: 'maybe old context matters' },
+  }, {
+    method: 'zero_context_audit',
+    type: 'observation',
+    topic: 'memory',
+    tags: ['orientation'],
+  });
+
+  assert.equal(lowProvenance.provenance.source_class, 'low_provenance');
+  assert.equal(lowProvenance.provenance.action_posture, 'do_not_promote_to_doctrine');
+  assert.equal(lowProvenance.provenance.doctrine_eligible, false);
+});
+
 test('MemoryIngest dedupes by {channelId, sourceRef} — same ref updates not duplicates', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'mi-dedupe-'));
   const ingest = new MemoryIngest({ brainDir: dir });

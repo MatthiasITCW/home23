@@ -135,12 +135,18 @@
     {
       "id": "orientation-clue-taxonomy",
       "title": "Orientation clue taxonomy",
-      "status": "candidate",
+      "status": "adopted",
       "sourceIssues": [97],
       "requirement": "Distinguish orientation clues, action authority, historical context, public-facing change, needs-verification, and low-provenance memory.",
-      "implementationReceipts": [],
-      "doctrineFiles": [],
-      "blocker": "No Home23 classifier or operator path has implemented this taxonomy yet."
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/channels/memory-ingest.cjs",
+          "verifier": "node --test --test-concurrency=1 tests/engine/channels/memory-ingest.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/channels/memory-ingest.cjs"
+      ]
     },
     {
       "id": "field-report-proof-packet",

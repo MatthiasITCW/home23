@@ -35,6 +35,74 @@ function applyChannelCap(method, confidence) {
   return Math.min(confidence, cap);
 }
 
+function classifyMemorySource(obs = {}, draft = {}) {
+  const tags = new Set((draft.tags || []).map((tag) => String(tag).toLowerCase()));
+  const channelId = String(obs.channelId || '').toLowerCase();
+  const sourceRef = String(obs.sourceRef || '').toLowerCase();
+  const method = String(draft.method || '').toLowerCase();
+  const type = String(draft.type || '').toLowerCase();
+  const payloadText = typeof obs.payload === 'string'
+    ? obs.payload.toLowerCase()
+    : safeStringify(obs.payload).toLowerCase();
+
+  const hasTag = (...needles) => needles.some((needle) => tags.has(needle));
+  const hasText = (...needles) => needles.some((needle) => (
+    channelId.includes(needle) || sourceRef.includes(needle) || payloadText.includes(needle)
+  ));
+
+  if (obs.flag === 'ZERO_CONTEXT' || method === 'zero_context_audit' || hasTag('low-provenance', 'low_provenance')) {
+    return {
+      source_class: 'low_provenance',
+      memory_role: 'orientation_only',
+      action_posture: 'do_not_promote_to_doctrine',
+      doctrine_eligible: false,
+    };
+  }
+
+  if (obs.flag !== 'COLLECTED' || hasTag('needs-verification', 'needs_verification') || Number(obs.confidence) < 0.5) {
+    return {
+      source_class: 'needs_verification',
+      memory_role: 'candidate_claim',
+      action_posture: 'verify_before_action',
+      doctrine_eligible: false,
+    };
+  }
+
+  if (hasTag('public-facing', 'public_facing', 'publish', 'published') || hasText('publish', 'public/issues', 'from-the-inside/')) {
+    return {
+      source_class: 'public_facing_change',
+      memory_role: 'public_record',
+      action_posture: 'verify_before_reuse',
+      doctrine_eligible: false,
+    };
+  }
+
+  if (hasTag('action-authority', 'action_authority', 'manifest', 'verifier') || type === 'action' || hasText('allowedtransition', 'stopcondition', 'verifier')) {
+    return {
+      source_class: 'action_authority',
+      memory_role: 'governing_contract',
+      action_posture: 'may_authorize_bounded_action',
+      doctrine_eligible: false,
+    };
+  }
+
+  if (hasTag('historical', 'historical-context', 'historical_context') || hasText('/sessions/', '/dreams/', 'archive', 'historical context')) {
+    return {
+      source_class: 'historical_context',
+      memory_role: 'context_modifier',
+      action_posture: 'do_not_override_current_evidence',
+      doctrine_eligible: false,
+    };
+  }
+
+  return {
+    source_class: 'orientation_clue',
+    memory_role: 'orientation',
+    action_posture: 'use_as_hint_only',
+    doctrine_eligible: false,
+  };
+}
+
 class MemoryIngest {
   constructor({ brainDir, logger, maxObjects = null }) {
     if (!brainDir) throw new Error('MemoryIngest requires brainDir');
@@ -75,6 +143,7 @@ class MemoryIngest {
     const id = existing?.memory_id || `mo-bus-${crypto.randomUUID()}`;
     const title = `[${obs.channelId}] ${summarizePayload(obs.payload)}`.slice(0, 120);
     const statement = typeof obs.payload === 'string' ? obs.payload : safeStringify(obs.payload);
+    const sourceClassification = classifyMemorySource(obs, draft);
     return {
       memory_id: id,
       type: draft.type || 'observation',
@@ -93,6 +162,7 @@ class MemoryIngest {
         source_refs: [obs.sourceRef, obs.channelId, ...(obs.traceId ? [obs.traceId] : []), ...(draft.tags || [])],
         session_refs: [`bus-ingest-${obs.receivedAt.slice(0, 10)}`],
         generation_method: draft.method || 'build_event',
+        ...sourceClassification,
         ...(obs.origin ? { origin: obs.origin } : {}),
       },
       evidence: {
