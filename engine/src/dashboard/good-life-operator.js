@@ -351,6 +351,14 @@ function buildAgendaWorkManifest(row = {}) {
     subjectType: 'agenda',
     subjectId: row.id,
     allowedTransition: route?.worker ? `dispatch_worker:${route.worker}` : 'operator_review',
+    forbiddenAdjacentMoves: [
+      'do not restart unrelated services',
+      'do not mutate unrelated agenda or goal state',
+      'do not claim completion without a verifier-bearing receipt',
+    ],
+    stopLine: route?.worker
+      ? `stop after worker receipt records pass, fail, or blocked for ${row.id}`
+      : `stop after agenda status receipt classifies ${row.id}`,
     sourceSurface: `agenda.jsonl#${row.id}`,
     verifier: route?.worker
       ? 'worker receipt must report verifierStatus pass, fail, or blocked'
@@ -375,6 +383,14 @@ function buildGoalWorkManifest(goal = {}) {
     subjectType: 'goal',
     subjectId: goal.id,
     allowedTransition: artifact?.relativePath ? `produce_artifact:${artifact.relativePath}` : 'resolve_or_archive_goal',
+    forbiddenAdjacentMoves: [
+      'do not rewrite unrelated goals',
+      'do not satisfy by narrative summary alone',
+      'do not mark complete until artifact or bounded resolution receipt exists',
+    ],
+    stopLine: artifact?.relativePath
+      ? `stop after ${artifact.relativePath} exists or the goal is resolved/archived with a receipt`
+      : `stop after ${goal.id} is resolved, completed, archived, or converted into a bounded artifact goal`,
     sourceSurface: `brain-snapshot.activeGoals#${goal.id}`,
     verifier: artifact?.relativePath
       ? 'artifact must exist at one checked output path'

@@ -3908,10 +3908,12 @@ function renderGoodLifeWorkManifest(manifest) {
     <section><h4>Work Manifest</h4>
       <div class="h23-goodlife-detail-grid">
         <div><label>Allowed Transition</label><p>${escapeHtml(manifest.allowedTransition || 'not recorded')}</p></div>
+        <div><label>Stop Line</label><p>${escapeHtml(manifest.stopLine || 'not recorded')}</p></div>
         <div><label>Source Surface</label><p>${escapeHtml(manifest.sourceSurface || 'not recorded')}</p></div>
         <div><label>Verifier</label><p>${escapeHtml(manifest.verifier || 'not recorded')}</p></div>
         <div><label>Receipt</label><p>${escapeHtml(manifest.receipt || 'not recorded')}</p></div>
         <div><label>Artifact</label><p>${escapeHtml(artifact)}</p><small>${escapeHtml(manifest.artifact?.path || '')}</small></div>
+        <div><label>Forbidden Adjacent Work</label><p>${escapeHtml((manifest.forbiddenAdjacentMoves || []).join('; ') || 'not recorded')}</p></div>
         <div><label>Authority</label><p>${escapeHtml(manifest.authority || 'not recorded')}</p></div>
       </div>
     </section>
