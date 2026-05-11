@@ -437,6 +437,25 @@
       ]
     },
     {
+      "id": "runtime-maintenance-pressure-contract",
+      "title": "Runtime maintenance needs context discipline, selective persistence, and resource headroom",
+      "status": "adopted",
+      "sourceIssues": [48, 49],
+      "requirement": "Good Life must treat startup context, durable memory restraint, swap/free-memory pressure, and maintenance budget as live reliability evidence: inherited work is not fully oriented without current memory/context, not every tool call or intermediate step belongs in durable memory, and a system that works is not a system that works reliably unless resource headroom is visible.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js tests/engine/good-life/objective.test.js tests/engine/channels/machine/swap-channel.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "tests/engine/dashboard/good-life-operator.test.js",
+        "engine/src/good-life/objective.js",
+        "engine/src/channels/machine/swap-channel.js"
+      ]
+    },
+    {
       "id": "operator-handoff-packets",
       "title": "Operator handoffs are reusable provenance packets",
       "status": "adopted",

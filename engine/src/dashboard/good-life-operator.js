@@ -14,6 +14,7 @@ const HUMAN_BLOCKER_SOURCE_ISSUES = [5, 17, 19, 21, 25];
 const OPERATOR_HANDOFF_SOURCE_ISSUES = [25, 86, 93, 101];
 const INTERVENTION_READINESS_SOURCE_ISSUES = [88];
 const PUBLISHING_DISTRIBUTION_SOURCE_ISSUES = [43, 44, 45, 46, 47, 50, 51];
+const RUNTIME_MAINTENANCE_SOURCE_ISSUES = [48, 49];
 const WORK_REVIEW_GOAL_AGE_MIN = 12 * 60;
 const fs = require('fs');
 const path = require('path');
@@ -1409,6 +1410,94 @@ function buildPublishingDistributionReadiness({ issueArc = null, doctrineAdoptio
   };
 }
 
+function classifyRuntimePressure({ host = null, budget = null } = {}) {
+  const swapPct = finiteCount(host?.swap?.usedPct);
+  const freePct = finiteCount(host?.memory?.freePct);
+  if (swapPct == null && freePct == null && !budget?.pressureRest) return 'unknown';
+  if ((swapPct != null && swapPct >= 85) || (freePct != null && freePct <= 3)) return 'critical';
+  if ((swapPct != null && swapPct >= 70) || (freePct != null && freePct <= 10) || budget?.pressureRest) return 'strained';
+  return 'healthy';
+}
+
+function buildRuntimeMaintenancePosture({
+  state = null,
+  issueArc = null,
+  doctrineAdoption = null,
+  sources = {},
+  budget = null,
+  freshness = null,
+  now = new Date(),
+} = {}) {
+  const byNumber = issueRowsByNumber(issueArc);
+  const adopted = adoptedSourceIssueSet(doctrineAdoption);
+  const rows = RUNTIME_MAINTENANCE_SOURCE_ISSUES
+    .map((issue) => byNumber.get(issue))
+    .filter(Boolean);
+  const missingIssueRows = RUNTIME_MAINTENANCE_SOURCE_ISSUES.filter((issue) => !byNumber.has(issue));
+  const missingDoctrine = RUNTIME_MAINTENANCE_SOURCE_ISSUES.filter((issue) => !adopted.has(issue));
+  const host = state?.evidence?.host || null;
+  const pressure = classifyRuntimePressure({ host, budget });
+  const pressureEvidence = summarizeHostPressureForOperator(host);
+  const maintenanceRatio = finiteCount(state?.evidence?.actions?.maintenanceRatio);
+  const freshnessStatus = freshness?.status || (state?.evaluatedAt ? 'current' : 'unknown');
+
+  return {
+    schema: 'home23.runtime-maintenance-posture.v1',
+    generatedAt: new Date(toNowMs(now)).toISOString(),
+    sourceIssues: RUNTIME_MAINTENANCE_SOURCE_ISSUES,
+    source: {
+      issueArc: sources.issueArc || null,
+      doctrineAdoption: sources.doctrineAdoption || null,
+    },
+    status: missingIssueRows.length
+      ? 'incomplete_issue_arc'
+      : (missingDoctrine.length
+        ? 'needs_doctrine_adoption'
+        : (pressure === 'critical' ? 'pressure_critical' : (pressure === 'strained' ? 'pressure_strained' : 'contracted'))),
+    pressure,
+    rows: rows.map((row) => ({
+      issue: row.number,
+      title: row.title || '',
+      slug: row.slug || null,
+      directives: Array.isArray(row.directives) ? row.directives.slice(0, 4).map((text) => compactText(text, 220)) : [],
+    })),
+    missingIssueRows,
+    missingDoctrine,
+    startupContext: {
+      status: freshnessStatus === 'current' ? 'context_current' : (freshnessStatus === 'stale' ? 'context_stale' : 'context_unknown'),
+      contract: 'Read active memory, handoff, and current-state anchors before treating inherited context as action authority.',
+      evidence: {
+        evaluatedAt: state?.evaluatedAt || null,
+        freshness: freshnessStatus,
+      },
+    },
+    persistenceDiscipline: {
+      status: 'selective_persistence',
+      contract: 'Persist claims, corrections, receipts, operator decisions, and reusable artifacts; avoid durable noise from every tool call or intermediate step.',
+    },
+    resourceHeadroom: {
+      status: pressure,
+      evidence: pressureEvidence || null,
+      swapUsedPct: finiteCount(host?.swap?.usedPct),
+      memoryFreePct: finiteCount(host?.memory?.freePct),
+      maintenanceRatio,
+      topMemoryProcess: host?.process?.topMemoryProcess || null,
+      topCpuProcess: host?.process?.topProcess || null,
+      reliabilityGap: pressure === 'healthy'
+        ? 'resource headroom is currently visible'
+        : (pressure === 'unknown'
+          ? 'resource headroom is not measured clearly enough to trust reliability claims'
+          : 'the system may work, but reliability is constrained by measured host pressure'),
+    },
+    operatorContract: [
+      'Maintenance is live governance, not background cleanup.',
+      'A startup without current memory/context is not fully oriented.',
+      'Durable memory should carry reusable evidence and receipts, not every ephemeral step.',
+      'Reliability claims require visible resource headroom, especially swap and free memory.',
+    ],
+  };
+}
+
 function buildProjectionProvenance({
   state,
   liveProblems,
@@ -2050,7 +2139,7 @@ function buildOperatorDigest({ brief, liveProblems, work, budget, host, nowMs = 
   };
 }
 
-function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAction, budget, host, publishingDistribution, nowMs = Date.now() }) {
+function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAction, budget, host, publishingDistribution, runtimeMaintenance, nowMs = Date.now() }) {
   const counts = liveProblems?.counts || {};
   const activeCount = Number(counts.open || 0) + Number(counts.chronic || 0);
   const interventionCount = Number(counts.interventionRequired || 0);
@@ -2154,6 +2243,13 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
       label: 'Output value',
       value: publishingDistribution.autonomousBoundary || 'prepare_only_until_operator_approval',
       detail: publishingDistribution.nextOperatorRequest?.actionText || 'Public distribution requires operator approval.',
+    });
+  }
+  if (['pressure_strained', 'pressure_critical'].includes(runtimeMaintenance?.status)) {
+    evidence.push({
+      label: 'Runtime maintenance',
+      value: runtimeMaintenance.pressure || 'unknown',
+      detail: runtimeMaintenance.resourceHeadroom?.reliabilityGap || 'resource headroom constrains reliability',
     });
   }
 
@@ -2405,6 +2501,15 @@ function buildGoodLifeOperatorModel({
     sources,
     now,
   });
+  const runtimeMaintenance = buildRuntimeMaintenancePosture({
+    state,
+    issueArc,
+    doctrineAdoption,
+    sources,
+    budget,
+    freshness,
+    now,
+  });
 
   let status = 'current';
   if (!state) status = 'unknown';
@@ -2429,6 +2534,7 @@ function buildGoodLifeOperatorModel({
     consistency,
     interventionReadiness,
     publishingDistribution,
+    runtimeMaintenance,
     provenance: buildProjectionProvenance({
       state,
       liveProblems: directLiveProblems,
@@ -2463,6 +2569,7 @@ function buildGoodLifeOperatorModel({
   model.detail.insights.correctionTombstones = model.provenance.correctionTombstones;
   model.detail.insights.doctrineAdoption = model.provenance.doctrineAdoption;
   model.detail.insights.publishingDistribution = publishingDistribution;
+  model.detail.insights.runtimeMaintenance = runtimeMaintenance;
   model.work = work;
   model.operatorAnswer = buildOperatorAnswer({
     state,
@@ -2506,6 +2613,7 @@ function buildGoodLifeOperatorModel({
     budget,
     host: state?.evidence?.host || null,
     publishingDistribution,
+    runtimeMaintenance,
     nowMs,
   });
   model.operatorRings = buildOperatorRings({
@@ -2526,4 +2634,5 @@ module.exports = {
   buildGoodLifeObligationSnapshot,
   buildDoctrineAdoptionSnapshot,
   buildPublishingDistributionReadiness,
+  buildRuntimeMaintenancePosture,
 };

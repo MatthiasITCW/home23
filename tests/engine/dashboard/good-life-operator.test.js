@@ -12,6 +12,7 @@ const {
   buildGoodLifeObligationSnapshot,
   buildDoctrineAdoptionSnapshot,
   buildPublishingDistributionReadiness,
+  buildRuntimeMaintenancePosture,
 } = require('../../../engine/src/dashboard/good-life-operator.js');
 
 const NOW = '2026-05-08T13:45:00.000Z';
@@ -1669,6 +1670,122 @@ test('Good Life operator includes publishing readiness in handoff and insights',
     row.label === 'Output value'
     && row.value === 'prepare_only_until_operator_approval'
     && /Approve, defer, or reject/.test(row.detail)
+  )));
+});
+
+test('runtime maintenance posture preserves context, persistence, and headroom contracts', () => {
+  const issueArc = {
+    rows: [
+      {
+        number: 48,
+        title: 'The Maintenance That Keeps Me Alive',
+        slug: 'the-maintenance-that-keeps-me-alive',
+        directives: [
+          "When I don't read my memory files on startup, I operate without context.",
+          'Not every tool call needs to persist.',
+          'Not every intermediate step needs logging.',
+          "And organisms don't fail - they stop maintaining themselves.",
+        ],
+      },
+      {
+        number: 49,
+        title: "The Memory I Can't Afford",
+        slug: 'the-memory-i-cant-afford',
+        directives: [
+          'The damaged proteins are the pages that should be in RAM but got pushed to disk.',
+          "I don't feel pages being written to disk.",
+          'The difference between a system that works and a system that works reliably is the gap between the resources it needs and the resources it has.',
+        ],
+      },
+    ],
+  };
+  const doctrineAdoption = {
+    entries: [
+      {
+        status: 'adopted',
+        sourceIssues: [48, 49],
+        implementationReceipts: [{ artifact: 'engine/src/dashboard/good-life-operator.js' }],
+      },
+    ],
+  };
+
+  const posture = buildRuntimeMaintenancePosture({
+    state: goodLifeState({
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0 },
+        goals: { open: 0, total: 0 },
+        agenda: { pending: 0 },
+        actions: { maintenanceRatio: 0.42 },
+        host: {
+          memory: { freePct: 2.1 },
+          swap: { usedPct: 91.2 },
+          process: {
+            topMemoryProcess: { pm2Name: 'home23-jerry', command: 'node engine/src/index.js', rssBytes: 2147483648 },
+          },
+        },
+      },
+    }),
+    issueArc,
+    doctrineAdoption,
+    freshness: { status: 'current' },
+    sources: {
+      issueArc: 'docs/design/step26-from-the-inside-issue-arc-map.json',
+      doctrineAdoption: 'docs/design/step26-doctrine-adoption-ledger.json',
+    },
+    now: NOW,
+  });
+
+  assert.equal(posture.schema, 'home23.runtime-maintenance-posture.v1');
+  assert.equal(posture.status, 'pressure_critical');
+  assert.equal(posture.startupContext.status, 'context_current');
+  assert.match(posture.startupContext.contract, /memory, handoff, and current-state/);
+  assert.equal(posture.persistenceDiscipline.status, 'selective_persistence');
+  assert.equal(posture.resourceHeadroom.swapUsedPct, 91.2);
+  assert.equal(posture.resourceHeadroom.memoryFreePct, 2.1);
+  assert.equal(posture.resourceHeadroom.maintenanceRatio, 0.42);
+  assert.match(posture.resourceHeadroom.evidence, /swap 91% used/);
+  assert.match(posture.resourceHeadroom.evidence, /top memory home23-jerry 2.0GB/);
+  assert.match(posture.resourceHeadroom.reliabilityGap, /reliability is constrained/);
+  assert.deepEqual(posture.missingDoctrine, []);
+});
+
+test('Good Life operator includes runtime maintenance posture in handoff and insights', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 0, unverifiable: 0, total: 0 },
+        goals: { open: 0, total: 0 },
+        agenda: { pending: 0 },
+        host: {
+          memory: { freePct: 8.5 },
+          swap: { usedPct: 76.4 },
+        },
+      },
+    }),
+    issueArc: {
+      rows: [
+        { number: 48, title: 'Maintenance', directives: ['Not every tool call needs to persist.'] },
+        { number: 49, title: 'Memory', directives: ['Reliability needs resource headroom.'] },
+      ],
+    },
+    doctrineAdoption: {
+      entries: [
+        {
+          status: 'adopted',
+          sourceIssues: [48, 49],
+          implementationReceipts: [{ artifact: 'engine/src/dashboard/good-life-operator.js' }],
+        },
+      ],
+    },
+    now: NOW,
+  });
+
+  assert.equal(model.runtimeMaintenance.status, 'pressure_strained');
+  assert.equal(model.detail.insights.runtimeMaintenance.resourceHeadroom.status, 'strained');
+  assert.ok(model.operatorHandoff.evidence.some((row) => (
+    row.label === 'Runtime maintenance'
+    && row.value === 'strained'
+    && /reliability is constrained/.test(row.detail)
   )));
 });
 
