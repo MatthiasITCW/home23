@@ -707,13 +707,22 @@ async function main(): Promise<void> {
         const raw = readFileSync(externalJobsPath, 'utf-8');
         const externalJobs: CronJob[] = JSON.parse(raw);
         let added = 0;
+        let updated = 0;
         for (const job of externalJobs) {
-          if (!scheduler.getJob(job.id)) {
+          const existing = scheduler.getJob(job.id);
+          if (!existing) {
             scheduler.addJob(job);
             added++;
+          } else {
+            scheduler.saveJob({
+              ...existing,
+              ...job,
+              state: existing.state || job.state,
+            });
+            updated++;
           }
         }
-        console.log(`[home] Loaded ${added} new cron job(s) from config/cron-jobs.json (${externalJobs.length} total in file)`);
+        console.log(`[home] Loaded ${added} new and updated ${updated} cron job(s) from config/cron-jobs.json (${externalJobs.length} total in file)`);
       } catch (err) {
         console.error('[home] Failed to load external cron jobs:', err);
       }

@@ -438,6 +438,24 @@
         "tests/engine/analyzers/correlate-pressure-hrv.test.js",
         "config/cron-jobs.json"
       ]
+    },
+    {
+      "id": "scheduler-queueing-knee-guard",
+      "title": "Background cron work yields to foreground scheduled work",
+      "status": "adopted",
+      "sourceIssues": [71],
+      "requirement": "Scheduler decisions must preserve headroom by treating background jobs as lower-priority load; when foreground scheduled work is due, background jobs defer with a receipt instead of running concurrently and pushing the system toward the queueing knee.",
+      "implementationReceipts": [
+        {
+          "artifact": "src/scheduler/cron.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts"
+        }
+      ],
+      "doctrineFiles": [
+        "src/scheduler/cron.ts",
+        "tests/scheduler/cron.test.ts",
+        "config/cron-jobs.json"
+      ]
     }
   ]
 }

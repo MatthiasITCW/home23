@@ -86,3 +86,45 @@ test('due cron jobs with repeated errors escalate before executing again', async
   assert.equal(savedJobs[0].state.lastStatus, 'error');
   assert.ok(savedJobs[0].state.nextRunAtMs > Date.now());
 });
+
+test('background cron jobs defer under mixed due load without counting as failures', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-cron-load-'));
+  const scheduled = makeDueJob({
+    id: 'scheduled-work',
+    name: 'Scheduled work',
+    queueClass: 'scheduled',
+  } as Partial<CronJob>);
+  const background = makeDueJob({
+    id: 'background-work',
+    name: 'Background work',
+    queueClass: 'background',
+  } as Partial<CronJob>);
+  writeFileSync(join(dir, 'cron-jobs.json'), JSON.stringify([scheduled, background], null, 2));
+
+  const calls: string[] = [];
+  const scheduler = new CronScheduler({ timezone: 'America/New_York', jobsFile: 'cron-jobs.json', runsDir: 'cron-runs' }, async (job): Promise<JobResult> => {
+    calls.push(job.id);
+    return { status: 'ok', durationMs: 1 };
+  }, dir);
+
+  await (scheduler as any).tick();
+
+  assert.deepEqual(calls, ['scheduled-work']);
+
+  const decisions = readJsonl(join(dir, 'cron-decisions.jsonl'));
+  const backgroundDecision = decisions.find((decision) => decision.jobId === 'background-work');
+  assert.equal(backgroundDecision.action, 'defer');
+  assert.equal(backgroundDecision.sourceIssue, 71);
+  assert.match(backgroundDecision.reason, /background work deferred/i);
+
+  const runLog = readJsonl(join(dir, 'cron-runs', 'background-work.jsonl'));
+  assert.equal(runLog.length, 1);
+  assert.equal(runLog[0].withheld, true);
+  assert.equal(runLog[0].status, 'ok');
+
+  const savedJobs = JSON.parse(readFileSync(join(dir, 'cron-jobs.json'), 'utf8'));
+  const savedBackground = savedJobs.find((job: CronJob) => job.id === 'background-work');
+  assert.equal(savedBackground.state.lastStatus, 'ok');
+  assert.equal(savedBackground.state.consecutiveErrors, 0);
+  assert.ok(savedBackground.state.nextRunAtMs > Date.now());
+});

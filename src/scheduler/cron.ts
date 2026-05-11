@@ -49,6 +49,7 @@ export interface CronJob {
   id: string;
   name: string;
   enabled: boolean;
+  queueClass?: 'real_time' | 'scheduled' | 'background';
   schedule: ScheduleSpec;
   sessionTarget: 'isolated' | 'main';
   wakeMode: 'now' | 'next-heartbeat';
@@ -357,12 +358,16 @@ export class CronScheduler {
 
     if (dueJobs.length > 0) {
       const runnable: Array<{ job: CronJob; decision: JobDecision }> = [];
+      const hasForegroundDue = dueJobs.some((job) => this.queueClass(job) !== 'background');
+      dueJobs.sort((a, b) => this.queuePriority(a) - this.queuePriority(b));
 
       // Pre-compute next run BEFORE firing to prevent double-fire
       // (if a job takes >30s, the next tick would see it as still due).
       // One-shot 'at' jobs: disable here so the next tick won't re-queue.
       for (const job of dueJobs) {
-        const decision = this.decideJobPreflight(job, now, 'scheduled');
+        const decision = hasForegroundDue && this.queueClass(job) === 'background'
+          ? this.deferBackgroundJob(job, now)
+          : this.decideJobPreflight(job, now, 'scheduled');
         this.appendDecisionLog(decision);
         if (!decision.willExecute) {
           this.withholdJob(job, decision);
@@ -496,6 +501,44 @@ export class CronScheduler {
     };
   }
 
+  private queueClass(job: CronJob): 'real_time' | 'scheduled' | 'background' {
+    return job.queueClass ?? 'scheduled';
+  }
+
+  private queuePriority(job: CronJob): number {
+    switch (this.queueClass(job)) {
+      case 'real_time': return 0;
+      case 'scheduled': return 1;
+      case 'background': return 2;
+      default: return 1;
+    }
+  }
+
+  private deferBackgroundJob(job: CronJob, now: number): JobDecision {
+    const dueAtMs = Number(job.state?.nextRunAtMs);
+    const nextReviewAtMs = now + 5 * 60 * 1000;
+    return {
+      schema: 'home23.scheduler.job-decision.v1',
+      decisionId: `sched-dec-${randomUUID().slice(0, 12)}`,
+      jobId: job.id,
+      jobName: job.name,
+      decidedAt: new Date(now).toISOString(),
+      source: 'scheduled',
+      action: 'defer',
+      reason: 'background work deferred because foreground scheduled work is due; keep utilization below the queueing knee',
+      durableState: 'withheld_after_decision',
+      willExecute: false,
+      scheduleKind: job.schedule.kind,
+      payloadKind: job.payload.kind,
+      dueAt: Number.isFinite(dueAtMs) ? new Date(dueAtMs).toISOString() : null,
+      overdueMs: Number.isFinite(dueAtMs) ? Math.max(0, now - dueAtMs) : 0,
+      consecutiveErrors: job.state.consecutiveErrors,
+      inputFreshness: { status: 'current', reason: 'load-shedding deferral, not input failure' },
+      sourceIssue: 71,
+      nextReviewAtMs,
+    };
+  }
+
   private invalidJobReason(job: CronJob): string | null {
     if (!job.id || !job.name) return 'job identity missing';
     if (!job.schedule?.kind) return 'schedule missing';
@@ -539,14 +582,18 @@ export class CronScheduler {
   private withholdJob(job: CronJob, decision: JobDecision): JobResult {
     const decidedAtMs = Date.parse(decision.decidedAt);
     const reviewAtMs = decision.nextReviewAtMs ?? decidedAtMs + 15 * 60 * 1000;
+    const isLoadDeferral = decision.action === 'defer' && decision.sourceIssue === 71;
     const result: JobResult = {
-      status: 'error',
+      status: isLoadDeferral ? 'ok' : 'error',
       error: `${decision.action}: ${decision.reason}`,
       durationMs: 0,
     };
 
-    job.state.lastStatus = 'error';
+    job.state.lastStatus = result.status;
     job.state.lastDurationMs = 0;
+    if (isLoadDeferral) {
+      job.state.consecutiveErrors = 0;
+    }
     job.state.lastDecisionAtMs = decidedAtMs;
     job.state.lastDecisionAction = decision.action;
     job.state.lastDecisionReason = decision.reason;

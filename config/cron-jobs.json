@@ -3,6 +3,7 @@
     "id": "sensor-fusion-pressure-hrv-daily",
     "name": "Sensor fusion pressure HRV artifact",
     "enabled": true,
+    "queueClass": "background",
     "schedule": {
       "kind": "cron",
       "expr": "45 8 * * *",
