@@ -605,6 +605,24 @@
         "tests/engine/attention/attention-policy.test.js",
         "tests/engine/publish/bridge-chat-publisher.test.js"
       ]
+    },
+    {
+      "id": "sauna-rhythm-prestage-control",
+      "title": "Sauna rhythm exposes a concrete pre-stage action on the real home control",
+      "status": "adopted",
+      "sourceIssues": [80],
+      "requirement": "When the sauna rhythm is active, Home23 should stop merely knowing the label and surface an explicit, confirmed action that pre-stages the sauna from the existing HUUM control path, while keeping unconfigured lighting as an honest operator cue instead of pretending a device action exists.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/dashboard/home23-tiles.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/home23-tiles.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/home23-tiles.js",
+        "engine/src/dashboard/server.js",
+        "tests/engine/dashboard/home23-tiles.test.js"
+      ]
     }
   ]
 }

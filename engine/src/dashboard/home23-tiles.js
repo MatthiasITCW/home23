@@ -521,6 +521,35 @@ function isFamilyEveningContext(context) {
   return context?.active === true && context?.mode === 'family-evening';
 }
 
+function activeRhythmsFromTemporalContext(context = null) {
+  const rhythms = context?.jtrTime?.activeRhythms || context?.activeRhythms || [];
+  return Array.isArray(rhythms) ? rhythms.map((rhythm) => String(rhythm).toLowerCase()) : [];
+}
+
+function isSaunaRhythmContext(context = null) {
+  return activeRhythmsFromTemporalContext(context).includes('sauna');
+}
+
+function buildSaunaPrestageRecommendation(tile, temporalContext = null) {
+  if (!isSaunaRhythmContext(temporalContext)) return null;
+  const startDefaults = tile.config?.startDefaults || {};
+  return {
+    id: 'sauna-rhythm-prestage',
+    sourceIssues: [80],
+    rhythm: 'sauna',
+    posture: 'requires_confirmation',
+    actionId: 'prestage',
+    reason: 'sauna rhythm is active; prepare the space from the real sauna control surface',
+    targetTemperature: clampNumber(startDefaults.targetTemperature, 100, 240, 190),
+    duration: clampNumber(startDefaults.duration, 15, 720, 180),
+    lighting: {
+      intent: 'warm-low-light',
+      status: 'operator-cue',
+      reason: 'No dedicated sauna-light controller is configured in Home23 yet; keep this as an explicit setup cue instead of faking a device action.',
+    },
+  };
+}
+
 function materializeHomeLayoutForContext(tilesState, context = null) {
   const materialized = materializeHomeLayout(tilesState);
   if (!isFamilyEveningContext(context)) {
@@ -871,13 +900,14 @@ function expandBodyTemplate(template, values) {
 }
 
 class Home23TileService {
-  constructor({ home23Root, logger = console }) {
+  constructor({ home23Root, logger = console, getTemporalContext = null, autoStartBackgroundRefresh = true }) {
     this.home23Root = home23Root;
     this.logger = logger;
+    this.getTemporalContext = typeof getTemporalContext === 'function' ? getTemporalContext : null;
     this.cache = new Map();
     this.backgroundRefreshTimers = new Map();
     this.backgroundRefreshInFlight = new Set();
-    this.startBackgroundRefresh();
+    if (autoStartBackgroundRefresh) this.startBackgroundRefresh();
   }
 
   startBackgroundRefresh() {
@@ -1120,6 +1150,8 @@ class Home23TileService {
       };
     } else if (tile.mode === 'huum-sauna') {
       const sauna = await fetchHuumStatus(connection);
+      const temporalContext = this.getTemporalContext ? this.getTemporalContext() : null;
+      const prestage = buildSaunaPrestageRecommendation(tile, temporalContext);
       const summary = sauna?.temperature != null
         ? `${sauna.status || '?'} · ${sauna.temperature}°F${sauna.targetTemperature ? ' → ' + sauna.targetTemperature + '°F' : ''}`
         : (sauna?.status || 'unknown');
@@ -1142,8 +1174,20 @@ class Home23TileService {
             { label: 'Door', value: sauna.door === false ? 'Open' : sauna.door === true ? 'Closed' : '—' },
             { label: 'Heating', value: sauna.isHeating ? 'Yes' : 'No' },
           ],
+          recommendation: prestage,
         },
         actions: [
+          ...(prestage ? [{
+            id: 'prestage',
+            label: 'Pre-stage',
+            method: 'POST',
+            confirmationText: `Pre-stage the sauna to ${prestage.targetTemperature}°F for ${prestage.duration} minutes?`,
+            fields: [
+              { id: 'targetTemperature', label: 'Target Temperature (F)', type: 'number', defaultValue: prestage.targetTemperature, required: true },
+              { id: 'duration', label: 'Duration (minutes)', type: 'number', defaultValue: prestage.duration, required: true },
+            ],
+            recommendation: prestage,
+          }] : []),
           {
             id: 'start',
             label: 'Start',
@@ -1224,7 +1268,7 @@ class Home23TileService {
 
     let result;
     if (tile.mode === 'huum-sauna') {
-      if (actionId === 'start') {
+      if (actionId === 'start' || actionId === 'prestage') {
         result = await toggleHuumSauna(connection, true, rawInput);
       } else if (actionId === 'stop') {
         result = await toggleHuumSauna(connection, false);
@@ -1284,4 +1328,5 @@ module.exports = {
   materializeHomeLayout,
   materializeHomeLayoutForContext,
   buildHomeTileContext,
+  buildSaunaPrestageRecommendation,
 };

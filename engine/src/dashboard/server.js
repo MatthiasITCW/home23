@@ -130,6 +130,9 @@ class DashboardServer {
     this.home23Tiles = new Home23TileService({
       home23Root: this.getHome23Root(),
       logger: this.logger,
+      getTemporalContext: () => buildTemporalContext({
+        workspacePath: this.getHome23AgentContext().workspacePath,
+      }),
     });
     this.home23Vibe = new Home23VibeService({
       home23Root: this.getHome23Root(),
