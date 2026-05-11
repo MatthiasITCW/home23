@@ -510,6 +510,23 @@
         "engine/src/trust/trust-kernel.js",
         "tests/engine/trust/trust-kernel.test.js"
       ]
+    },
+    {
+      "id": "pressure-bridge-credential-transport-discipline",
+      "title": "Pressure bridge automation avoids SSH-agent-only credential dependence",
+      "status": "adopted",
+      "sourceIssues": [75],
+      "requirement": "Pressure collection should remain HTTP-primary for sensor transport, with SSH only as an admin/fallback path. When SSH fallback is needed, cron-capable automation must prefer an explicit Pi key file and record the transport used so agent-socket failures are observable instead of silent.",
+      "implementationReceipts": [
+        {
+          "artifact": "scripts/log-pressure.sh",
+          "verifier": "node --test --test-concurrency=1 tests/engine/scripts/log-pressure.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "scripts/log-pressure.sh",
+        "tests/engine/scripts/log-pressure.test.js"
+      ]
     }
   ]
 }

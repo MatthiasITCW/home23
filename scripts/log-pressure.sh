@@ -6,6 +6,8 @@ LOG_PATH="$HOME/.pressure_log.jsonl"
 PI="jtr@jtrpi"
 SENSOR_FILE="/home/jtr/.openclaw/workspace/state/sensor-latest.json"
 API_URL="${PI_PRESSURE_API_URL:-http://jtrpi.local:8765/api/latest}"
+PI_SSH_KEY_PATH="${PI_SSH_KEY_PATH:-$HOME/.ssh/id_ed25519_pi}"
+TRANSPORT=""
 
 DATA=$(curl -s --max-time 10 "$API_URL" 2>/dev/null | python3 -c "
 import sys,json
@@ -19,8 +21,19 @@ except Exception:
     pass
 " 2>/dev/null)
 
+if [ -n "$DATA" ]; then
+  TRANSPORT="http"
+fi
+
 if [ -z "$DATA" ]; then
-  DATA=$(ssh -o ConnectTimeout=5 -o BatchMode=yes "$PI" "cat $SENSOR_FILE" 2>/dev/null)
+  SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes)
+  if [ -f "$PI_SSH_KEY_PATH" ]; then
+    SSH_OPTS+=(-i "$PI_SSH_KEY_PATH" -o IdentitiesOnly=yes)
+    TRANSPORT="ssh_key_file"
+  else
+    TRANSPORT="ssh_agent"
+  fi
+  DATA=$(ssh "${SSH_OPTS[@]}" "$PI" "cat $SENSOR_FILE" 2>/dev/null)
 fi
 
 if [ -z "$DATA" ]; then
@@ -39,9 +52,22 @@ if [ -z "$TS" ] || [ -z "$PA" ]; then
   exit 1
 fi
 
-ENTRY=$(python3 -c "
-import sys,json
-print(json.dumps({'ts':'$TS','pressure_pa':$PA,'pressure_inhg':$INHG,'temp_c':$TEMP_C,'temp_f':$TEMP_F}))
+ENTRY=$(TS="$TS" PA="$PA" INHG="$INHG" TEMP_C="$TEMP_C" TEMP_F="$TEMP_F" TRANSPORT="$TRANSPORT" python3 -c "
+import json, os
+def num(v):
+    try:
+        return float(v)
+    except Exception:
+        return None
+entry = {
+    'ts': os.environ.get('TS', ''),
+    'pressure_pa': num(os.environ.get('PA', '')),
+    'pressure_inhg': num(os.environ.get('INHG', '')),
+    'temp_c': num(os.environ.get('TEMP_C', '')),
+    'temp_f': num(os.environ.get('TEMP_F', '')),
+    'source_transport': os.environ.get('TRANSPORT', 'unknown'),
+}
+print(json.dumps({k: v for k, v in entry.items() if v is not None}))
 " 2>/dev/null)
 
 if [ -n "$ENTRY" ]; then
