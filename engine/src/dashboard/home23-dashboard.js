@@ -3853,6 +3853,7 @@ function renderGoodLifeWorkDetail(data) {
     ? `<p><strong>Artifact:</strong> ${escapeHtml(goal.artifact.exists ? 'ready' : 'pending')} - ${escapeHtml(goal.artifact.relativePath)}${goal.artifact.exists && goal.artifact.path ? ` <code>${escapeHtml(goal.artifact.path)}</code>` : ''}</p>`
     : '';
   const primaryAgenda = agenda[0] || null;
+  const primaryManifest = primaryAgenda?.manifest || topGoal?.manifest || null;
   return `
     <h3>Current Work</h3>
     ${primaryAgenda ? `<div class="h23-goodlife-primary-action">
@@ -3864,6 +3865,7 @@ function renderGoodLifeWorkDetail(data) {
       </div>
       ${agendaActions(primaryAgenda)}
     </div>` : ''}
+    ${renderGoodLifeWorkManifest(primaryManifest)}
     <div class="h23-goodlife-detail-grid">
       <div><label>Intent</label><p>${escapeHtml(card.intent || operator.policy?.mode || 'unknown')}</p></div>
       <div><label>Stop Condition</label><p>${escapeHtml(card.stopCondition || 'not recorded')}</p></div>
@@ -3874,6 +3876,25 @@ function renderGoodLifeWorkDetail(data) {
     <section><h4>Recent Worker Receipts</h4>${recentWorkerRuns.length ? recentWorkerRuns.map((run) => `<div class="h23-goodlife-evidence-row h23-goodlife-worker-run-row"><strong>${escapeHtml(run.worker || 'worker')}</strong><span>${escapeHtml(run.summary || run.runId || '')}</span><small>${escapeHtml([formatWorkerRunSource(run), formatWorkerTime(run.finishedAt || run.startedAt)].filter(Boolean).join(' - '))}</small><div class="h23-goodlife-mini-actions"><span class="h23-worker-status ${workerStatusClass(run.status)}">${escapeHtml(run.status || 'running')}</span><span class="h23-worker-status ${workerStatusClass(run.verifierStatus)}">${escapeHtml(run.verifierStatus || 'unknown')}</span><button type="button" onclick="openGoodLifeWorkerReceipt('${escapeAttr(run.runId || '')}')">Open Receipt</button></div></div>`).join('') : '<div class="h23-goodlife-empty">No Good Life worker receipts yet</div>'}${renderGoodLifeWorkerReceiptDetail()}</section>
     <section><h4>Active Goals</h4>${reviewGoals.length ? `<div class="h23-goodlife-section-actions"><button type="button" onclick="archiveGoodLifeGoalReviewRows()">Archive ${reviewGoals.length} review goal${reviewGoals.length === 1 ? '' : 's'}</button></div>` : ''}${goals.length ? goals.map((goal) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(goal.id || 'goal')}</strong><span>${escapeHtml(goal.description || '')}</span><small>${escapeHtml([goal.status, goal.source, goal.ageMin != null ? `${goal.ageMin}m` : null, goal.review?.recommended ? `review: ${goal.review.reason}` : null].filter(Boolean).join(' - '))}</small>${goalArtifact(goal)}${goal.review?.recommended ? `<p>${escapeHtml(goal.review.next || '')}</p>` : ''}${goalActions(goal)}</div>`).join('') : '<div class="h23-goodlife-empty">No active goals</div>'}</section>
     <section><h4>Active Commitments</h4>${activeCommitments.length ? activeCommitments.map((item) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml((item.reasons || []).join(' - ') || item.status || '')}</span><small>${escapeHtml(item.lane || '')}</small></div>`).join('') : '<div class="h23-goodlife-empty">No active commitments</div>'}</section>
+  `;
+}
+
+function renderGoodLifeWorkManifest(manifest) {
+  if (!manifest) return '';
+  const artifact = manifest.artifact?.relativePath
+    ? `${manifest.artifact.relativePath} - ${manifest.artifact.exists ? 'ready' : 'pending'}`
+    : 'none required';
+  return `
+    <section><h4>Work Manifest</h4>
+      <div class="h23-goodlife-detail-grid">
+        <div><label>Allowed Transition</label><p>${escapeHtml(manifest.allowedTransition || 'not recorded')}</p></div>
+        <div><label>Source Surface</label><p>${escapeHtml(manifest.sourceSurface || 'not recorded')}</p></div>
+        <div><label>Verifier</label><p>${escapeHtml(manifest.verifier || 'not recorded')}</p></div>
+        <div><label>Receipt</label><p>${escapeHtml(manifest.receipt || 'not recorded')}</p></div>
+        <div><label>Artifact</label><p>${escapeHtml(artifact)}</p><small>${escapeHtml(manifest.artifact?.path || '')}</small></div>
+        <div><label>Authority</label><p>${escapeHtml(manifest.authority || 'not recorded')}</p></div>
+      </div>
+    </section>
   `;
 }
 

@@ -308,6 +308,83 @@ test('Good Life obligation snapshot suggests workers for stale legacy agenda top
   assert.equal(snapshot.activeAgenda[1].review.suggestedWorker.worker, 'freshness');
 });
 
+test('Good Life obligation snapshot attaches manifest-first contract to active agenda rows', () => {
+  const snapshot = buildGoodLifeObligationSnapshot({
+    agendaRows: [
+      {
+        type: 'add',
+        id: 'ag-manifest',
+        record: {
+          status: 'candidate',
+          content: 'Diagnose Good Life repair drift with systems evidence',
+          sourceSignal: 'good-life',
+          topicTags: ['good-life', 'good-life:repair'],
+          createdAt: '2026-05-08T13:30:00.000Z',
+          temporalContext: {
+            policy: 'repair',
+            workerRoute: {
+              worker: 'systems',
+              reason: 'host and process evidence required',
+            },
+          },
+        },
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.deepEqual(snapshot.activeAgenda[0].manifest, {
+    schema: 'home23.good-life.work-manifest.v1',
+    subjectType: 'agenda',
+    subjectId: 'ag-manifest',
+    allowedTransition: 'dispatch_worker:systems',
+    sourceSurface: 'agenda.jsonl#ag-manifest',
+    verifier: 'worker receipt must report verifierStatus pass, fail, or blocked',
+    receipt: 'worker receipt source.type=good-life-agenda source.id=ag-manifest',
+    artifact: null,
+    authority: 'agenda event stream proposes work; worker receipt and verifier evidence decide whether it completed',
+  });
+});
+
+test('Good Life obligation snapshot attaches manifest-first contract to output goals', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home23-good-life-manifest-'));
+  try {
+    const snapshot = buildGoodLifeObligationSnapshot({
+      goals: {
+        active: [
+          ['goal_manifest', {
+            id: 'goal_manifest',
+            description: 'Produce outputs/digest-9000.md. Synthesize current evidence.',
+            status: 'active',
+            source: 'force-output',
+            createdAt: '2026-05-08T13:30:00.000Z',
+          }],
+        ],
+      },
+      outputRoots: [dir],
+      now: NOW,
+    });
+
+    assert.deepEqual(snapshot.activeGoals[0].manifest, {
+      schema: 'home23.good-life.work-manifest.v1',
+      subjectType: 'goal',
+      subjectId: 'goal_manifest',
+      allowedTransition: 'produce_artifact:outputs/digest-9000.md',
+      sourceSurface: 'brain-snapshot.activeGoals#goal_manifest',
+      verifier: 'artifact must exist at one checked output path',
+      receipt: 'goal resolution or worker receipt must cite goal_manifest and outputs/digest-9000.md',
+      artifact: {
+        relativePath: 'outputs/digest-9000.md',
+        exists: false,
+        path: path.join(dir, 'outputs/digest-9000.md'),
+      },
+      authority: 'active goal requests work; artifact and receipt evidence decide whether it completed',
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('Good Life operator model exposes safe current help state with evidence and action card', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState(),

@@ -230,9 +230,13 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, output
     .map((row) => {
       const ageMin = ageMinutes(row.updatedAt || row.createdAt, nowMs);
       const annotated = { ...row, ageMin };
-      return {
+      const reviewed = {
         ...annotated,
         review: classifyAgendaReview(annotated),
+      };
+      return {
+        ...reviewed,
+        manifest: buildAgendaWorkManifest(reviewed),
       };
     });
 
@@ -260,10 +264,14 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, output
         ageMin,
       };
       const artifactStatus = goalArtifactText(row);
-      return {
+      const reviewed = {
         ...row,
         artifactStatus,
         review: classifyGoalReview(row),
+      };
+      return {
+        ...reviewed,
+        manifest: buildGoalWorkManifest(reviewed),
       };
     });
 
@@ -285,6 +293,50 @@ function buildGoodLifeObligationSnapshot({ agendaRows = [], goals = null, output
       activeGoalsTrusted: Number.isFinite(goals?.counts?.active),
       sourceUpdatedAt: goals?.counts?.sourceUpdatedAt || goals?.sourceUpdatedAt || null,
     },
+  };
+}
+
+function buildAgendaWorkManifest(row = {}) {
+  if (!row?.id) return null;
+  const route = row.workerRoute || row.review?.suggestedWorker || null;
+  return {
+    schema: 'home23.good-life.work-manifest.v1',
+    subjectType: 'agenda',
+    subjectId: row.id,
+    allowedTransition: route?.worker ? `dispatch_worker:${route.worker}` : 'operator_review',
+    sourceSurface: `agenda.jsonl#${row.id}`,
+    verifier: route?.worker
+      ? 'worker receipt must report verifierStatus pass, fail, or blocked'
+      : 'operator must classify the row as current, stale, acknowledged, or dismissed',
+    receipt: route?.worker
+      ? `worker receipt source.type=good-life-agenda source.id=${row.id}`
+      : `agenda status receipt id=${row.id}`,
+    artifact: null,
+    authority: 'agenda event stream proposes work; worker receipt and verifier evidence decide whether it completed',
+  };
+}
+
+function buildGoalWorkManifest(goal = {}) {
+  if (!goal?.id) return null;
+  const artifact = goal.artifact?.relativePath ? {
+    relativePath: goal.artifact.relativePath,
+    exists: goal.artifact.exists === true,
+    path: goal.artifact.path || null,
+  } : null;
+  return {
+    schema: 'home23.good-life.work-manifest.v1',
+    subjectType: 'goal',
+    subjectId: goal.id,
+    allowedTransition: artifact?.relativePath ? `produce_artifact:${artifact.relativePath}` : 'resolve_or_archive_goal',
+    sourceSurface: `brain-snapshot.activeGoals#${goal.id}`,
+    verifier: artifact?.relativePath
+      ? 'artifact must exist at one checked output path'
+      : 'goal status must be resolved, completed, archived, or converted into a bounded artifact goal',
+    receipt: artifact?.relativePath
+      ? `goal resolution or worker receipt must cite ${goal.id} and ${artifact.relativePath}`
+      : `goal resolution or archive receipt must cite ${goal.id}`,
+    artifact,
+    authority: 'active goal requests work; artifact and receipt evidence decide whether it completed',
   };
 }
 
