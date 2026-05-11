@@ -19,6 +19,7 @@ class GoodLifeRegulator {
     this.throttleMs = Number(opts.throttleMs || DEFAULT_THROTTLE_MS);
     this.statePath = path.join(this.brainDir, 'good-life-regulator-state.json');
     this.agendaPath = path.join(this.brainDir, 'agenda.jsonl');
+    this.restraintReceiptsPath = path.join(this.brainDir, 'good-life-restraint-receipts.jsonl');
   }
 
   async handleObservation(obs) {
@@ -30,7 +31,15 @@ class GoodLifeRegulator {
     const agenda = this._agendaFromEvaluation(evaluation);
     if (!agenda) return { status: 'ignored' };
     const usefulness = this._usefulnessContract(evaluation, agenda);
-    if (!usefulness.passes) return { status: 'blocked_usefulness_gate', reason: usefulness.reason };
+    if (!usefulness.passes) {
+      this._writeRestraintReceipt({
+        status: 'blocked_usefulness_gate',
+        reason: usefulness.reason || 'usefulness_contract_failed',
+        evaluation,
+        obs,
+      });
+      return { status: 'blocked_usefulness_gate', reason: usefulness.reason };
+    }
 
     const agendaStore = this.getAgendaStore();
     const cleanupAt = new Date().toISOString();
@@ -46,9 +55,25 @@ class GoodLifeRegulator {
     const last = state[key];
     const nowMs = Date.now();
     if (last?.at && nowMs - Date.parse(last.at) < this.throttleMs) {
+      this._writeRestraintReceipt({
+        status: 'throttled',
+        reason: 'equivalent_policy_recently_routed',
+        evaluation,
+        obs,
+        key,
+        context: { lastAt: last.at },
+      });
       return { status: 'throttled', key, staledSupersededRepair, staledSupersededDrift };
     }
     if (this._selfMaintenanceBudgetExceeded(state, evaluation, usefulness)) {
+      this._writeRestraintReceipt({
+        status: 'blocked_self_maintenance_budget',
+        reason: 'self_maintenance_budget_exceeded',
+        evaluation,
+        obs,
+        key,
+        context: { daily: state.daily || null },
+      });
       return { status: 'blocked_self_maintenance_budget', key, staledSupersededRepair, staledSupersededDrift };
     }
 
@@ -215,6 +240,41 @@ class GoodLifeRegulator {
       ? relativeBrainDir
       : this.brainDir;
     return `using ${path.join(brainDir, 'good-life-state.json')}, ${path.join(brainDir, 'good-life-ledger.jsonl')}, and engine logs`;
+  }
+
+  _writeRestraintReceipt({ status, reason, evaluation, obs, key = null, context = null } = {}) {
+    try {
+      fs.mkdirSync(this.brainDir, { recursive: true });
+      const at = new Date().toISOString();
+      const receipt = {
+        schema: 'home23.good-life.restraint-receipt.v1',
+        receiptId: `gl-restraint-${crypto.createHash('sha256').update(JSON.stringify({
+          at,
+          status,
+          reason,
+          sourceRef: obs?.sourceRef || null,
+          evaluatedAt: evaluation?.evaluatedAt || null,
+        })).digest('hex').slice(0, 16)}`,
+        at,
+        status,
+        reason,
+        policyMode: evaluation?.policy?.mode || null,
+        policyReason: evaluation?.policy?.reason || null,
+        summary: evaluation?.summary || null,
+        evaluatedAt: evaluation?.evaluatedAt || null,
+        sourceRef: obs?.sourceRef || null,
+        traceId: obs?.traceId || null,
+        actionKey: key,
+        sourceIssue: 96,
+        doctrine: 'Restraint needs receipts when an autonomous gate prevents work.',
+        context,
+      };
+      fs.appendFileSync(this.restraintReceiptsPath, `${JSON.stringify(receipt)}\n`, 'utf8');
+      return receipt;
+    } catch (err) {
+      this.logger.warn?.('[good-life] restraint receipt write failed:', err?.message || err);
+      return null;
+    }
   }
 
   _appendAgendaEvent(obs, agenda, evaluation, opts = {}) {

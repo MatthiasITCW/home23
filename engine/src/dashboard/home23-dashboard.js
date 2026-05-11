@@ -4090,6 +4090,7 @@ function renderGoodLifeInsightsDetail(data) {
   const detail = data?.operator?.detail || {};
   const metrics = detail.insights?.trendMetrics || {};
   const ledger = detail.insights?.ledgerTail || [];
+  const restraintReceipts = detail.insights?.restraintReceipts || [];
   const provenance = data?.operator?.provenance || null;
   const correctionTombstones = provenance?.correctionTombstones || detail.insights?.correctionTombstones || [];
   const doctrineAdoption = provenance?.doctrineAdoption || detail.insights?.doctrineAdoption || null;
@@ -4169,6 +4170,7 @@ function renderGoodLifeInsightsDetail(data) {
     ${renderGoodLifeHostPressure(host)}
     ${renderGoodLifePm2Changes(pm2)}
     ${renderGoodLifeScheduler(scheduler)}
+    <section><h4>Restraint Receipts</h4>${restraintReceipts.length ? restraintReceipts.slice(0, 6).map((entry) => `<div class="h23-goodlife-evidence-row watch"><strong>${escapeHtml(entry.status || 'restraint')}</strong><span>${escapeHtml(entry.reason || entry.policyReason || '')}</span><small>${escapeHtml([entry.receiptId || null, entry.policyMode ? `policy:${entry.policyMode}` : null].filter(Boolean).join(' - '))}</small><em>${escapeHtml(entry.sourceIssue ? `issue #${entry.sourceIssue}` : 'receipt')}</em></div>`).join('') : '<div class="h23-goodlife-empty">No restraint receipts</div>'}</section>
     <section><h4>Recent Good Life Ledger</h4>${ledger.length ? ledger.map((entry) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(entry.event || entry.type || 'entry')}</strong><span>${escapeHtml(entry.summary || entry.message || entry.mode || '')}</span><small>${entry.at || entry.timestamp ? escapeHtml(timeSince(new Date(entry.at || entry.timestamp))) : ''}</small></div>`).join('') : '<div class="h23-goodlife-empty">No ledger entries</div>'}</section>
   `;
 }

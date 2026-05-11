@@ -1926,7 +1926,7 @@ function buildOperatorRings({ brief, liveProblems, work, consistency, freshness,
   ];
 }
 
-function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail, obligations, budget, host, pm2, scheduler }) {
+function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail, restraintReceipts, obligations, budget, host, pm2, scheduler }) {
   const activeRows = [
     ...(Array.isArray(liveProblems.open) ? liveProblems.open : []),
     ...(Array.isArray(liveProblems.chronic) ? liveProblems.chronic : []),
@@ -1979,6 +1979,7 @@ function buildDetailSections({ commitments, trends, regulator, liveProblems, led
       scheduler: scheduler || null,
       autonomyBudget: budget || null,
       ledgerTail: Array.isArray(ledgerTail) ? ledgerTail.slice(-12).reverse().map(compactLedgerEntry) : [],
+      restraintReceipts: Array.isArray(restraintReceipts) ? restraintReceipts.slice(-12).reverse() : [],
       correctionTombstones: [],
     },
   };
@@ -1991,6 +1992,7 @@ function buildGoodLifeOperatorModel({
   regulator = null,
   liveProblems = [],
   ledgerTail = [],
+  restraintReceipts = [],
   obligations = null,
   runtime = null,
   sources = {},
@@ -2071,6 +2073,7 @@ function buildGoodLifeOperatorModel({
     regulator: regulator || {},
     liveProblems: directLiveProblems,
     ledgerTail,
+    restraintReceipts,
     obligations: currentObligations,
     budget,
     host: state?.evidence?.host || null,

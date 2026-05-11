@@ -5465,6 +5465,7 @@ Be specific, actionable, and maintain research continuity.`;
           ? JSON.parse(fsSync.readFileSync(doctrineAdoptionPath, 'utf8'))
           : null;
         const ledgerTail = tailJsonl('good-life-ledger.jsonl', 10);
+        const restraintReceipts = tailJsonl('good-life-restraint-receipts.jsonl', 10);
         const liveProblemData = readJson('live-problems.json') || { problems: [] };
         const liveProblemList = Array.isArray(liveProblemData.problems) ? liveProblemData.problems : [];
         const liveProblems = {
@@ -5486,6 +5487,7 @@ Be specific, actionable, and maintain research continuity.`;
           regulator,
           liveProblems: liveProblemList,
           ledgerTail: ledgerTail.map(compactGoodLifeLedgerEntry),
+          restraintReceipts,
           obligations,
           runtime,
           sources: {

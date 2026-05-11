@@ -558,6 +558,30 @@ test('Good Life provenance carries doctrine adoption receipts and blocks unrecei
   assert.deepEqual(model.detail.insights.doctrineAdoption, model.provenance.doctrineAdoption);
 });
 
+test('Good Life operator detail carries restraint receipts for deliberate non-action', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [],
+    restraintReceipts: [
+      {
+        schema: 'home23.good-life.restraint-receipt.v1',
+        receiptId: 'gl-restraint-test',
+        status: 'blocked_self_maintenance_budget',
+        reason: 'self_maintenance_budget_exceeded',
+        policyMode: 'learn',
+        sourceIssue: 96,
+        at: '2026-05-08T13:44:00.000Z',
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.detail.insights.restraintReceipts.length, 1);
+  assert.equal(model.detail.insights.restraintReceipts[0].receiptId, 'gl-restraint-test');
+  assert.equal(model.detail.insights.restraintReceipts[0].status, 'blocked_self_maintenance_budget');
+  assert.equal(model.detail.insights.restraintReceipts[0].sourceIssue, 96);
+});
+
 test('Good Life operator emits correction tombstones when direct evidence demotes projection claims', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState({

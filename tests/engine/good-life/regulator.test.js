@@ -184,6 +184,17 @@ test('GoodLifeRegulator stales superseded repair work before self-maintenance bu
   assert.equal(staleUpdates[0].status, 'stale');
   assert.equal(staleUpdates[0].opts.note, 'superseded by current Good Life state with no open live problems');
   assert.equal(staleUpdates[0].opts.skipReconcile, true);
+
+  const receipts = readFileSync(join(dir, 'good-life-restraint-receipts.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map(JSON.parse);
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].schema, 'home23.good-life.restraint-receipt.v1');
+  assert.equal(receipts[0].status, 'blocked_self_maintenance_budget');
+  assert.equal(receipts[0].policyMode, 'learn');
+  assert.equal(receipts[0].reason, 'self_maintenance_budget_exceeded');
+  assert.equal(receipts[0].sourceIssue, 96);
 });
 
 test('GoodLifeRegulator stales cleared rest and help drift before budget blocks new work', async () => {

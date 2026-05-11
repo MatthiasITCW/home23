@@ -115,6 +115,24 @@
       ]
     },
     {
+      "id": "restraint-receipts",
+      "title": "Restraint receipts for deliberate non-action",
+      "status": "adopted",
+      "sourceIssues": [14, 96],
+      "requirement": "When an autonomous gate deliberately withholds work, leave a receipt explaining why no action was taken.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/good-life/regulator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/good-life/regulator.test.js tests/engine/dashboard/good-life-operator.test.js tests/dashboard/operator-ui.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/good-life/regulator.js",
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/home23-dashboard.js"
+      ]
+    },
+    {
       "id": "doctrine-adoption-gate",
       "title": "Doctrine adoption gate",
       "status": "adopted",
