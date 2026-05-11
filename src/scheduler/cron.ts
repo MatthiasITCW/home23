@@ -91,7 +91,22 @@ export interface JobOutcomeReceipt {
   recordedAt: string;
   mechanicalStatus: JobResult['status'];
   semanticStatus: JobSemanticStatus;
+  resourceContract?: JobResourceContract;
   layers: Record<JobOutcomeLayer, JobOutcomeLayerReceipt>;
+}
+
+export interface JobResourceContract {
+  schema: 'home23.scheduler.resource-contract.v1';
+  sourceIssue: 98;
+  priority: 'real_time' | 'scheduled' | 'background';
+  commitment: string;
+  maxRuntimeSeconds: number | null;
+  pressureBehavior: string;
+  retryPosture: string;
+  outputObligation: string;
+  duplicateDetection: string;
+  stopCondition: string;
+  receipt: string;
 }
 
 export interface JobDecision {
@@ -115,6 +130,7 @@ export interface JobDecision {
     reason: string;
   };
   sourceIssue: number;
+  resourceContract: JobResourceContract;
   nextReviewAtMs?: number;
 }
 
@@ -542,6 +558,7 @@ export class CronScheduler {
         ? { status: 'invalid', reason: invalidReason }
         : { status: 'unknown', reason: 'no job-specific freshness contract configured' },
       sourceIssue: 82,
+      resourceContract: this.buildResourceContract(job),
       nextReviewAtMs,
     };
   }
@@ -580,7 +597,40 @@ export class CronScheduler {
       consecutiveErrors: job.state.consecutiveErrors,
       inputFreshness: { status: 'current', reason: 'load-shedding deferral, not input failure' },
       sourceIssue: 71,
+      resourceContract: this.buildResourceContract(job),
       nextReviewAtMs,
+    };
+  }
+
+  private buildResourceContract(job: CronJob): JobResourceContract {
+    const priority = this.queueClass(job);
+    const timeoutSeconds = 'timeoutSeconds' in job.payload && Number.isFinite(job.payload.timeoutSeconds)
+      ? Number(job.payload.timeoutSeconds)
+      : null;
+    const deliveryMode = job.delivery?.mode && job.delivery.mode !== 'none'
+      ? `delivery ${job.delivery.mode}`
+      : 'no delivery target';
+    const outputObligation = [
+      deliveryMode,
+      'handler should report artifacts or semanticStatus when the job promises durable output',
+    ].join('; ');
+
+    return {
+      schema: 'home23.scheduler.resource-contract.v1',
+      sourceIssue: 98,
+      priority,
+      commitment: `${job.name || job.id} (${job.payload.kind})`,
+      maxRuntimeSeconds: timeoutSeconds,
+      pressureBehavior: priority === 'background'
+        ? 'defer when foreground scheduled work is due'
+        : 'may run when eligible; background jobs yield first',
+      retryPosture: 'escalate after 3 consecutive errors before executing again',
+      outputObligation,
+      duplicateDetection: `job id ${job.id}; isolated cron history cron-${job.id}`,
+      stopCondition: job.schedule.kind === 'at'
+        ? 'one one-shot scheduler firing, then disable'
+        : 'one eligible scheduler firing per decision receipt',
+      receipt: `cron-decisions.jsonl plus cron-runs/${job.id}.jsonl outcome receipt`,
     };
   }
 
@@ -752,6 +802,7 @@ export class CronScheduler {
       recordedAt: new Date(options.recordedAtMs).toISOString(),
       mechanicalStatus: result.status,
       semanticStatus,
+      resourceContract: options.decision?.resourceContract ?? this.buildResourceContract(job),
       layers,
     };
   }

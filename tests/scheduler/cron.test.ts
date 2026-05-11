@@ -57,6 +57,36 @@ test('due cron jobs write a preflight decision receipt before the handler runs',
   assert.equal(runLog[0].outcome.layers.intent.status, 'unknown');
 });
 
+test('cron preflight decisions carry a resource stewardship contract', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-cron-resource-contract-'));
+  const job = makeDueJob({
+    queueClass: 'background',
+    payload: { kind: 'agentTurn', message: 'make one field report step', timeoutSeconds: 420 },
+    delivery: { mode: 'summary', channel: 'telegram', to: 'jtr' },
+  } as Partial<CronJob>);
+  writeFileSync(join(dir, 'cron-jobs.json'), JSON.stringify([job], null, 2));
+  const scheduler = new CronScheduler({ timezone: 'America/New_York', jobsFile: 'cron-jobs.json', runsDir: 'cron-runs' }, async (): Promise<JobResult> => {
+    return { status: 'ok', response: 'done', durationMs: 2, artifacts: ['issues/098.json'], semanticStatus: 'satisfied' };
+  }, dir);
+
+  await (scheduler as any).tick();
+
+  const decisions = readJsonl(join(dir, 'cron-decisions.jsonl'));
+  assert.equal(decisions[0].resourceContract.schema, 'home23.scheduler.resource-contract.v1');
+  assert.equal(decisions[0].resourceContract.sourceIssue, 98);
+  assert.equal(decisions[0].resourceContract.priority, 'background');
+  assert.equal(decisions[0].resourceContract.maxRuntimeSeconds, 420);
+  assert.match(decisions[0].resourceContract.pressureBehavior, /defer/);
+  assert.match(decisions[0].resourceContract.retryPosture, /escalate after 3 consecutive errors/);
+  assert.match(decisions[0].resourceContract.outputObligation, /delivery summary/);
+  assert.match(decisions[0].resourceContract.duplicateDetection, /job id job-1/);
+  assert.match(decisions[0].resourceContract.stopCondition, /one eligible scheduler firing/);
+  assert.match(decisions[0].resourceContract.receipt, /cron-decisions.jsonl/);
+
+  const runLog = readJsonl(join(dir, 'cron-runs', 'job-1.jsonl'));
+  assert.deepEqual(runLog[0].outcome.resourceContract, decisions[0].resourceContract);
+});
+
 test('due cron jobs with repeated errors escalate before executing again', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-cron-escalate-'));
   let handlerCalls = 0;

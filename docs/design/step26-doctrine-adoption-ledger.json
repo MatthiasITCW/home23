@@ -221,6 +221,27 @@
       ]
     },
     {
+      "id": "scheduler-resource-contracts",
+      "title": "Cron work carries resource stewardship contracts",
+      "status": "adopted",
+      "sourceIssues": [98],
+      "requirement": "Autonomous cron work must name the resource promise it is spending under: priority, pressure behavior, max runtime, retry posture, output obligation, duplicate detection, stop condition, and receipt path.",
+      "implementationReceipts": [
+        {
+          "artifact": "src/scheduler/cron.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts"
+        },
+        {
+          "artifact": "tests/scheduler/cron.test.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts"
+        }
+      ],
+      "doctrineFiles": [
+        "src/scheduler/cron.ts",
+        "tests/scheduler/cron.test.ts"
+      ]
+    },
+    {
       "id": "health-signal-humility",
       "title": "Health signals are context, not readiness commands",
       "status": "adopted",
