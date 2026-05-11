@@ -1356,6 +1356,62 @@ test('Good Life operator handoff names issue, repair path, and required user act
   });
 });
 
+test('Good Life operator promotes stale external blockers to structured operator requests', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      evidence: {
+        liveProblems: { open: 1, chronic: 0, resolved: 0, unverifiable: 0, total: 1 },
+      },
+    }),
+    liveProblems: [
+      {
+        id: 'stale_docket_phone',
+        state: 'open',
+        claim: 'County foreclosure docket is stale and auction decision needs phone verification',
+        openedAt: '2026-03-16T12:00:00.000Z',
+        stepIndex: 1,
+        remediation: [
+          { type: 'dispatch_to_agent', args: { budgetHours: 1 } },
+          {
+            type: 'request_user_input',
+            args: {
+              text: 'Call Ocean County clerk before auction.',
+              channel: 'phone',
+              deadlineAt: '2026-03-17T14:00:00.000Z',
+              staleData: {
+                source: 'Ocean County foreclosure docket',
+                lastFreshAt: '2026-02-27T00:00:00.000Z',
+                ageDays: 18,
+              },
+              lastAutonomousAttempt: 'Checked online docket; feed remained frozen.',
+            },
+          },
+        ],
+        lastResult: { detail: 'online docket feed still frozen at 18 days old' },
+      },
+    ],
+    now: NOW,
+  });
+
+  const request = model.liveProblems.open[0].intervention.request;
+  assert.equal(request.schema, 'home23.operator-request.v1');
+  assert.equal(request.actionText, 'Call Ocean County clerk before auction.');
+  assert.equal(request.channel, 'phone');
+  assert.equal(request.deadlineAt, '2026-03-17T14:00:00.000Z');
+  assert.equal(request.staleData.source, 'Ocean County foreclosure docket');
+  assert.equal(request.staleData.ageDays, 18);
+  assert.equal(request.lastAutonomousAttempt, 'Checked online docket; feed remained frozen.');
+  assert.deepEqual(request.sourceIssues, [5, 17, 19, 21, 25]);
+  assert.match(model.operatorHandoff.userAction, /Call Ocean County clerk/);
+  assert.match(model.operatorHandoff.userAction, /phone/);
+  assert.match(model.operatorHandoff.userAction, /stale data Ocean County foreclosure docket 18d/);
+  assert.ok(model.operatorHandoff.evidence.some((row) => (
+    row.label === 'Human blocker'
+    && row.value === 'phone'
+    && /Ocean County foreclosure docket/.test(row.detail)
+  )));
+});
+
 test('Good Life operator handoff summarizes recent verified fixes when clear', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState(),

@@ -10,6 +10,7 @@ const USER_INTERVENTION_REMEDIATORS = new Set([
   'manual_intervention',
   'user_action',
 ]);
+const HUMAN_BLOCKER_SOURCE_ISSUES = [5, 17, 19, 21, 25];
 const WORK_REVIEW_GOAL_AGE_MIN = 12 * 60;
 const fs = require('fs');
 const path = require('path');
@@ -36,6 +37,39 @@ function finiteCount(value) {
   return Number.isFinite(count) ? count : null;
 }
 
+function normalizeStaleData(staleData = null) {
+  if (!staleData || typeof staleData !== 'object') return null;
+  const source = String(staleData.source || staleData.label || staleData.name || '').trim();
+  const lastFreshAt = String(staleData.lastFreshAt || staleData.freshAt || staleData.checkedAt || '').trim();
+  const ageDays = finiteCount(staleData.ageDays);
+  if (!source && !lastFreshAt && ageDays == null) return null;
+  return {
+    ...(source ? { source } : {}),
+    ...(lastFreshAt ? { lastFreshAt } : {}),
+    ...(ageDays != null ? { ageDays } : {}),
+  };
+}
+
+function buildOperatorRequest(step = {}, { type = '', text = '' } = {}) {
+  const args = step?.args && typeof step.args === 'object' ? step.args : {};
+  const actionText = String(text || args.text || args.message || args.name || args.target || type || 'User action required').trim();
+  const channel = String(args.channel || args.contactMethod || args.surface || '').trim() || null;
+  const deadlineAt = String(args.deadlineAt || args.deadline || args.dueAt || '').trim() || null;
+  const staleData = normalizeStaleData(args.staleData || args.externalData || null);
+  const lastAutonomousAttempt = String(args.lastAutonomousAttempt || args.lastAttempt || args.autonomousAttempt || '').trim() || null;
+
+  return {
+    schema: 'home23.operator-request.v1',
+    sourceIssues: HUMAN_BLOCKER_SOURCE_ISSUES,
+    remediator: type || null,
+    actionText,
+    channel,
+    deadlineAt,
+    staleData,
+    lastAutonomousAttempt,
+  };
+}
+
 function summarizeNextRemediation(problem = {}) {
   const plan = Array.isArray(problem.remediation) ? problem.remediation : [];
   const index = Math.max(0, Number(problem.stepIndex || 0));
@@ -60,6 +94,7 @@ function summarizeNextRemediation(problem = {}) {
     requiresUser,
     text,
     cooldownMin: step.cooldownMin ?? null,
+    operatorRequest: requiresUser ? buildOperatorRequest(step, { type, text }) : null,
   };
 }
 
@@ -111,6 +146,7 @@ function buildLiveProblemSnapshot(problems = [], now = new Date()) {
           reason: problem.escalated
             ? `escalated after autonomous remediation; ${nextRemediation.text || 'manual review required'}`
             : (nextRemediation.requiresUser ? nextRemediation.text : null),
+          request: nextRemediation.operatorRequest || null,
         },
         lastCheckedAt: problem.lastCheckedAt || null,
         lastRemediation: Array.isArray(problem.remediationLog)
@@ -1368,6 +1404,39 @@ function remediationCooldownStatus(problem = {}, next = {}, nowMs = Date.now()) 
   };
 }
 
+function formatOperatorRequestContext(request = null) {
+  if (!request) return '';
+  const parts = [];
+  if (request.channel) parts.push(request.channel);
+  if (request.deadlineAt) parts.push(`deadline ${request.deadlineAt}`);
+  if (request.staleData) {
+    const stale = request.staleData;
+    const source = stale.source || 'external data';
+    const age = finiteCount(stale.ageDays);
+    parts.push(`stale data ${source}${age != null ? ` ${age}d` : ''}`);
+  }
+  if (request.lastAutonomousAttempt) {
+    parts.push(`last autonomous attempt: ${compactText(request.lastAutonomousAttempt, 90)}`);
+  }
+  return parts.length ? ` [${parts.join('; ')}]` : '';
+}
+
+function summarizeOperatorRequestEvidence(request = null) {
+  if (!request) return null;
+  const bits = [];
+  if (request.actionText) bits.push(compactText(request.actionText, 100));
+  if (request.deadlineAt) bits.push(`deadline ${request.deadlineAt}`);
+  if (request.staleData) {
+    const source = request.staleData.source || 'external data';
+    const age = finiteCount(request.staleData.ageDays);
+    bits.push(`stale data ${source}${age != null ? ` ${age}d` : ''}`);
+  }
+  if (request.lastAutonomousAttempt) {
+    bits.push(`last autonomous attempt: ${compactText(request.lastAutonomousAttempt, 90)}`);
+  }
+  return bits.join('; ');
+}
+
 function formatRemediationLine(prefix, next = {}, problem = null, nowMs = Date.now()) {
   if (!next?.type && !next?.text) return null;
   if (problem?.escalated) {
@@ -1383,7 +1452,7 @@ function formatRemediationLine(prefix, next = {}, problem = null, nowMs = Date.n
   const text = next.text && next.text !== next.type
     ? ` - ${compactText(next.text, 140)}`
     : '';
-  return `${prefix}: ${next.type || 'next step'}${text}`;
+  return `${prefix}: ${next.type || 'next step'}${text}${formatOperatorRequestContext(next.operatorRequest)}`;
 }
 
 function buildProjectionMismatchText(projection = {}, liveProblems = {}) {
@@ -1760,6 +1829,14 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
       detail: `${Number(counts.interventionRequired || 0)} ${Number(counts.interventionRequired || 0) === 1 ? 'needs' : 'need'} user intervention`,
     },
   ];
+  const operatorRequest = activeProblem?.intervention?.request || activeProblem?.nextRemediation?.operatorRequest || null;
+  if (interventionCount > 0 && operatorRequest) {
+    evidence.push({
+      label: 'Human blocker',
+      value: operatorRequest.channel || operatorRequest.remediator || 'user action',
+      detail: summarizeOperatorRequestEvidence(operatorRequest),
+    });
+  }
   if (budget?.exhausted) {
     evidence.push({
       label: 'Autonomy budget',
