@@ -347,6 +347,22 @@ const remediators = {
       '',
       'End with VERIFIER_STATUS, DISPATCH_OUTCOME, and SUMMARY lines.'
     ].join('\n');
+    const collaborationHandoff = {
+      schema: 'home23.worker-collaboration-handoff.v1',
+      sourceIssues: [78],
+      whyThisMatters: `Live problem ${problem.id || '(unknown)'} needs delegated judgment without losing the operational reason it matters to ${ctx.agentName || process.env.HOME23_AGENT || 'the owner agent'}.`,
+      constraints: [
+        'Preserve the live-problem claim and verifier as the center of the task; do not broaden into unrelated system cleanup.',
+        'Separate observed evidence from inferred causes before claiming a fix.',
+        'Use scoped Home23 operations only and name the concrete verifier or equivalent check.'
+      ],
+      reviewLens: [
+        'Would this diagnosis still look right after the urgency of the alert has passed?',
+        'Did the worker filter its own generated fix rather than only executing the literal dispatch prompt?',
+        'What technically correct action would still violate this Home23 operational context?'
+      ],
+      handoffTaxMitigation: 'The worker must return verifier status, dispatch outcome, summary, and any uncertainty so the owner agent can catch context drift before accepting the repair.'
+    };
 
     try {
       const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/workers/${encodeURIComponent(worker)}/runs`, {
@@ -360,6 +376,7 @@ const remediators = {
           ownerAgent: ctx.agentName || process.env.HOME23_AGENT || undefined,
           requestedBy: 'live-problems',
           requester: 'engine',
+          collaborationHandoff,
           source: { type: 'live-problem', id: problem.id },
           metadata: { budgetHours },
         }),

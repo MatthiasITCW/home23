@@ -34,5 +34,10 @@ test('dispatch_to_worker posts to worker connector', async () => {
   assert.equal(result.turnId, 'wr_1');
   assert.match(body, /host check/);
   assert.match(body, /live-problems/);
-  assert.equal(JSON.parse(body).ownerAgent, 'forrest');
+  const parsed = JSON.parse(body);
+  assert.equal(parsed.ownerAgent, 'forrest');
+  assert.equal(parsed.collaborationHandoff.schema, 'home23.worker-collaboration-handoff.v1');
+  assert.deepEqual(parsed.collaborationHandoff.sourceIssues, [78]);
+  assert.match(parsed.collaborationHandoff.whyThisMatters, /Live problem lp_1/);
+  assert.ok(parsed.collaborationHandoff.reviewLens.some(line => /technically correct/.test(line)));
 });

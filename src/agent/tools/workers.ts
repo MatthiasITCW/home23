@@ -39,7 +39,12 @@ export const workerRunTool: ToolDefinition = {
     properties: {
       worker: { type: 'string' },
       prompt: { type: 'string' },
-      requestedBy: { type: 'string', enum: ['house-agent', 'human', 'live-problems', 'good-life', 'cron', 'cli', 'api'] }
+      requestedBy: { type: 'string', enum: ['house-agent', 'human', 'live-problems', 'good-life', 'cron', 'cli', 'api'] },
+      collaborationHandoff: {
+        type: 'object',
+        description: 'Optional delegation brief: why this matters, constraints, and review lens so the worker preserves owner intent.',
+        additionalProperties: true
+      }
     },
     required: ['worker', 'prompt'],
     additionalProperties: false
@@ -49,7 +54,12 @@ export const workerRunTool: ToolDefinition = {
     const prompt = String(input.prompt || '');
     const data = await jsonRequest(ctx, `/api/workers/${encodeURIComponent(worker)}/runs`, {
       method: 'POST',
-      body: JSON.stringify({ prompt, requestedBy: input.requestedBy || 'house-agent', requester: ctx.agentName })
+      body: JSON.stringify({
+        prompt,
+        requestedBy: input.requestedBy || 'house-agent',
+        requester: ctx.agentName,
+        collaborationHandoff: input.collaborationHandoff
+      })
     }) as { runId?: string; receipt?: { status?: string; verifierStatus?: string; summary?: string } };
     return { content: `Worker run ${data.runId}: ${data.receipt?.status || 'unknown'} / verifier ${data.receipt?.verifierStatus || 'unknown'}\n${data.receipt?.summary || ''}` };
   }

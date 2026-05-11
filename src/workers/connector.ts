@@ -173,6 +173,7 @@ export function createWorkerHandlers(deps: WorkerHandlerDeps) {
         ownerAgent: body.ownerAgent,
         requestedBy: body.requestedBy || 'api',
         requester: body.requester,
+        collaborationHandoff: body.collaborationHandoff,
         source: body.source,
         metadata: body.metadata
       });

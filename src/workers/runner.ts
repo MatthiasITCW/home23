@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadWorker } from './registry.js';
 import { writeWorkerReceipt } from './receipts.js';
 import type { ToolContext, ToolDefinition } from '../agent/types.js';
-import type { WorkerRunReceipt, WorkerRunRequest } from './types.js';
+import type { WorkerCollaborationHandoff, WorkerRunReceipt, WorkerRunRequest } from './types.js';
 
 const activeOwners = new Set<string>();
 
@@ -46,10 +46,84 @@ function workerSystemPrompt(workerName: string, identity: string, playbook: stri
   ].join('\n');
 }
 
-function workerMission(systemPrompt: string, prompt: string): string {
+function cleanLines(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function summarizePromptIntent(prompt: string): string {
+  return String(prompt || '')
+    .split('\n')
+    .map(line => line.trim())
+    .find(Boolean)
+    ?.slice(0, 240)
+    || 'Complete the requested Home23 worker task without drifting from owner intent.';
+}
+
+function normalizeCollaborationHandoff(request: WorkerRunRequest): WorkerCollaborationHandoff {
+  const provided = request.collaborationHandoff || {};
+  const whyThisMatters = String(provided.whyThisMatters || '').trim()
+    || (request.source?.type
+      ? `${request.source.type}${request.source.id ? ` ${request.source.id}` : ''} needs worker judgment without losing the owner intent behind the request.`
+      : summarizePromptIntent(request.prompt));
+
+  const constraints = cleanLines(provided.constraints);
+  if (constraints.length === 0) {
+    constraints.push(
+      'Preserve the stated owner intent; do not replace missing context with reasonable but unverified assumptions.',
+      'Separate observed evidence from claims, and name anything that remains uncertain.',
+      'Keep changes scoped to the requested Home23 surface and record the verifier or concrete check used.'
+    );
+  }
+
+  const reviewLens = cleanLines(provided.reviewLens);
+  if (reviewLens.length === 0) {
+    reviewLens.push(
+      'Would this still look right to the owner after the speed of delegation is removed?',
+      'Did the worker filter the generated answer instead of only completing the literal prompt?',
+      'What would be technically correct but wrong for Home23 in this context?'
+    );
+  }
+
+  return {
+    schema: 'home23.worker-collaboration-handoff.v1',
+    sourceIssues: Array.from(new Set([78, ...(Array.isArray(provided.sourceIssues) ? provided.sourceIssues : [])]
+      .map(n => Number(n))
+      .filter(n => Number.isInteger(n) && n > 0))),
+    whyThisMatters,
+    constraints,
+    reviewLens,
+    handoffTaxMitigation: String(provided.handoffTaxMitigation || '').trim()
+      || 'Worker must state evidence, uncertainty, verifier status, and the review lens used so the owner can catch intent drift before accepting the artifact.'
+  };
+}
+
+function formatCollaborationHandoff(handoff: WorkerCollaborationHandoff): string {
+  return [
+    '[COLLABORATION HANDOFF]',
+    `Schema: ${handoff.schema}`,
+    `Source issues: ${handoff.sourceIssues.join(', ')}`,
+    `Why this matters: ${handoff.whyThisMatters}`,
+    '',
+    'Constraints:',
+    ...handoff.constraints.map(item => `- ${item}`),
+    '',
+    'Review lens:',
+    ...handoff.reviewLens.map(item => `- ${item}`),
+    '',
+    `Handoff-tax mitigation: ${handoff.handoffTaxMitigation}`
+  ].join('\n');
+}
+
+function workerMission(systemPrompt: string, prompt: string, handoff: WorkerCollaborationHandoff): string {
   return [
     '[HOME23 WORKER CONTEXT]',
     systemPrompt,
+    '',
+    formatCollaborationHandoff(handoff),
     '',
     '[WORKER TASK]',
     prompt
@@ -93,6 +167,7 @@ function receiptFromResponse(args: {
   startedAt: string;
   finishedAt: string;
   responseText: string;
+  collaborationHandoff: WorkerCollaborationHandoff;
 }): WorkerRunReceipt {
   const verifierStatus = parseVerifierStatus(args.responseText);
   const status = parseStatus(args.responseText, verifierStatus);
@@ -113,6 +188,7 @@ function receiptFromResponse(args: {
     evidence: [{ type: 'worker_response', detail: summary, status: verifierStatus }],
     artifacts: [path.join(args.runPath, 'transcript.md')],
     memoryCandidates: [],
+    collaborationHandoff: args.collaborationHandoff,
     source: args.request.source
   };
 }
@@ -133,9 +209,15 @@ export async function runWorker(input: RunWorkerInput): Promise<RunWorkerResult>
     const identity = readIfExists(path.join(worker.rootPath, 'workspace', 'IDENTITY.md'));
     const playbook = readIfExists(path.join(worker.rootPath, 'workspace', 'PLAYBOOK.md'));
     const systemPrompt = workerSystemPrompt(worker.name, identity, playbook);
-    const mission = workerMission(systemPrompt, input.request.prompt);
+    const collaborationHandoff = normalizeCollaborationHandoff(input.request);
+    const mission = workerMission(systemPrompt, input.request.prompt, collaborationHandoff);
 
-    writeFileSync(path.join(runPath, 'input.md'), input.request.prompt);
+    writeFileSync(path.join(runPath, 'input.md'), [
+      formatCollaborationHandoff(collaborationHandoff),
+      '',
+      '[WORKER TASK]',
+      input.request.prompt
+    ].join('\n'));
     const response = await input.ctx.runAgentLoop(systemPrompt, mission, input.tools || [], {
       ...input.ctx,
       agentName: owner,
@@ -153,7 +235,8 @@ export async function runWorker(input: RunWorkerInput): Promise<RunWorkerResult>
       ownerAgent: owner,
       startedAt,
       finishedAt,
-      responseText: response.text
+      responseText: response.text,
+      collaborationHandoff
     });
     writeWorkerReceipt(input.projectRoot, runPath, receipt);
     return { runId: id, runPath, receipt };

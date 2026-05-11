@@ -563,6 +563,28 @@
         "engine/src/cognition/hallucinated-tool-call-detector.js",
         "tests/engine/cognition/inert-thought-detector.test.js"
       ]
+    },
+    {
+      "id": "worker-collaboration-handoff-discipline",
+      "title": "Delegated worker runs carry owner intent, constraints, and review lens",
+      "status": "adopted",
+      "sourceIssues": [78],
+      "requirement": "When Home23 delegates judgment to reusable workers, the handoff must transfer why the task matters, what constraints preserve owner intent, and how the output should be filtered so technically correct but wrong artifacts are easier to catch.",
+      "implementationReceipts": [
+        {
+          "artifact": "src/workers/runner.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/workers/runner.test.ts && node --test --test-concurrency=1 tests/engine/live-problems/dispatch-worker.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "src/workers/types.ts",
+        "src/workers/runner.ts",
+        "src/workers/connector.ts",
+        "src/agent/tools/workers.ts",
+        "engine/src/live-problems/remediators.js",
+        "tests/workers/runner.test.ts",
+        "tests/engine/live-problems/dispatch-worker.test.js"
+      ]
     }
   ]
 }

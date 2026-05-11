@@ -53,6 +53,9 @@ test('runWorker writes input, transcript, receipt, and owner brain feed', async 
   seedWorker(projectRoot);
   const loop: AgentLoopRunner = async (systemPrompt, userMessage) => {
     assert.match(systemPrompt, /Systems/);
+    assert.match(userMessage, /\[COLLABORATION HANDOFF\]/);
+    assert.match(userMessage, /Why this matters:/);
+    assert.match(userMessage, /What would be technically correct but wrong for Home23/);
     assert.match(userMessage, /Check PM2/);
     return { text: 'Summary: checked scoped PM2 state\nVerifier: pass', model: 'fake', toolCallCount: 0, durationMs: 5 };
   };
@@ -67,7 +70,10 @@ test('runWorker writes input, transcript, receipt, and owner brain feed', async 
   assert.equal(result.receipt.ownerAgent, 'jerry');
   assert.equal(result.receipt.status, 'no_change');
   assert.equal(result.receipt.verifierStatus, 'pass');
+  assert.equal(result.receipt.collaborationHandoff?.schema, 'home23.worker-collaboration-handoff.v1');
+  assert.deepEqual(result.receipt.collaborationHandoff?.sourceIssues, [78]);
   assert.equal(existsSync(path.join(result.runPath, 'input.md')), true);
+  assert.match(readFileSync(path.join(result.runPath, 'input.md'), 'utf8'), /\[COLLABORATION HANDOFF\]/);
   assert.equal(existsSync(path.join(result.runPath, 'transcript.md')), true);
   assert.equal(existsSync(path.join(result.runPath, 'receipt.json')), true);
   assert.match(readFileSync(path.join(projectRoot, 'instances', 'jerry', 'brain', 'worker-runs.jsonl'), 'utf8'), /checked scoped PM2 state/);
@@ -96,4 +102,35 @@ test('runWorker treats read-only verifier pass as no_change even when no fix was
 
   assert.equal(result.receipt.verifierStatus, 'pass');
   assert.equal(result.receipt.status, 'no_change');
+});
+
+test('runWorker preserves explicit collaboration handoff intent', async () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'home23-runner-'));
+  seedWorker(projectRoot);
+  const loop: AgentLoopRunner = async (_systemPrompt, userMessage) => {
+    assert.match(userMessage, /Why this matters: The shape matters more than the literal task/);
+    assert.match(userMessage, /Keep the existing operator tone/);
+    assert.match(userMessage, /Would jtr reject this as technically correct but wrong/);
+    return { text: 'SUMMARY: handoff preserved\nVERIFIER_STATUS: pass\nDISPATCH_OUTCOME: not_fixed', model: 'fake', toolCallCount: 0, durationMs: 5 };
+  };
+
+  const result = await runWorker({
+    projectRoot,
+    request: {
+      worker: 'systems',
+      prompt: 'Review the operator tile',
+      requestedBy: 'human',
+      collaborationHandoff: {
+        sourceIssues: [78, 99],
+        whyThisMatters: 'The shape matters more than the literal task.',
+        constraints: ['Keep the existing operator tone.'],
+        reviewLens: ['Would jtr reject this as technically correct but wrong?'],
+        handoffTaxMitigation: 'State any drift before claiming completion.'
+      }
+    },
+    ctx: fakeContext(projectRoot, loop)
+  });
+
+  assert.deepEqual(result.receipt.collaborationHandoff?.sourceIssues, [78, 99]);
+  assert.equal(result.receipt.collaborationHandoff?.constraints[0], 'Keep the existing operator tone.');
 });

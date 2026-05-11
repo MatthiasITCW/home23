@@ -45,12 +45,22 @@ export interface WorkerRunRequest {
   ownerAgent?: string;
   requestedBy: 'human' | 'house-agent' | 'live-problems' | 'good-life' | 'cron' | 'cli' | 'api';
   requester?: string;
+  collaborationHandoff?: Partial<WorkerCollaborationHandoff>;
   source?: {
     type: string;
     id?: string;
     url?: string;
   };
   metadata?: Record<string, unknown>;
+}
+
+export interface WorkerCollaborationHandoff {
+  schema: 'home23.worker-collaboration-handoff.v1';
+  sourceIssues: number[];
+  whyThisMatters: string;
+  constraints: string[];
+  reviewLens: string[];
+  handoffTaxMitigation: string;
 }
 
 export interface WorkerReceiptAction {
@@ -89,6 +99,7 @@ export interface WorkerRunReceipt {
   evidence: WorkerReceiptEvidence[];
   artifacts: string[];
   memoryCandidates: WorkerMemoryCandidate[];
+  collaborationHandoff?: WorkerCollaborationHandoff;
   source?: WorkerRunRequest['source'];
 }
 
