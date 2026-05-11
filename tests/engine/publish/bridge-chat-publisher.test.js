@@ -15,6 +15,50 @@ test('BridgeChatPublisher only publishes above salience threshold', async () => 
   assert.equal(sent.length, 1);
 });
 
+test('BridgeChatPublisher suppresses ambient high-salience observations', async () => {
+  const sent = [];
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    sender: async (m) => sent.push(m),
+    ledger: { record: async () => {} },
+    logger: { info: () => {}, warn: () => {} },
+  });
+
+  const result = await pub.onObservation({
+    salience: 0.95,
+    summary: 'routine pressure sample',
+    observation: {
+      flag: 'COLLECTED',
+      confidence: 0.99,
+      payload: { severity: 'routine', pressure_pa: 101234 },
+    },
+  });
+
+  assert.equal(result, null);
+  assert.equal(sent.length, 0);
+});
+
+test('BridgeChatPublisher sends action-required high-salience observations', async () => {
+  const sent = [];
+  const pub = new BridgeChatPublisher({
+    salienceThreshold: 0.75,
+    sender: async (m) => sent.push(m),
+    ledger: { record: async () => {} },
+  });
+
+  await pub.onObservation({
+    salience: 0.95,
+    summary: 'bridge needs owner decision',
+    observation: {
+      flag: 'COLLECTED',
+      confidence: 0.99,
+      payload: { severity: 'normal', requiresAction: true },
+    },
+  });
+
+  assert.equal(sent.length, 1);
+});
+
 test('BridgeChatPublisher does not record success when no sender is configured', async () => {
   let records = 0;
   const pub = new BridgeChatPublisher({

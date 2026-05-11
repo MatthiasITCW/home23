@@ -7,6 +7,8 @@
 
 'use strict';
 
+import { classifyObservationAttention } from '../attention/attention-policy.js';
+
 export class BridgeChatPublisher {
   constructor({ salienceThreshold = 0.75, sender, ledger, logger } = {}) {
     this.salienceThreshold = salienceThreshold;
@@ -17,6 +19,13 @@ export class BridgeChatPublisher {
 
   async onObservation({ salience, summary, observation } = {}) {
     if (typeof salience !== 'number' || salience < this.salienceThreshold) return null;
+    if (observation) {
+      const attention = classifyObservationAttention(observation);
+      if (attention.mode !== 'interruptive') {
+        this.logger.info?.(`[publish] bridge-chat suppressed ambient observation: ${attention.reason}`);
+        return null;
+      }
+    }
     if (!this.sender) return null;
     try {
       await this.sender({ text: summary, observation });
