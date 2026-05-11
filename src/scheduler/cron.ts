@@ -523,7 +523,7 @@ export class CronScheduler {
       reason = invalidReason;
       willExecute = false;
       nextReviewAtMs = now + 60 * 60 * 1000;
-    } else if (job.state.consecutiveErrors >= 3) {
+    } else if (source !== 'manual' && job.state.consecutiveErrors >= 3) {
       action = 'escalate';
       reason = `${job.state.consecutiveErrors} consecutive errors; withheld until operator or repair loop reviews job`;
       willExecute = false;

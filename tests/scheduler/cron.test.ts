@@ -126,6 +126,37 @@ test('due cron jobs with repeated errors escalate before executing again', async
   assert.ok(savedJobs[0].state.nextRunAtMs > Date.now());
 });
 
+test('manual cron repair run bypasses repeated-error escalation', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-cron-manual-repair-'));
+  let handlerCalls = 0;
+  const job = makeDueJob({
+    state: {
+      nextRunAtMs: Date.now() - 10_000,
+      lastStatus: 'error',
+      consecutiveErrors: 3,
+    },
+  });
+  writeFileSync(join(dir, 'cron-jobs.json'), JSON.stringify([job], null, 2));
+  const scheduler = new CronScheduler({ timezone: 'America/New_York', jobsFile: 'cron-jobs.json', runsDir: 'cron-runs' }, async (): Promise<JobResult> => {
+    handlerCalls++;
+    return { status: 'ok', response: 'repair verified', durationMs: 1 };
+  }, dir);
+
+  const result = await scheduler.runJobNow('job-1');
+
+  assert.equal(result.status, 'ok');
+  assert.equal(handlerCalls, 1);
+  const decisions = readJsonl(join(dir, 'cron-decisions.jsonl'));
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].source, 'manual');
+  assert.equal(decisions[0].action, 'run');
+  assert.equal(decisions[0].durableState, 'allowed_after_decision');
+
+  const savedJobs = JSON.parse(readFileSync(join(dir, 'cron-jobs.json'), 'utf8'));
+  assert.equal(savedJobs[0].state.lastStatus, 'ok');
+  assert.equal(savedJobs[0].state.consecutiveErrors, 0);
+});
+
 test('background cron jobs defer under mixed due load without counting as failures', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'home23-cron-load-'));
   const scheduled = makeDueJob({
