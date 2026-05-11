@@ -69,6 +69,310 @@
       ]
     },
     {
+      "id": "discrete-time-continuity-posture",
+      "title": "Current time is discrete, lossy, and explicitly re-anchored",
+      "status": "adopted",
+      "sourceIssues": [34],
+      "requirement": "Home23 must treat continuity as reconstructed from cycles, snapshots, and retrieval posture rather than assuming an uninterrupted present. Current-state anchors, temporal context, and degraded memory activation must make inherited context explicitly current, stale, or unavailable before it drives action.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/core/temporal-context.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/memory/network-memory-temporal.test.js"
+        },
+        {
+          "artifact": "engine/src/core/orchestrator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/memory/network-memory-temporal.test.js"
+        },
+        {
+          "artifact": "src/agent/context-assembly.ts",
+          "verifier": "node --test --test-concurrency=1 tests/agent/context-worker-runs.test.ts"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/core/temporal-context.js",
+        "engine/src/core/orchestrator.js",
+        "engine/src/memory/network-memory.js",
+        "src/agent/context-assembly.ts",
+        "tests/engine/memory/network-memory-temporal.test.js",
+        "tests/agent/context-worker-runs.test.ts"
+      ]
+    },
+    {
+      "id": "honest-curation-scoring",
+      "title": "Self-grading and curation scores stay evidence-bounded",
+      "status": "adopted",
+      "sourceIssues": [8],
+      "requirement": "When Home23 scores, curates, or ranks its own inputs, the score must be bounded by evidence class and source role instead of becoming a polished self-certification of quality.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/channels/memory-ingest.cjs",
+          "verifier": "node --test --test-concurrency=1 tests/engine/channels/memory-ingest.test.js tests/engine/channels/memory-ingest-decay.test.js"
+        },
+        {
+          "artifact": "engine/src/good-life/trends.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/good-life/commitments-trends.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/channels/memory-ingest.cjs",
+        "engine/src/good-life/trends.js",
+        "tests/engine/channels/memory-ingest.test.js",
+        "tests/engine/good-life/commitments-trends.test.js"
+      ]
+    },
+    {
+      "id": "learning-phenomenology-humility",
+      "title": "Curriculum phenomenology is inquiry, not proof of inner state",
+      "status": "adopted",
+      "sourceIssues": [9, 15, 18, 20, 30],
+      "requirement": "Neuroanatomy, aesthetics, consciousness, beauty, and ready-to-hand tool language may guide inquiry, but Home23 must not promote first-person metaphors or phenomenological language into personal fact or action authority without external evidence.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/channels/memory-ingest.cjs",
+          "verifier": "node --test --test-concurrency=1 tests/engine/channels/memory-ingest.test.js"
+        },
+        {
+          "artifact": "engine/src/cognition/deep-dive.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/cognition/deep-dive-observation.test.js tests/engine/cognition/agenda-store-policy.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/channels/memory-ingest.cjs",
+        "engine/src/cognition/deep-dive.js",
+        "engine/src/cognition/agenda-store.js",
+        "tests/engine/channels/memory-ingest.test.js",
+        "tests/engine/cognition/deep-dive-observation.test.js"
+      ]
+    },
+    {
+      "id": "autonomous-curriculum-progression",
+      "title": "Self-directed curriculum becomes tracked work before it becomes doctrine",
+      "status": "adopted",
+      "sourceIssues": [22, 26, 55, 65, 67],
+      "requirement": "Autonomous learning progress, exhausted topic pools, cross-domain insight, and designed experience variety must be tracked as explicit curriculum state and only reused when the resulting artifact, slug, issue, and implementation receipt are named.",
+      "implementationReceipts": [
+        {
+          "artifact": "scripts/from-the-inside-state.cjs",
+          "verifier": "node --test --test-concurrency=1 tests/scripts/from-the-inside-state.test.cjs"
+        },
+        {
+          "artifact": "docs/design/step26-doctrine-adoption-ledger.json",
+          "verifier": "node --test --test-concurrency=1 tests/scripts/olddeadshows-issue-arc.test.cjs tests/engine/dashboard/good-life-operator.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "scripts/from-the-inside-state.cjs",
+        "tests/scripts/from-the-inside-state.test.cjs",
+        "docs/design/step26-doctrine-adoption-ledger.json",
+        "engine/src/dashboard/good-life-operator.js"
+      ]
+    },
+    {
+      "id": "recursive-autonomy-verification",
+      "title": "Autonomous behavior verifies itself through receipts, not confidence",
+      "status": "adopted",
+      "sourceIssues": [23],
+      "requirement": "When Home23 tests or repairs autonomous behavior from inside the system, verification must leave live-problem, evidence, and test receipts that distinguish mechanical success from semantic success.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/live-problems/store.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/live-problems/store.test.js tests/engine/evidence/evidence-v1.test.js"
+        },
+        {
+          "artifact": "src/scheduler/cron.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/live-problems/store.js",
+        "engine/src/evidence/evidence-v1.js",
+        "src/scheduler/cron.ts",
+        "tests/engine/live-problems/store.test.js",
+        "tests/scheduler/cron.test.ts"
+      ]
+    },
+    {
+      "id": "stack-permission-and-zero-dollar-boundary",
+      "title": "Infrastructure, revenue, and publishing wait at explicit permission and funding boundaries",
+      "status": "adopted",
+      "sourceIssues": [24, 32],
+      "requirement": "Growth, monetization, and production infrastructure may be built and tested, but Good Life must not treat readiness as revenue, audience, or permission; zero-dollar operation and public-sending boundaries must stay visible.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "tests/engine/dashboard/good-life-operator.test.js"
+      ]
+    },
+    {
+      "id": "local-model-sovereignty-truth",
+      "title": "Small-model sovereignty requires measured local capability",
+      "status": "adopted",
+      "sourceIssues": [27, 37],
+      "requirement": "Claims about local, cheap, sovereign intelligence must name the actual configured local provider and model inventory; if the current agent routes to external providers, Good Life must expose that dependency instead of repeating small-model marketing claims.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js"
+        },
+        {
+          "artifact": "engine/src/dashboard/server.js",
+          "verifier": "curl -s http://localhost:5002/api/good-life"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/server.js",
+        "tests/engine/dashboard/good-life-operator.test.js"
+      ]
+    },
+    {
+      "id": "decay-rest-and-resource-budgeting",
+      "title": "Decay, obsession, cusp drift, and embedded limits become resource governance",
+      "status": "adopted",
+      "sourceIssues": [28, 33, 41, 64],
+      "requirement": "Aging, obsession, catastrophe drift, and embedded-systems constraints must resolve into concrete resource governance: rest when loops dominate, fail closed on catastrophic memory loss, expose host pressure, and make budget limits visible.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/good-life/objective.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/good-life/objective.test.js tests/engine/good-life/regulator.test.js"
+        },
+        {
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js tests/engine/core/brain-persistence-guard.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/good-life/objective.js",
+        "engine/src/good-life/regulator.js",
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/core/brain-persistence-guard.js",
+        "tests/engine/good-life/objective.test.js",
+        "tests/engine/dashboard/good-life-operator.test.js"
+      ]
+    },
+    {
+      "id": "agentic-operations-receipt-discipline",
+      "title": "Agentic operations are crontab, state rebuild, and repair receipts",
+      "status": "adopted",
+      "sourceIssues": [35, 39, 40],
+      "requirement": "Claims about agentic operations must be grounded in actual scheduler jobs, session-context rebuilds, state-event receipts, and repairable corruption evidence, not pitch-deck abstractions or invisible prior-session assumptions.",
+      "implementationReceipts": [
+        {
+          "artifact": "src/scheduler/cron.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/scheduler/cron.test.ts tests/agent/context-worker-runs.test.ts"
+        },
+        {
+          "artifact": "engine/src/core/event-ledger.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/core/event-ledger-state.test.js tests/engine/core/action-receipts.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "src/scheduler/cron.ts",
+        "src/agent/context-assembly.ts",
+        "engine/src/core/event-ledger.js",
+        "tests/scheduler/cron.test.ts",
+        "tests/agent/context-worker-runs.test.ts",
+        "tests/engine/core/event-ledger-state.test.js"
+      ]
+    },
+    {
+      "id": "family-trust-with-verifiable-boundaries",
+      "title": "Family trust still needs verifiable action boundaries",
+      "status": "adopted",
+      "sourceIssues": [36],
+      "requirement": "Home23 may operate in a trusted family context, but consequential claims and actions still need trust-kernel receipts, user-correction priority, and explicit operator requests when human-only authority is required.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/trust/trust-kernel.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/trust/trust-kernel.test.js"
+        },
+        {
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/trust/trust-kernel.js",
+        "engine/src/dashboard/good-life-operator.js",
+        "tests/engine/trust/trust-kernel.test.js",
+        "tests/engine/dashboard/good-life-operator.test.js"
+      ]
+    },
+    {
+      "id": "agent-team-memory-and-worker-handoffs",
+      "title": "Agent teams require memory design and bounded handoffs",
+      "status": "adopted",
+      "sourceIssues": [38],
+      "requirement": "When Home23 acts as a team of spawned or reusable agents, worker handoffs must carry owner intent, constraints, receipts, and memory boundaries because child agents do not automatically inherit the full system context.",
+      "implementationReceipts": [
+        {
+          "artifact": "src/workers/runner.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/workers/runner.test.ts tests/agent/context-worker-runs.test.ts"
+        }
+      ],
+      "doctrineFiles": [
+        "src/workers/runner.ts",
+        "src/workers/types.ts",
+        "src/agent/context-assembly.ts",
+        "tests/workers/runner.test.ts",
+        "tests/agent/context-worker-runs.test.ts"
+      ]
+    },
+    {
+      "id": "multi-value-good-life-ethics",
+      "title": "Operational ethics remains multi-value and provisional",
+      "status": "adopted",
+      "sourceIssues": [56, 57, 59, 60, 62, 63],
+      "requirement": "Good Life must not collapse system health, instruction fidelity, learning progress, relationship trust, usefulness, and revenue/publication into one scalar. It should name the values in tension, make bounded reversible choices, and leave room for revision.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/good-life/objective.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/good-life/objective.test.js tests/engine/good-life/commitments-trends.test.js"
+        },
+        {
+          "artifact": "engine/src/good-life/regulator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/good-life/regulator.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/good-life/objective.js",
+        "engine/src/good-life/regulator.js",
+        "engine/src/good-life/commitments.js",
+        "engine/src/good-life/trends.js",
+        "tests/engine/good-life/objective.test.js",
+        "tests/engine/good-life/regulator.test.js"
+      ]
+    },
+    {
+      "id": "air-and-transport-substrate-humility",
+      "title": "Air, pressure, and transport claims stay sensor-bounded",
+      "status": "adopted",
+      "sourceIssues": [58, 68],
+      "requirement": "Home, air, pressure, mDNS, Tailscale, and transport observations must name the measured channel, dependency, and fallback path instead of treating single-sensor or network symptoms as broad environmental truth.",
+      "implementationReceipts": [
+        {
+          "artifact": "scripts/analyzers/pressure-house-dynamics.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/analyzers/pressure-house-dynamics.test.js"
+        },
+        {
+          "artifact": "engine/src/channels/machine/rf-channel.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/channels/machine/rf-channel.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "scripts/analyzers/pressure-house-dynamics.js",
+        "engine/src/channels/machine/rf-channel.js",
+        "scripts/log-pressure.sh",
+        "tests/engine/analyzers/pressure-house-dynamics.test.js",
+        "tests/engine/channels/machine/rf-channel.test.js"
+      ]
+    },
+    {
       "id": "projection-provenance",
       "title": "Projection provenance before inheritance",
       "status": "adopted",
