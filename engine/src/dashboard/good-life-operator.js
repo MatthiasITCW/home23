@@ -1831,7 +1831,7 @@ function buildOperatorRings({ brief, liveProblems, work, consistency, freshness,
   ];
 }
 
-function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail, obligations, budget, host, pm2 }) {
+function buildDetailSections({ commitments, trends, regulator, liveProblems, ledgerTail, obligations, budget, host, pm2, scheduler }) {
   const activeRows = [
     ...(Array.isArray(liveProblems.open) ? liveProblems.open : []),
     ...(Array.isArray(liveProblems.chronic) ? liveProblems.chronic : []),
@@ -1881,6 +1881,7 @@ function buildDetailSections({ commitments, trends, regulator, liveProblems, led
       trend: trends?.latest || null,
       host: host || null,
       pm2: pm2 || null,
+      scheduler: scheduler || null,
       autonomyBudget: budget || null,
       ledgerTail: Array.isArray(ledgerTail) ? ledgerTail.slice(-12).reverse().map(compactLedgerEntry) : [],
       correctionTombstones: [],
@@ -1977,6 +1978,7 @@ function buildGoodLifeOperatorModel({
     budget,
     host: state?.evidence?.host || null,
     pm2: state?.evidence?.pm2 || null,
+    scheduler: state?.evidence?.scheduler || null,
   });
   model.detail.insights.correctionTombstones = model.provenance.correctionTombstones;
   model.work = work;

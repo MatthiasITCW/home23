@@ -573,6 +573,34 @@ test('Good Life operator detail carries PM2 restart evidence for the UI', () => 
   assert.deepEqual(model.detail.insights.pm2, pm2);
 });
 
+test('Good Life operator detail carries scheduler sovereignty evidence for the UI', () => {
+  const scheduler = {
+    totalJobs: 4,
+    enabledJobs: 3,
+    okJobs: 2,
+    failingJobs: 1,
+    maxConsecutiveErrors: 2,
+    path: '/tmp/conversations/cron-jobs.json',
+    worstJobs: [
+      { name: 'Health freshness job', lastStatus: 'error', consecutiveErrors: 2 },
+    ],
+  };
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState({
+      evidence: {
+        liveProblems: { open: 0, chronic: 0, resolved: 12, unverifiable: 0, total: 12 },
+        goals: { open: 0, total: 0 },
+        agenda: { pending: 0 },
+        scheduler,
+      },
+    }),
+    liveProblems: [],
+    now: NOW,
+  });
+
+  assert.deepEqual(model.detail.insights.scheduler, scheduler);
+});
+
 test('Good Life operator model annotates latest routed agenda status', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState(),

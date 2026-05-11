@@ -5360,6 +5360,7 @@ Be specific, actionable, and maintain research continuity.`;
             agenda: value.evidence?.agenda || null,
             actions: value.evidence?.actions || null,
             host: value.evidence?.host || null,
+            scheduler: value.evidence?.scheduler || null,
             discovery: value.evidence?.discovery ? {
               queueDepth: value.evidence.discovery.queueDepth ?? null,
               errors: value.evidence.discovery.errors ?? null,

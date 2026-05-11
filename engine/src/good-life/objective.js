@@ -12,6 +12,7 @@ const DEFAULT_THRESHOLDS = Object.freeze({
   hostSwapPressureHigh: 85,
   hostSwapPressureCritical: 95,
   hostDiskUsageCritical: 95,
+  schedulerFailingJobsCritical: 1,
 });
 
 const LANE_ORDER = Object.freeze([
@@ -71,16 +72,19 @@ class GoodLifeObjective {
     const staleReceipt = receiptsAgeMin != null && receiptsAgeMin > this.thresholds.receiptStaleMinutes;
     const diskUsagePct = Number(s.host?.disk?.usagePct);
     const swapUsedPct = Number(s.host?.swap?.usedPct);
+    const failingSchedulerJobs = Number(s.scheduler?.failingJobs || 0);
     const diskCritical = Number.isFinite(diskUsagePct) && diskUsagePct >= this.thresholds.hostDiskUsageCritical;
     const swapCritical = Number.isFinite(swapUsedPct) && swapUsedPct >= this.thresholds.hostSwapPressureCritical;
+    const schedulerCritical = failingSchedulerJobs >= this.thresholds.schedulerFailingJobsCritical;
 
-    if (pm2Offline > 0 || problems >= this.thresholds.liveProblemsCritical || staleReceipt || diskCritical || swapCritical) {
+    if (pm2Offline > 0 || problems >= this.thresholds.liveProblemsCritical || staleReceipt || diskCritical || swapCritical || schedulerCritical) {
       return lane('critical', [
         pm2Offline > 0 ? `${pm2Offline} home23 process(es) offline` : null,
         problems > 0 ? `${problems} unresolved live problem(s)` : null,
         staleReceipt ? `no crystallization receipt for ${Math.round(receiptsAgeMin)}m` : null,
         diskCritical ? `host disk ${Math.round(diskUsagePct)}% used` : null,
         swapCritical ? `host swap ${Math.round(swapUsedPct)}% used` : null,
+        schedulerCritical ? `${failingSchedulerJobs} failing scheduler job${failingSchedulerJobs === 1 ? '' : 's'}` : null,
       ]);
     }
     return lane('healthy', ['core engine evidence is flowing']);
@@ -182,6 +186,7 @@ class GoodLifeObjective {
       goals: s.goals || null,
       agenda: s.agenda || null,
       crystallization: s.crystallization || null,
+      scheduler: s.scheduler || null,
       discovery: s.discovery || null,
       thinkingMachine: s.thinkingMachine || null,
       publish: s.publish || null,

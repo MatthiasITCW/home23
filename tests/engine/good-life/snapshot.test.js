@@ -267,6 +267,61 @@ test('Good Life snapshot includes current Home23 PM2 offline counts', () => {
   assert.equal(snapshot.pm2.current.find((p) => p.name === 'home23-forrest-dash').restartCount, null);
 });
 
+test('Good Life snapshot summarizes harness scheduler job state from sibling conversations folder', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'home23-good-life-scheduler-'));
+  try {
+    const brainDir = join(dir, 'brain');
+    const conversationsDir = join(dir, 'conversations');
+    mkdirSync(brainDir, { recursive: true });
+    mkdirSync(conversationsDir, { recursive: true });
+    writeFileSync(join(conversationsDir, 'cron-jobs.json'), JSON.stringify({
+      jobs: [
+        {
+          id: 'cron-ok',
+          name: 'Useful publishing job',
+          enabled: true,
+          state: {
+            lastStatus: 'ok',
+            consecutiveErrors: 0,
+            lastRunAtMs: Date.parse('2026-05-11T13:00:00.000Z'),
+            nextRunAtMs: Date.parse('2026-05-11T14:00:00.000Z'),
+            lastDurationMs: 1200,
+          },
+        },
+        {
+          id: 'cron-bad',
+          name: 'Health freshness job',
+          enabled: true,
+          state: {
+            lastStatus: 'error',
+            consecutiveErrors: 3,
+            lastRunAtMs: Date.parse('2026-05-11T12:00:00.000Z'),
+            lastDurationMs: 45000,
+          },
+        },
+        {
+          id: 'cron-disabled',
+          name: 'Old disabled job',
+          enabled: false,
+          state: { lastStatus: 'error', consecutiveErrors: 99 },
+        },
+      ],
+    }));
+
+    const snapshot = buildGoodLifeSnapshot({ runtimeRoot: brainDir });
+
+    assert.equal(snapshot.scheduler.totalJobs, 3);
+    assert.equal(snapshot.scheduler.enabledJobs, 2);
+    assert.equal(snapshot.scheduler.okJobs, 1);
+    assert.equal(snapshot.scheduler.failingJobs, 1);
+    assert.equal(snapshot.scheduler.maxConsecutiveErrors, 3);
+    assert.equal(snapshot.scheduler.worstJobs[0].name, 'Health freshness job');
+    assert.equal(snapshot.scheduler.path, join(conversationsDir, 'cron-jobs.json'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('Good Life action summary prefers structured recent failure counter over prose mentions', () => {
   const snapshot = buildGoodLifeSnapshot({
     runtimeRoot: '',

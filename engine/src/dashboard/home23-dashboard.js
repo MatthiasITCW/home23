@@ -4062,6 +4062,30 @@ function renderGoodLifePm2Changes(pm2) {
   `;
 }
 
+function renderGoodLifeScheduler(scheduler) {
+  if (!scheduler) return '';
+  const failing = Number(scheduler.failingJobs || 0);
+  const enabled = Number(scheduler.enabledJobs || 0);
+  const total = Number(scheduler.totalJobs || 0);
+  const rowClass = failing > 0 ? 'watch' : '';
+  return `
+    <section><h4>Scheduler Sovereignty</h4>
+      <div class="h23-goodlife-evidence-row ${rowClass}">
+        <strong>${escapeHtml(failing > 0 ? `${failing} failing` : 'clear')}</strong>
+        <span>${escapeHtml(`${enabled}/${total} enabled jobs; max error streak ${Number(scheduler.maxConsecutiveErrors || 0)}`)}</span>
+        <small>${escapeHtml(scheduler.path || '')}</small>
+        <em>${escapeHtml(failing > 0 ? 'repair signal' : 'observed')}</em>
+      </div>
+      ${(scheduler.worstJobs || []).slice(0, 5).map((job) => `<div class="h23-goodlife-evidence-row watch">
+        <strong>${escapeHtml(job.name || job.id || 'scheduler job')}</strong>
+        <span>${escapeHtml(`${Number(job.consecutiveErrors || 0)} consecutive error${Number(job.consecutiveErrors || 0) === 1 ? '' : 's'}`)}</span>
+        <small>${escapeHtml([job.lastStatus || null, job.lastRunAt ? `last ${timeSince(new Date(job.lastRunAt))}` : null].filter(Boolean).join(' - '))}</small>
+        <em>cron</em>
+      </div>`).join('')}
+    </section>
+  `;
+}
+
 function renderGoodLifeInsightsDetail(data) {
   const detail = data?.operator?.detail || {};
   const metrics = detail.insights?.trendMetrics || {};
@@ -4071,6 +4095,7 @@ function renderGoodLifeInsightsDetail(data) {
   const budget = detail.insights?.autonomyBudget || data?.operator?.autonomyBudget || null;
   const host = detail.insights?.host || data?.state?.evidence?.host || null;
   const pm2 = detail.insights?.pm2 || data?.state?.evidence?.pm2 || null;
+  const scheduler = detail.insights?.scheduler || data?.state?.evidence?.scheduler || null;
   const provenanceHtml = provenance ? `
     <section><h4>Projection Provenance</h4>
       <div class="h23-goodlife-evidence-row">
@@ -4123,6 +4148,7 @@ function renderGoodLifeInsightsDetail(data) {
     ${budgetHtml}
     ${renderGoodLifeHostPressure(host)}
     ${renderGoodLifePm2Changes(pm2)}
+    ${renderGoodLifeScheduler(scheduler)}
     <section><h4>Recent Good Life Ledger</h4>${ledger.length ? ledger.map((entry) => `<div class="h23-goodlife-evidence-row"><strong>${escapeHtml(entry.event || entry.type || 'entry')}</strong><span>${escapeHtml(entry.summary || entry.message || entry.mode || '')}</span><small>${entry.at || entry.timestamp ? escapeHtml(timeSince(new Date(entry.at || entry.timestamp))) : ''}</small></div>`).join('') : '<div class="h23-goodlife-empty">No ledger entries</div>'}</section>
   `;
 }

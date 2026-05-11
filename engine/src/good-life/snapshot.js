@@ -30,6 +30,7 @@ function buildGoodLifeSnapshot({
     host: summarizeHostPressure(runtimeRoot),
     discovery: orchestrator?.discoveryEngine?.getStats?.() || null,
     thinkingMachine: orchestrator?.thinkingMachine?.getStats?.() || null,
+    scheduler: summarizeScheduler(runtimeRoot),
     publish: summarizePublish(runtimeRoot),
     goodLife: summarizeGoodLife(runtimeRoot),
     pm2: summarizePm2(runtimeRoot, includeCurrentPm2 ? readCurrentPm2List() : currentPm2List),
@@ -339,6 +340,73 @@ function summarizePublish(runtimeRoot) {
     lastUsefulOutputAt: toIsoTime(useful?.at || useful?.timestamp || stat),
     sampled: rows.length,
   };
+}
+
+function summarizeScheduler(runtimeRoot) {
+  const file = schedulerJobsPath(runtimeRoot);
+  const parsed = readJson(file);
+  const jobs = Array.isArray(parsed) ? parsed : parsed?.jobs;
+  if (!Array.isArray(jobs)) {
+    return {
+      path: file,
+      totalJobs: 0,
+      enabledJobs: 0,
+      okJobs: 0,
+      failingJobs: 0,
+      maxConsecutiveErrors: 0,
+      worstJobs: [],
+    };
+  }
+
+  let enabledJobs = 0;
+  let okJobs = 0;
+  let maxConsecutiveErrors = 0;
+  const worstJobs = [];
+  for (const job of jobs) {
+    const enabled = Object.prototype.hasOwnProperty.call(job, 'enabled')
+      ? job.enabled !== false
+      : String(job.status || '').toLowerCase() !== 'disabled';
+    if (!enabled) continue;
+    enabledJobs++;
+    const state = job.state && typeof job.state === 'object' ? job.state : {};
+    const lastStatus = String(job.lastStatus || state.lastStatus || '').toLowerCase();
+    const consecutiveErrors = Number(job.consecutiveErrors ?? state.consecutiveErrors ?? 0);
+    const safeConsecutiveErrors = Number.isFinite(consecutiveErrors) ? consecutiveErrors : 0;
+    maxConsecutiveErrors = Math.max(maxConsecutiveErrors, safeConsecutiveErrors);
+    if (lastStatus === 'ok' || lastStatus === 'success' || safeConsecutiveErrors === 0) okJobs++;
+    if (lastStatus === 'error' && safeConsecutiveErrors > 0) {
+      worstJobs.push({
+        id: job.id || null,
+        name: job.name || job.id || 'unnamed scheduler job',
+        lastStatus,
+        consecutiveErrors: safeConsecutiveErrors,
+        lastRunAt: toIsoTime(job.lastRunAtMs || state.lastRunAtMs),
+        nextRunAt: toIsoTime(job.nextRunAtMs || state.nextRunAtMs),
+        lastDurationMs: Number.isFinite(Number(job.lastDurationMs ?? state.lastDurationMs))
+          ? Number(job.lastDurationMs ?? state.lastDurationMs)
+          : null,
+      });
+    }
+  }
+
+  worstJobs.sort((a, b) => b.consecutiveErrors - a.consecutiveErrors || String(a.name).localeCompare(String(b.name)));
+  return {
+    path: file,
+    totalJobs: jobs.length,
+    enabledJobs,
+    okJobs,
+    failingJobs: worstJobs.length,
+    maxConsecutiveErrors,
+    worstJobs: worstJobs.slice(0, 8),
+  };
+}
+
+function schedulerJobsPath(runtimeRoot) {
+  const root = runtimeRoot || '';
+  if (path.basename(root) === 'brain') {
+    return path.join(path.dirname(root), 'conversations', 'cron-jobs.json');
+  }
+  return path.join(root, 'conversations', 'cron-jobs.json');
 }
 
 function summarizeGoodLife(runtimeRoot) {

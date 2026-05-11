@@ -128,3 +128,28 @@ test('GoodLifeObjective treats current Home23 PM2 offline state as repair drift'
   assert.match(evaluation.lanes.viability.reasons.join(' '), /1 home23 process\(es\) offline/);
   assert.equal(evaluation.policy.mode, 'repair');
 });
+
+test('GoodLifeObjective treats failing scheduler jobs as repair drift and preserves evidence', () => {
+  const objective = new GoodLifeObjective();
+  const scheduler = {
+    totalJobs: 5,
+    enabledJobs: 4,
+    failingJobs: 2,
+    maxConsecutiveErrors: 3,
+    worstJobs: [
+      { name: 'Health freshness job', consecutiveErrors: 3, lastStatus: 'error' },
+    ],
+  };
+  const evaluation = objective.evaluate({
+    now: '2026-05-11T13:35:00.000Z',
+    liveProblems: { open: 0, chronic: 0 },
+    crystallization: { lastReceiptAt: '2026-05-11T13:34:00.000Z' },
+    memory: { nodes: 100, edges: 180 },
+    scheduler,
+  });
+
+  assert.equal(evaluation.lanes.viability.status, 'critical');
+  assert.match(evaluation.lanes.viability.reasons.join(' '), /2 failing scheduler job/);
+  assert.equal(evaluation.policy.mode, 'repair');
+  assert.deepEqual(evaluation.evidence.scheduler, scheduler);
+});
