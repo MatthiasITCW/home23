@@ -221,6 +221,44 @@ test('MemoryIngest same-source updates leave before and after repair trace', asy
   assert.equal(updateReceipt.stateDelta.after.summary, 'health bridge is fresh');
 });
 
+test('MemoryIngest records substrate reinforcement when a source route repeats', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mi-substrate-route-'));
+  const ingest = new MemoryIngest({ brainDir: dir });
+  const draft = { method: 'sensor_primary', type: 'observation', topic: 'pressure', tags: ['pressure', 'house'] };
+
+  const first = await ingest.writeFromObservation({
+    channelId: 'domain.pressure',
+    sourceRef: 'pressure:bme280',
+    receivedAt: '2026-05-11T16:00:00Z',
+    producedAt: '2026-05-11T16:00:00Z',
+    flag: 'COLLECTED',
+    confidence: 0.95,
+    payload: { summary: 'pressure sample current', pressure_pa: 101234 },
+  }, draft);
+  const second = await ingest.writeFromObservation({
+    channelId: 'domain.pressure',
+    sourceRef: 'pressure:bme280',
+    receivedAt: '2026-05-11T16:05:00Z',
+    producedAt: '2026-05-11T16:05:00Z',
+    flag: 'COLLECTED',
+    confidence: 0.95,
+    payload: { summary: 'pressure sample changed', pressure_pa: 101235 },
+  }, draft);
+
+  const receipts = readFileSync(join(dir, 'crystallization-receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const updateReceipt = receipts.at(-1);
+
+  assert.equal(first.provenance.substrate.schema, 'home23.memory-substrate.v1');
+  assert.equal(first.provenance.substrate.sourceIssue, 90);
+  assert.equal(first.provenance.substrate.routeUseCount, 1);
+  assert.equal(first.provenance.substrate.routeState, 'new_path');
+  assert.equal(second.provenance.substrate.routeUseCount, 2);
+  assert.equal(second.provenance.substrate.routeState, 'rerouted_path');
+  assert.equal(second.reuse_count, 0);
+  assert.equal(updateReceipt.substrate.routeUseCount, 2);
+  assert.equal(updateReceipt.substrate.routeState, 'rerouted_path');
+});
+
 test('MemoryIngest records authority routing so stale memories cannot pose as live truth', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'mi-authority-'));
   const ingest = new MemoryIngest({ brainDir: dir });

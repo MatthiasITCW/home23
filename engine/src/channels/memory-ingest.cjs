@@ -170,6 +170,8 @@ class MemoryIngest {
     const title = `[${obs.channelId}] ${summarizePayload(obs.payload)}`.slice(0, 120);
     const statement = typeof obs.payload === 'string' ? obs.payload : safeStringify(obs.payload);
     const sourceClassification = classifyMemorySource(obs, draft);
+    const stateDelta = buildObservationStateDelta(existing, obs, { confidence, draft });
+    const substrate = buildSubstrateProfile(existing, obs, draft, sourceClassification, stateDelta);
     return {
       memory_id: id,
       type: draft.type || 'observation',
@@ -190,6 +192,7 @@ class MemoryIngest {
         generation_method: draft.method || 'build_event',
         ...sourceClassification,
         authority: buildAuthorityProfile(obs, draft, sourceClassification),
+        substrate,
         ...(obs.origin ? { origin: obs.origin } : {}),
       },
       evidence: {
@@ -201,14 +204,14 @@ class MemoryIngest {
         score: confidence,
         basis: `bus-ingest/${obs.flag}/${draft.method || 'n/a'}`,
       },
-      state_delta: buildObservationStateDelta(existing, obs, { confidence, draft }),
+      state_delta: stateDelta,
       triggers: [],
       scope: {
         applies_to: (draft.tags || []).slice(),
         excludes: [],
       },
       review_state: 'unreviewed',
-      staleness_policy: {},
+      staleness_policy: buildStalenessPolicy(sourceClassification, substrate),
       reuse_count: existing?.reuse_count ?? 0,
     };
   }
@@ -319,13 +322,21 @@ class MemoryIngest {
               const decayed = prev * factor;
               // Only record a change if it's meaningful (>= 0.01 delta).
               if (decayed < prev - 0.01) {
+                const updatedAt = new Date(now).toISOString();
                 mo.confidence = { ...mo.confidence, score: decayed, basis: `${mo.confidence?.basis || ''} + decay(${(1 - factor).toFixed(2)})` };
-                mo.updated_at = new Date(now).toISOString();
+                mo.updated_at = updatedAt;
                 mo.last_decayed_at = mo.updated_at;
+                mo.provenance = {
+                  ...(mo.provenance || {}),
+                  substrate: buildDecaySubstrateProfile(mo, { updatedAt, factor, matchedRule }),
+                };
                 updated.push(mo);
               }
             }
-            if (updated.length) fs.writeFileSync(this.objectsPath, JSON.stringify(store));
+            if (updated.length) {
+              fs.writeFileSync(this.objectsPath, JSON.stringify(store));
+              appendSubstrateDecayReceipts(this.receiptsPath, updated);
+            }
           } finally {
             await release();
           }
@@ -401,6 +412,7 @@ class MemoryIngest {
         origin: obs.origin || null,
         updateKind: written.state_delta?.delta_class || 'no_change',
         stateDelta: written.state_delta || null,
+        substrate: written.provenance?.substrate || null,
       };
       try { fs.appendFileSync(this.receiptsPath, JSON.stringify(receipt) + '\n'); }
       catch (err) { this.logger.warn?.('[memory-ingest] receipt append failed:', err?.message || err); }
@@ -425,6 +437,110 @@ function summarizePayload(payload) {
     if (typeof payload[k] === 'string' && payload[k].trim()) return payload[k];
   }
   return safeStringify(payload).slice(0, 280);
+}
+
+function buildSubstrateProfile(existing, obs, draft, sourceClassification, stateDelta) {
+  const previous = existing?.provenance?.substrate && typeof existing.provenance.substrate === 'object'
+    ? existing.provenance.substrate
+    : {};
+  const previousRouteUseCount = Number.isFinite(Number(previous.routeUseCount))
+    ? Number(previous.routeUseCount)
+    : 0;
+  const routeUseCount = previousRouteUseCount + 1;
+  const routeState = !existing
+    ? 'new_path'
+    : stateDelta?.delta_class === 'updated_observation'
+      ? 'rerouted_path'
+      : 'reinforced_path';
+
+  return {
+    schema: 'home23.memory-substrate.v1',
+    sourceIssue: 90,
+    routeKey: `${obs.channelId || 'unknown'}:${obs.sourceRef || 'unknown'}`,
+    sourceSurface: obs.channelId || null,
+    sourceRef: obs.sourceRef || null,
+    topic: draft?.topic || obs.channelId || null,
+    routeState,
+    routeUseCount,
+    previousRouteUseCount,
+    lastSignalAt: obs.producedAt || obs.receivedAt || null,
+    lastIngestedAt: new Date().toISOString(),
+    decayEligibleTags: (draft?.tags || []).slice(),
+    boundary: 'Interfaces are negotiated contact surfaces; repeated use can reinforce, changed evidence can reroute, and stale paths must be allowed to decay.',
+    failureVisible: obs.flag !== 'COLLECTED' || sourceClassification.action_posture === 'verify_before_action',
+  };
+}
+
+function buildStalenessPolicy(sourceClassification = {}, substrate = {}) {
+  if (sourceClassification.source_class === 'historical_context') return { review_after_days: 90 };
+  if (sourceClassification.source_class === 'low_provenance') return { review_after_days: 7, expire_after_days: 30 };
+  if (substrate.failureVisible) return { review_after_days: 3, expire_after_days: 30 };
+  return { review_after_days: 14 };
+}
+
+function buildDecaySubstrateProfile(mo, { updatedAt, factor }) {
+  const previous = mo?.provenance?.substrate && typeof mo.provenance.substrate === 'object'
+    ? mo.provenance.substrate
+    : substrateFromMemoryObject(mo);
+  const decayCount = Number.isFinite(Number(previous.decayCount))
+    ? Number(previous.decayCount) + 1
+    : 1;
+
+  return {
+    ...previous,
+    schema: 'home23.memory-substrate.v1',
+    sourceIssue: 90,
+    routeState: 'decayed_path',
+    decayCount,
+    lastDecayAt: updatedAt,
+    lastDecayFactor: Number(factor.toFixed(4)),
+    boundary: previous.boundary || 'History should bias future behavior without preserving dead routes as live signal.',
+  };
+}
+
+function substrateFromMemoryObject(mo = {}) {
+  const sourceRefs = Array.isArray(mo.provenance?.source_refs) ? mo.provenance.source_refs : [];
+  const sourceRef = sourceRefs[0] || null;
+  const sourceSurface = sourceRefs[1] || null;
+  return {
+    schema: 'home23.memory-substrate.v1',
+    sourceIssue: 90,
+    routeKey: `${sourceSurface || 'unknown'}:${sourceRef || mo.memory_id || 'unknown'}`,
+    sourceSurface,
+    sourceRef,
+    topic: mo.provenance?.authority?.topic || null,
+    routeState: 'unknown_path',
+    routeUseCount: Number(mo.reuse_count || 0) + 1,
+    previousRouteUseCount: Number(mo.reuse_count || 0),
+    lastSignalAt: mo.updated_at || mo.created_at || null,
+    lastIngestedAt: mo.updated_at || null,
+    decayEligibleTags: Array.isArray(mo.scope?.applies_to) ? mo.scope.applies_to.slice() : [],
+    failureVisible: false,
+    boundary: 'History should bias future behavior without preserving dead routes as live signal.',
+  };
+}
+
+function appendSubstrateDecayReceipts(receiptsPath, objects = []) {
+  if (!objects.length) return;
+  const lines = objects.map((mo) => JSON.stringify({
+    at: mo.last_decayed_at || new Date().toISOString(),
+    traceId: mo.provenance?.trace_id || null,
+    channelId: mo.provenance?.substrate?.sourceSurface || null,
+    sourceRef: mo.provenance?.substrate?.sourceRef || null,
+    memoryObjectId: mo.memory_id,
+    flag: parseGroundingFlag(mo.evidence?.grounding_note),
+    confidence: mo.confidence?.score ?? null,
+    method: mo.provenance?.generation_method || null,
+    updateKind: 'substrate_decay',
+    stateDelta: {
+      delta_class: 'substrate_decay',
+      before: {},
+      after: { confidence: mo.confidence?.score ?? null },
+      why: 'decay rule reduced a less-used or older substrate path',
+    },
+    substrate: mo.provenance?.substrate || null,
+  })).join('\n') + '\n';
+  fs.appendFileSync(receiptsPath, lines);
 }
 
 function buildObservationStateDelta(existing, obs, { confidence, draft } = {}) {

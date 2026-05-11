@@ -506,6 +506,32 @@
       ]
     },
     {
+      "id": "memory-substrate-reinforcement-and-decay",
+      "title": "History changes memory routes instead of becoming sediment",
+      "status": "adopted",
+      "sourceIssues": [90],
+      "requirement": "Memory ingestion must make substrate mechanics explicit: repeated source contact reinforces a route, changed same-source evidence reroutes it, stale or less-used paths can decay with receipts, and every route profile carries boundary language so stored history biases future behavior without outranking live evidence.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/channels/memory-ingest.cjs",
+          "verifier": "node --test --test-concurrency=1 tests/engine/channels/memory-ingest.test.js tests/engine/channels/memory-ingest-decay.test.js"
+        },
+        {
+          "artifact": "tests/engine/channels/memory-ingest.test.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/channels/memory-ingest.test.js"
+        },
+        {
+          "artifact": "tests/engine/channels/memory-ingest-decay.test.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/channels/memory-ingest-decay.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/channels/memory-ingest.cjs",
+        "tests/engine/channels/memory-ingest.test.js",
+        "tests/engine/channels/memory-ingest-decay.test.js"
+      ]
+    },
+    {
       "id": "phantom-completion-loop-guard",
       "title": "Completed work cannot remain active without integrity drift",
       "status": "adopted",

@@ -33,6 +33,13 @@ test('applyDecay reduces confidence of tag-matched objects', async () => {
   // 96h / 48h = 2 half-lives → factor = 0.25 → 0.9 * 0.25 = 0.225
   assert.ok(updated[0].confidence.score < 0.3);
   assert.ok(updated[0].last_decayed_at);
+  assert.equal(updated[0].provenance.substrate.routeState, 'decayed_path');
+  assert.equal(updated[0].provenance.substrate.decayCount, 1);
+  const receipts = readFileSync(join(dir, 'crystallization-receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const decayReceipt = receipts.at(-1);
+  assert.equal(decayReceipt.updateKind, 'substrate_decay');
+  assert.equal(decayReceipt.substrate.schema, 'home23.memory-substrate.v1');
+  assert.equal(decayReceipt.substrate.routeState, 'decayed_path');
 });
 
 test('applyDecay ignores objects without matching tags', async () => {
