@@ -1023,6 +1023,95 @@ function compactLedgerEntry(entry = {}) {
   };
 }
 
+function firstSourceIssue(entry = {}) {
+  const issues = Array.isArray(entry.sourceIssues)
+    ? entry.sourceIssues
+    : (entry.sourceIssue != null ? [entry.sourceIssue] : []);
+  for (const issue of issues) {
+    const number = finiteCount(issue);
+    if (number != null) return number;
+  }
+  return null;
+}
+
+function firstImplementationReceipt(entry = {}) {
+  const receipts = Array.isArray(entry.implementationReceipts)
+    ? entry.implementationReceipts
+    : (entry.implementationReceipt ? [entry.implementationReceipt] : []);
+  for (const receipt of receipts) {
+    if (!receipt) continue;
+    if (typeof receipt === 'string') {
+      const value = receipt.trim();
+      if (value) return { id: value };
+      continue;
+    }
+    const commit = String(receipt.commit || '').trim();
+    const verifier = String(receipt.verifier || '').trim();
+    const artifact = String(receipt.artifact || '').trim();
+    const id = String(receipt.id || '').trim();
+    if (commit || verifier || artifact || id) {
+      return {
+        ...(id ? { id } : {}),
+        ...(commit ? { commit } : {}),
+        ...(verifier ? { verifier } : {}),
+        ...(artifact ? { artifact } : {}),
+      };
+    }
+  }
+  return null;
+}
+
+function compactDoctrineEntry(entry = {}, { reusable = false, reason = null } = {}) {
+  const sourceIssue = firstSourceIssue(entry);
+  const implementationReceipt = firstImplementationReceipt(entry);
+  return {
+    id: entry.id || entry.key || compactText(entry.title || 'doctrine-entry', 64),
+    title: compactText(entry.title || entry.requirement || entry.id || 'Doctrine entry', 140),
+    status: entry.status || 'candidate',
+    sourceIssue,
+    sourceIssues: Array.isArray(entry.sourceIssues) ? entry.sourceIssues : (sourceIssue != null ? [sourceIssue] : []),
+    implementationReceipt,
+    doctrineFiles: Array.isArray(entry.doctrineFiles) ? entry.doctrineFiles : [],
+    reusable,
+    reason,
+  };
+}
+
+function buildDoctrineAdoptionSnapshot(ledger = null, { source = null, now = new Date() } = {}) {
+  const entries = Array.isArray(ledger?.entries) ? ledger.entries : [];
+  const reusable = [];
+  const blocked = [];
+
+  for (const entry of entries) {
+    const sourceIssue = firstSourceIssue(entry);
+    const implementationReceipt = firstImplementationReceipt(entry);
+    let reason = null;
+    if (sourceIssue == null) reason = 'missing_source_issue';
+    else if (!implementationReceipt) reason = 'missing_implementation_receipt';
+    else if (entry.status && entry.status !== 'adopted') reason = 'not_adopted';
+
+    if (reason) {
+      blocked.push(compactDoctrineEntry(entry, { reusable: false, reason }));
+    } else {
+      reusable.push(compactDoctrineEntry(entry, { reusable: true }));
+    }
+  }
+
+  return {
+    schema: 'home23.from-the-inside.doctrine-adoption.snapshot.v1',
+    generatedAt: new Date(toNowMs(now)).toISOString(),
+    source,
+    sourceIssueArc: ledger?.sourceIssueArc || null,
+    counts: {
+      total: entries.length,
+      reusable: reusable.length,
+      blocked: blocked.length,
+    },
+    reusable,
+    blocked,
+  };
+}
+
 function buildProjectionProvenance({
   state,
   liveProblems,
@@ -1033,6 +1122,7 @@ function buildProjectionProvenance({
   runtime,
   sources = {},
   issueArc = null,
+  doctrineAdoption = null,
   now = new Date(),
 } = {}) {
   const liveCounts = liveProblems?.counts || {};
@@ -1046,6 +1136,10 @@ function buildProjectionProvenance({
     obligations,
     warnings,
     source,
+  });
+  const doctrineAdoptionSnapshot = buildDoctrineAdoptionSnapshot(doctrineAdoption, {
+    source: source('doctrineAdoption', null),
+    now,
   });
   return {
     schema: 'home23.good-life.provenance.v1',
@@ -1089,6 +1183,7 @@ function buildProjectionProvenance({
         Array.isArray(value) ? value.length : 0,
       ])),
     } : null,
+    doctrineAdoption: doctrineAdoptionSnapshot,
     projection: {
       kind: 'projection',
       surface: source('state', 'good-life-state.json'),
@@ -1900,6 +1995,7 @@ function buildGoodLifeOperatorModel({
   runtime = null,
   sources = {},
   issueArc = null,
+  doctrineAdoption = null,
   now = new Date(),
 } = {}) {
   const nowMs = toNowMs(now);
@@ -1961,6 +2057,7 @@ function buildGoodLifeOperatorModel({
       runtime,
       sources,
       issueArc,
+      doctrineAdoption,
       now,
     }),
     latestRegulatorAction: latestAction,
@@ -1981,6 +2078,7 @@ function buildGoodLifeOperatorModel({
     scheduler: state?.evidence?.scheduler || null,
   });
   model.detail.insights.correctionTombstones = model.provenance.correctionTombstones;
+  model.detail.insights.doctrineAdoption = model.provenance.doctrineAdoption;
   model.work = work;
   model.operatorAnswer = buildOperatorAnswer({
     state,
@@ -2041,4 +2139,5 @@ module.exports = {
   buildGoodLifeOperatorModel,
   buildLiveProblemSnapshot,
   buildGoodLifeObligationSnapshot,
+  buildDoctrineAdoptionSnapshot,
 };

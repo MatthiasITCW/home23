@@ -10,6 +10,7 @@ const {
   buildGoodLifeOperatorModel,
   buildLiveProblemSnapshot,
   buildGoodLifeObligationSnapshot,
+  buildDoctrineAdoptionSnapshot,
 } = require('../../../engine/src/dashboard/good-life-operator.js');
 
 const NOW = '2026-05-08T13:45:00.000Z';
@@ -474,6 +475,87 @@ test('Good Life operator provenance preserves explicit source surfaces and confl
   assert.equal(model.provenance.curriculumArc.source, '/tmp/issue-arc.json');
   assert.equal(model.provenance.curriculumArc.themeCounts['provenance-auditability'], 5);
   assert.ok(model.provenance.conflicts.some((warning) => warning.code === 'good_life_projection_mismatch'));
+});
+
+test('doctrine adoption snapshot only marks issue-derived doctrine reusable with source issue and implementation receipt', () => {
+  const snapshot = buildDoctrineAdoptionSnapshot({
+    schema: 'home23.from-the-inside.doctrine-adoption.v1',
+    sourceIssueArc: '/tmp/issue-arc.json',
+    entries: [
+      {
+        id: 'projection-provenance',
+        title: 'Projection provenance',
+        status: 'adopted',
+        sourceIssues: [102],
+        implementationReceipts: [{ commit: 'e617f4f', verifier: 'node --test tests/engine/dashboard/good-life-operator.test.js' }],
+        doctrineFiles: ['engine/src/dashboard/good-life-operator.js'],
+      },
+      {
+        id: 'low-provenance-orientation',
+        title: 'Orientation clue taxonomy',
+        status: 'candidate',
+        sourceIssues: [97],
+        implementationReceipts: [],
+      },
+      {
+        id: 'missing-source',
+        title: 'Receipt without source',
+        status: 'adopted',
+        sourceIssues: [],
+        implementationReceipts: [{ commit: 'abc1234' }],
+      },
+    ],
+  }, { source: '/tmp/doctrine-ledger.json', now: NOW });
+
+  assert.equal(snapshot.schema, 'home23.from-the-inside.doctrine-adoption.snapshot.v1');
+  assert.equal(snapshot.source, '/tmp/doctrine-ledger.json');
+  assert.equal(snapshot.counts.total, 3);
+  assert.equal(snapshot.counts.reusable, 1);
+  assert.equal(snapshot.counts.blocked, 2);
+  assert.equal(snapshot.reusable[0].id, 'projection-provenance');
+  assert.equal(snapshot.reusable[0].sourceIssue, 102);
+  assert.equal(snapshot.reusable[0].implementationReceipt.commit, 'e617f4f');
+  assert.equal(snapshot.blocked[0].id, 'low-provenance-orientation');
+  assert.equal(snapshot.blocked[0].reason, 'missing_implementation_receipt');
+  assert.equal(snapshot.blocked[1].reason, 'missing_source_issue');
+});
+
+test('Good Life provenance carries doctrine adoption receipts and blocks unreceipted curriculum doctrine', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [],
+    doctrineAdoption: {
+      schema: 'home23.from-the-inside.doctrine-adoption.v1',
+      sourceIssueArc: '/tmp/issue-arc.json',
+      entries: [
+        {
+          id: 'manifest-first-work',
+          title: 'Manifest-first work',
+          status: 'adopted',
+          sourceIssues: [101],
+          implementationReceipts: [{ commit: '5da0108', verifier: 'node --test tests/engine/dashboard/good-life-operator.test.js' }],
+          doctrineFiles: ['engine/src/good-life/objective.js'],
+        },
+        {
+          id: 'orientation-clue-taxonomy',
+          title: 'Orientation clue taxonomy',
+          status: 'candidate',
+          sourceIssues: [97],
+          implementationReceipts: [],
+        },
+      ],
+    },
+    sources: { doctrineAdoption: '/tmp/doctrine-ledger.json' },
+    now: NOW,
+  });
+
+  assert.equal(model.provenance.doctrineAdoption.source, '/tmp/doctrine-ledger.json');
+  assert.equal(model.provenance.doctrineAdoption.counts.reusable, 1);
+  assert.equal(model.provenance.doctrineAdoption.reusable[0].sourceIssue, 101);
+  assert.equal(model.provenance.doctrineAdoption.reusable[0].implementationReceipt.commit, '5da0108');
+  assert.equal(model.provenance.doctrineAdoption.blocked[0].sourceIssue, 97);
+  assert.equal(model.provenance.doctrineAdoption.blocked[0].reason, 'missing_implementation_receipt');
+  assert.deepEqual(model.detail.insights.doctrineAdoption, model.provenance.doctrineAdoption);
 });
 
 test('Good Life operator emits correction tombstones when direct evidence demotes projection claims', () => {

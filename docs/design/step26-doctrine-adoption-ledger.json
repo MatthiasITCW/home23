@@ -1,0 +1,156 @@
+{
+  "schema": "home23.from-the-inside.doctrine-adoption.v1",
+  "generatedAt": "2026-05-11T14:20:00.000Z",
+  "sourceIssueArc": "docs/design/step26-from-the-inside-issue-arc-map.json",
+  "purpose": "Track which From The Inside curriculum directives have become reusable Home23 doctrine. A row is reusable only when it names both a source issue and an implementation receipt.",
+  "entries": [
+    {
+      "id": "issue-arc-map",
+      "title": "Map the full From The Inside curriculum arc before adopting doctrine",
+      "status": "adopted",
+      "sourceIssues": [97, 101, 102],
+      "requirement": "Issue-derived doctrine must be grounded in the complete arc rather than a single attractive excerpt.",
+      "implementationReceipts": [
+        {
+          "commit": "c0d5303",
+          "artifact": "docs/design/STEP26-FROM-THE-INSIDE-ISSUE-ARC-MAP.md",
+          "verifier": "node --test --test-concurrency=1 tests/scripts/olddeadshows-issue-arc.test.cjs"
+        }
+      ],
+      "doctrineFiles": [
+        "docs/design/STEP26-FROM-THE-INSIDE-ISSUE-ARC-MAP.md",
+        "docs/design/step26-from-the-inside-issue-arc-map.json"
+      ]
+    },
+    {
+      "id": "projection-provenance",
+      "title": "Projection provenance before inheritance",
+      "status": "adopted",
+      "sourceIssues": [102],
+      "requirement": "Current state must confess which surfaces it came from and whether direct evidence outranks the projection.",
+      "implementationReceipts": [
+        {
+          "commit": "e617f4f",
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js tests/dashboard/operator-ui.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/home23-dashboard.js"
+      ]
+    },
+    {
+      "id": "curriculum-arc-provenance",
+      "title": "Expose curriculum arc provenance in Good Life",
+      "status": "adopted",
+      "sourceIssues": [97, 102],
+      "requirement": "Operator surfaces should show when From The Inside doctrine is influencing interpretation.",
+      "implementationReceipts": [
+        {
+          "commit": "ef971d2",
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "curl -sS http://localhost:5002/api/good-life"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/server.js"
+      ]
+    },
+    {
+      "id": "manifest-first-work",
+      "title": "Manifest-first work transitions",
+      "status": "adopted",
+      "sourceIssues": [101],
+      "requirement": "Non-trivial work should name the surface, owner, artifact, allowed transition, verifier, forbidden adjacent moves, and stop line.",
+      "implementationReceipts": [
+        {
+          "commit": "5da0108",
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js tests/dashboard/operator-ui.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/home23-dashboard.js"
+      ]
+    },
+    {
+      "id": "correction-tombstones",
+      "title": "Corrections are durable tombstones, not invisible cleanup",
+      "status": "adopted",
+      "sourceIssues": [100, 102],
+      "requirement": "When direct evidence demotes an old projection, keep a correction object that future interpretation must not inherit.",
+      "implementationReceipts": [
+        {
+          "commit": "dba4f38",
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js tests/dashboard/operator-ui.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/home23-dashboard.js"
+      ]
+    },
+    {
+      "id": "scheduler-sovereignty",
+      "title": "Scheduler sovereignty",
+      "status": "adopted",
+      "sourceIssues": [16, 98, 101],
+      "requirement": "Cron health is authoritative runtime evidence; it must be visible as scheduler state and repair drift when jobs fail.",
+      "implementationReceipts": [
+        {
+          "commit": "b06c4b6",
+          "artifact": "engine/src/good-life/snapshot.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/good-life/snapshot.test.js tests/engine/good-life/objective.test.js tests/engine/dashboard/good-life-operator.test.js tests/dashboard/operator-ui.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/good-life/snapshot.js",
+        "engine/src/good-life/objective.js",
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/home23-dashboard.js"
+      ]
+    },
+    {
+      "id": "doctrine-adoption-gate",
+      "title": "Doctrine adoption gate",
+      "status": "adopted",
+      "sourceIssues": [97, 99, 101, 102],
+      "requirement": "A curriculum output is reusable system doctrine only after it names source issues and implementation receipts.",
+      "implementationReceipts": [
+        {
+          "artifact": "docs/design/step26-doctrine-adoption-ledger.json",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js tests/dashboard/operator-ui.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "docs/design/step26-doctrine-adoption-ledger.json",
+        "engine/src/dashboard/good-life-operator.js",
+        "engine/src/dashboard/home23-dashboard.js"
+      ]
+    },
+    {
+      "id": "orientation-clue-taxonomy",
+      "title": "Orientation clue taxonomy",
+      "status": "candidate",
+      "sourceIssues": [97],
+      "requirement": "Distinguish orientation clues, action authority, historical context, public-facing change, needs-verification, and low-provenance memory.",
+      "implementationReceipts": [],
+      "doctrineFiles": [],
+      "blocker": "No Home23 classifier or operator path has implemented this taxonomy yet."
+    },
+    {
+      "id": "field-report-proof-packet",
+      "title": "Small Field Report proof packet",
+      "status": "candidate",
+      "sourceIssues": [99],
+      "requirement": "Add byte-disciplined proof packets where future action depends on exact evidence identity.",
+      "implementationReceipts": [],
+      "doctrineFiles": [],
+      "blocker": "No proof-packet writer or verifier exists in this slice."
+    }
+  ]
+}

@@ -5460,6 +5460,10 @@ Be specific, actionable, and maintain research continuity.`;
         const issueArc = fsSync.existsSync(issueArcPath)
           ? JSON.parse(fsSync.readFileSync(issueArcPath, 'utf8'))
           : null;
+        const doctrineAdoptionPath = path.resolve(__dirname, '../../..', 'docs/design/step26-doctrine-adoption-ledger.json');
+        const doctrineAdoption = fsSync.existsSync(doctrineAdoptionPath)
+          ? JSON.parse(fsSync.readFileSync(doctrineAdoptionPath, 'utf8'))
+          : null;
         const ledgerTail = tailJsonl('good-life-ledger.jsonl', 10);
         const liveProblemData = readJson('live-problems.json') || { problems: [] };
         const liveProblemList = Array.isArray(liveProblemData.problems) ? liveProblemData.problems : [];
@@ -5493,8 +5497,10 @@ Be specific, actionable, and maintain research continuity.`;
             liveProblems: path.join(goodLifeLogsDir, 'live-problems.json'),
             agenda: path.join(goodLifeLogsDir, 'agenda.jsonl'),
             issueArc: issueArcPath,
+            doctrineAdoption: doctrineAdoptionPath,
           },
           issueArc,
+          doctrineAdoption,
         });
         res.json({
           ok: true,

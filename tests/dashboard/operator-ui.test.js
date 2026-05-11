@@ -60,6 +60,9 @@ test('live-problems panel exposes an operator readout, not only raw verifier row
   assert.match(js, /do_not_inherit_old_projection/);
   assert.match(js, /Scheduler Sovereignty/);
   assert.match(js, /renderGoodLifeScheduler/);
+  assert.match(js, /Doctrine Adoption/);
+  assert.match(js, /doctrineAdoption\.reusable/);
+  assert.match(js, /doctrineAdoption\.blocked/);
   assert.match(js, /renderGoodLifeRings/);
   assert.match(js, /Good Life three-ring status/);
   assert.match(js, /operatorRings/);

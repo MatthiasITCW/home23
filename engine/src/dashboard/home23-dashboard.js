@@ -4092,6 +4092,7 @@ function renderGoodLifeInsightsDetail(data) {
   const ledger = detail.insights?.ledgerTail || [];
   const provenance = data?.operator?.provenance || null;
   const correctionTombstones = provenance?.correctionTombstones || detail.insights?.correctionTombstones || [];
+  const doctrineAdoption = provenance?.doctrineAdoption || detail.insights?.doctrineAdoption || null;
   const budget = detail.insights?.autonomyBudget || data?.operator?.autonomyBudget || null;
   const host = detail.insights?.host || data?.state?.evidence?.host || null;
   const pm2 = detail.insights?.pm2 || data?.state?.evidence?.pm2 || null;
@@ -4128,6 +4129,25 @@ function renderGoodLifeInsightsDetail(data) {
         <small>${escapeHtml([row.oldClaim, row.correctingSurface].filter(Boolean).join(' - '))}</small>
         <em>${escapeHtml(row.actionPosture || 'do_not_inherit_old_projection')}</em>
       </div>`).join('')}` : ''}
+      ${doctrineAdoption ? `<h5>Doctrine Adoption</h5>
+        <div class="h23-goodlife-evidence-row">
+          <strong>${escapeHtml(`${Number(doctrineAdoption.counts?.reusable || 0)} reusable`)}</strong>
+          <span>${escapeHtml(`${Number(doctrineAdoption.counts?.blocked || 0)} blocked until source issue and implementation receipt are both named`)}</span>
+          <small>${escapeHtml(doctrineAdoption.source || '')}</small>
+          <em>curriculum</em>
+        </div>
+        ${(doctrineAdoption.reusable || []).slice(0, 4).map((row) => `<div class="h23-goodlife-evidence-row">
+          <strong>${escapeHtml(row.title || row.id || 'doctrine')}</strong>
+          <span>${escapeHtml(`Issue #${String(row.sourceIssue || '').padStart(3, '0')} - receipt ${row.implementationReceipt?.commit || row.implementationReceipt?.id || row.implementationReceipt?.artifact || 'named'}`)}</span>
+          <small>${escapeHtml((row.doctrineFiles || []).slice(0, 2).join(' - '))}</small>
+          <em>adopted</em>
+        </div>`).join('')}
+        ${(doctrineAdoption.blocked || []).slice(0, 3).map((row) => `<div class="h23-goodlife-evidence-row watch">
+          <strong>${escapeHtml(row.title || row.id || 'blocked doctrine')}</strong>
+          <span>${escapeHtml(row.reason || 'blocked')}</span>
+          <small>${escapeHtml(row.sourceIssue ? `Issue #${String(row.sourceIssue).padStart(3, '0')}` : 'source issue missing')}</small>
+          <em>blocked</em>
+        </div>`).join('')}` : ''}
     </section>
   ` : '';
   const budgetHtml = budget ? `
