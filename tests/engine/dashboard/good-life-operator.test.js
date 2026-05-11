@@ -1438,6 +1438,34 @@ test('Good Life operator handoff summarizes recent verified fixes when clear', (
   assert.equal(model.operatorHandoff.evidence[1].value, 'runtime_fixed');
 });
 
+test('Good Life operator handoff is a reusable provenance packet', () => {
+  const model = buildGoodLifeOperatorModel({
+    state: goodLifeState(),
+    liveProblems: [
+      {
+        id: 'runtime_fixed',
+        state: 'resolved',
+        claim: 'Dashboard restart repaired stalled operator surface',
+        resolvedAt: NOW,
+        lastResult: { detail: 'Restarted scoped dashboard process and verified /api/good-life.' },
+      },
+    ],
+    now: NOW,
+  });
+
+  assert.equal(model.operatorHandoff.schema, 'home23.operator-handoff.v1');
+  assert.equal(model.operatorHandoff.generatedAt, NOW);
+  assert.equal(model.operatorHandoff.producer, 'good-life-operator');
+  assert.deepEqual(model.operatorHandoff.sourceIssues, [25, 86, 93, 101]);
+  assert.deepEqual(model.operatorHandoff.inherits, {
+    liveProblems: false,
+    work: false,
+    latestResolution: true,
+    warnings: false,
+  });
+  assert.ok(model.operatorHandoff.evidence.some((row) => row.label === 'Latest resolution'));
+});
+
 test('Good Life operator ignores stale fix recipe summaries from previous open windows', () => {
   const model = buildGoodLifeOperatorModel({
     state: goodLifeState(),

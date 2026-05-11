@@ -364,6 +364,23 @@
         "engine/src/dashboard/good-life-operator.js",
         "tests/engine/dashboard/good-life-operator.test.js"
       ]
+    },
+    {
+      "id": "operator-handoff-packets",
+      "title": "Operator handoffs are reusable provenance packets",
+      "status": "adopted",
+      "sourceIssues": [25, 86, 93, 101],
+      "requirement": "A handoff must carry schema, producer, generated time, source issue lineage, inherited state boundaries, and evidence labels so the next agent or operator can reconstruct what is being inherited.",
+      "implementationReceipts": [
+        {
+          "artifact": "engine/src/dashboard/good-life-operator.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/dashboard/good-life-operator.test.js tests/dashboard/operator-ui.test.js"
+        }
+      ],
+      "doctrineFiles": [
+        "engine/src/dashboard/good-life-operator.js",
+        "tests/engine/dashboard/good-life-operator.test.js"
+      ]
     }
   ]
 }

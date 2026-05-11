@@ -11,6 +11,7 @@ const USER_INTERVENTION_REMEDIATORS = new Set([
   'user_action',
 ]);
 const HUMAN_BLOCKER_SOURCE_ISSUES = [5, 17, 19, 21, 25];
+const OPERATOR_HANDOFF_SOURCE_ISSUES = [25, 86, 93, 101];
 const WORK_REVIEW_GOAL_AGE_MIN = 12 * 60;
 const fs = require('fs');
 const path = require('path');
@@ -1437,6 +1438,15 @@ function summarizeOperatorRequestEvidence(request = null) {
   return bits.join('; ');
 }
 
+function buildHandoffInheritance({ activeCount = 0, work = null, latestResolution = null, actionableWarnings = [] } = {}) {
+  return {
+    liveProblems: activeCount > 0,
+    work: Number(work?.activeTotal || 0) > 0,
+    latestResolution: !!latestResolution,
+    warnings: Array.isArray(actionableWarnings) && actionableWarnings.length > 0,
+  };
+}
+
 function formatRemediationLine(prefix, next = {}, problem = null, nowMs = Date.now()) {
   if (!next?.type && !next?.text) return null;
   if (problem?.escalated) {
@@ -1881,6 +1891,16 @@ function buildOperatorHandoff({ brief, liveProblems, work, consistency, latestAc
   }
 
   return {
+    schema: 'home23.operator-handoff.v1',
+    generatedAt: new Date(nowMs).toISOString(),
+    producer: 'good-life-operator',
+    sourceIssues: OPERATOR_HANDOFF_SOURCE_ISSUES,
+    inherits: buildHandoffInheritance({
+      activeCount,
+      work,
+      latestResolution,
+      actionableWarnings,
+    }),
     status: brief?.status || 'Unknown',
     situation: compactText(situation, 260),
     repair: compactText(repair, 260),
