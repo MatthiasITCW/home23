@@ -416,6 +416,28 @@
         "src/agent/event-ledger.ts",
         "tests/agent/context-worker-runs.test.ts"
       ]
+    },
+    {
+      "id": "sensor-fusion-hypothesis-artifacts",
+      "title": "Collected sensor data becomes reusable hypothesis output",
+      "status": "adopted",
+      "sourceIssues": [70],
+      "requirement": "Pressure and health logs must be activated by an explicit question and daily-resolution pipeline, then written as reusable machine-readable hypothesis artifacts rather than only as raw observations or prose reports.",
+      "implementationReceipts": [
+        {
+          "artifact": "scripts/analyzers/correlate-pressure-hrv.js",
+          "verifier": "node --test --test-concurrency=1 tests/engine/analyzers/correlate-pressure-hrv.test.js"
+        },
+        {
+          "artifact": "config/cron-jobs.json",
+          "verifier": "node -e \"JSON.parse(require('fs').readFileSync('config/cron-jobs.json','utf8')); console.log('cron json ok')\""
+        }
+      ],
+      "doctrineFiles": [
+        "scripts/analyzers/correlate-pressure-hrv.js",
+        "tests/engine/analyzers/correlate-pressure-hrv.test.js",
+        "config/cron-jobs.json"
+      ]
     }
   ]
 }

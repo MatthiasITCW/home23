@@ -38,15 +38,20 @@ const __dirname = path.dirname(__filename);
 // ─── Args ─────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
-const agentIdx = args.indexOf('--agent');
-const agent = agentIdx >= 0 ? args[agentIdx + 1] : 'jerry';
+function argValue(name, fallback = null) {
+  const idx = args.indexOf(name);
+  return idx >= 0 ? args[idx + 1] : fallback;
+}
 
-const pressurePath = path.join(os.homedir(), '.pressure_log.jsonl');
-const healthPath = path.join(os.homedir(), '.health_log.jsonl');
+const agent = argValue('--agent', 'jerry');
+
+const pressurePath = argValue('--pressure-path', path.join(os.homedir(), '.pressure_log.jsonl'));
+const healthPath = argValue('--health-path', path.join(os.homedir(), '.health_log.jsonl'));
 const repoRoot = path.resolve(__dirname, '..', '..');
-const outDir = path.join(repoRoot, 'instances', agent, 'workspace', 'insights');
-const today = new Date().toISOString().slice(0, 10);
+const outDir = argValue('--out-dir', path.join(repoRoot, 'instances', agent, 'workspace', 'insights'));
+const today = argValue('--date', new Date().toISOString().slice(0, 10));
 const outPath = path.join(outDir, `correlation-pressure-hrv-${today}.md`);
+const artifactPath = path.join(outDir, `correlation-pressure-hrv-${today}.json`);
 
 // ─── Loaders ──────────────────────────────────────────────────────────
 
@@ -271,6 +276,66 @@ function render(pressure, hrvByDate, paired, results) {
   return lines.join('\n');
 }
 
+function buildArtifact(pressure, hrvByDate, paired, results) {
+  const dates = Object.keys(hrvByDate).sort();
+  const latestHrvDate = dates[dates.length - 1] || null;
+  const hrvAgeDays = ageDaysForDate(latestHrvDate);
+  const healthFresh = hrvAgeDays != null && hrvAgeDays <= 3;
+
+  return {
+    schema: 'home23.sensor-fusion-hypothesis.v1',
+    version: 1,
+    sourceIssues: [70],
+    generatedAt: new Date().toISOString(),
+    agent,
+    hypothesis: {
+      id: 'pressure-hrv-pre-sleep',
+      question: "Does barometric pressure in the 18h before sleep correlate with that night's HRV?",
+      status: paired.length >= 3 ? 'testable' : 'collecting',
+    },
+    pipeline: {
+      resolution: 'daily',
+      alignment: 'For each HRV date, aggregate pressure over prior-day 12:00 local to this-day 06:00 local.',
+      pressureFeatures: ['mean', 'min_p05', 'max_p95', 'delta_p95_minus_p05', 'trend_last_minus_first'],
+      healthMetric: 'heartRateVariability',
+      minimumPressureSamplesPerWindow: 10,
+      minimumPairsForCorrelation: 3,
+    },
+    data: {
+      pressureSamples: pressure.length,
+      pressureStart: pressure[0]?.ts.toISOString() || null,
+      pressureEnd: pressure[pressure.length - 1]?.ts.toISOString() || null,
+      hrvDates: dates,
+      latestHrvDate,
+      hrvAgeDays,
+      healthFresh,
+      pairedObservations: paired.length,
+    },
+    freshness: {
+      posture: healthFresh ? 'current_signal' : 'historical_only',
+      reason: healthFresh
+        ? 'latest HRV metric is within the freshness window'
+        : 'latest HRV metric is stale; do not treat this as current operational intelligence',
+    },
+    results,
+    paired: paired.map((p) => ({
+      date: p.date,
+      hrv: p.hrv,
+      pressure: p.pressure,
+    })),
+    reuse: {
+      artifactRole: 'hypothesis_result',
+      recommendedNext: [
+        paired.length < 3
+          ? 'keep collecting until at least 3 paired daily observations exist'
+          : 'rerun daily and compare result stability over consecutive artifacts',
+        'if |r| stays below 0.2 after n>=20 paired days, retire this hypothesis',
+        'if |r| stabilizes above 0.4, promote to a dashboard tile or operator alert with freshness gates',
+      ],
+    },
+  };
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────
 
 function main() {
@@ -298,10 +363,13 @@ function main() {
   } : {};
 
   const body = render(pressure, hrvByDate, paired, results);
+  const artifact = buildArtifact(pressure, hrvByDate, paired, results);
 
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outPath, body);
+  fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
   console.log(`wrote ${outPath}`);
+  console.log(`wrote ${artifactPath}`);
   console.log(`paired: ${paired.length}`);
   for (const [k, v] of Object.entries(results)) {
     console.log(`  ${k.padEnd(8)} r=${v.r != null ? v.r.toFixed(3) : 'n/a'}  t=${v.tStat != null ? v.tStat.toFixed(2) : 'n/a'}  (${interpret(v)})`);
