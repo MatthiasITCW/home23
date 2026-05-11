@@ -398,6 +398,24 @@
         "engine/src/dashboard/good-life-operator.js",
         "tests/engine/dashboard/good-life-operator.test.js"
       ]
+    },
+    {
+      "id": "memory-activation-posture-receipts",
+      "title": "Contextual amnesia becomes a visible retrieval posture",
+      "status": "adopted",
+      "sourceIssues": [69],
+      "requirement": "Every agent context assembly must leave a machine-readable receipt showing whether memory activation was active, empty, or degraded so stored knowledge that fails to activate is visible and auditable instead of silently disappearing from the turn.",
+      "implementationReceipts": [
+        {
+          "artifact": "src/agent/context-assembly.ts",
+          "verifier": "node --import tsx --test --test-concurrency=1 tests/agent/context-worker-runs.test.ts"
+        }
+      ],
+      "doctrineFiles": [
+        "src/agent/context-assembly.ts",
+        "src/agent/event-ledger.ts",
+        "tests/agent/context-worker-runs.test.ts"
+      ]
     }
   ]
 }

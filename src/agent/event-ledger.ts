@@ -9,7 +9,7 @@
  *   EvidenceLinked, StateDeltaRecorded, UncertaintyRecorded,
  *   MemoryCandidateCreated, MemoryPromoted, MemoryRejected, MemoryChallenged,
  *   CheckpointSaved, MemoryReactivated, MemoryActedOn, HandoffReceived,
- *   OutcomeObserved, BreakdownDiagnosed,
+ *   OutcomeObserved, BreakdownDiagnosed, MemoryActivationPosture,
  *   TriggerFired, TriggerAccepted, TriggerRejected, TriggerMissed
  */
 

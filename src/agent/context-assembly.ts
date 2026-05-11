@@ -226,13 +226,14 @@ export async function assembleContext(
   // ── Step 1: Brain similarity search ──
   let brainCues: BrainSearchResult[] = [];
   let degraded = false;
+  let searchQuery = '';
 
   try {
     const contextSnippet = recentTurns
       .slice(-3)
       .map(t => (t.content ?? '').slice(0, 200))
       .join(' ');
-    const searchQuery = `${userText} ${contextSnippet}`.trim().slice(0, 500);
+    searchQuery = `${userText} ${contextSnippet}`.trim().slice(0, 500);
 
     brainCues = await searchBrain(searchQuery, config.enginePort);
   } catch (err) {
@@ -266,6 +267,27 @@ export async function assembleContext(
       // Never block on trigger evaluation failure
     }
   }
+
+  const activationStatus = degraded
+    ? 'degraded'
+    : (brainCues.length > 0 || triggerMatches.length > 0 ? 'active' : 'empty');
+  events.push({
+    event_id: randomUUID(),
+    event_type: 'MemoryActivationPosture',
+    session_id: config.sessionId,
+    timestamp: new Date().toISOString(),
+    actor: 'assembly',
+    payload: {
+      schema: 'home23.memory-activation-posture.v1',
+      sourceIssues: [69],
+      activationStatus,
+      searchAttempted: true,
+      queryPreview: searchQuery.slice(0, 160),
+      brainCueCount: brainCues.length,
+      triggerCount: triggerMatches.length,
+      degraded,
+    },
+  });
 
   // ── Step 2: Score surfaces based on brain cues ──
   const surfacesLoaded: string[] = [];
@@ -408,7 +430,7 @@ export async function assembleContext(
     block: block.slice(0, CONTEXT_BUDGET),
     degraded: false,
     brainCueCount: brainCues.length,
-    triggerCount: 0,
+    triggerCount: triggerMatches.length,
     surfacesLoaded,
     events,
   };
