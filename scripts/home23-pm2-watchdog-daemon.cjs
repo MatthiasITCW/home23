@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const WATCHDOG = path.join(ROOT, 'scripts', 'home23-pm2-watchdog.cjs');
 const DEFAULT_INTERVAL_MS = 60_000;
 const STATUS_PATH = path.join(ROOT, 'logs', 'pm2-watchdog-daemon.status.jsonl');
+const LOCK_PATH = path.join(ROOT, 'logs', 'pm2-watchdog-daemon.lock');
 
 function parseArgs(argv) {
   const args = {
@@ -62,10 +63,81 @@ function appendStatus(entry) {
   fs.appendFileSync(STATUS_PATH, JSON.stringify({ recordedAt: new Date().toISOString(), ...entry }) + '\n');
 }
 
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function acquireDaemonLock() {
+  fs.mkdirSync(path.dirname(LOCK_PATH), { recursive: true });
+
+  try {
+    const fd = fs.openSync(LOCK_PATH, 'wx');
+    fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + '\n');
+    fs.closeSync(fd);
+    return true;
+  } catch (err) {
+    if (err?.code !== 'EEXIST') throw err;
+  }
+
+  let existingPid = 0;
+  try {
+    const lock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
+    existingPid = Number(lock.pid || 0);
+  } catch {
+    existingPid = 0;
+  }
+
+  if (existingPid && pidAlive(existingPid)) {
+    appendStatus({ event: 'lock_held', pid: process.pid, holderPid: existingPid });
+    return false;
+  }
+
+  try {
+    fs.unlinkSync(LOCK_PATH);
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
+
+  const fd = fs.openSync(LOCK_PATH, 'wx');
+  fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), replacedStalePid: existingPid || null }) + '\n');
+  fs.closeSync(fd);
+  return true;
+}
+
+function releaseDaemonLock() {
+  try {
+    const lock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
+    if (Number(lock.pid || 0) === process.pid) fs.unlinkSync(LOCK_PATH);
+  } catch {
+    // Best effort only; stale locks are handled on the next start.
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const agents = args.agents.length ? args.agents : discoverAgents(ROOT);
   if (agents.length === 0) throw new Error('No Home23 agent triplets found in ecosystem.config.cjs');
+
+  if (!acquireDaemonLock()) {
+    console.log('[pm2-watchdog-daemon] another watchdog owns the repair lock; standing by');
+    setInterval(() => {}, 60 * 60 * 1000);
+    return;
+  }
+
+  process.once('exit', releaseDaemonLock);
+  process.once('SIGINT', () => {
+    releaseDaemonLock();
+    process.exit(130);
+  });
+  process.once('SIGTERM', () => {
+    releaseDaemonLock();
+    process.exit(143);
+  });
 
   appendStatus({ event: 'start', agents, intervalMs: args.intervalMs });
   console.log(`[pm2-watchdog-daemon] watching ${agents.join(', ')} every ${args.intervalMs}ms`);

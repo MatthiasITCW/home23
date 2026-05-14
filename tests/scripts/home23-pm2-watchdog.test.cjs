@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const {
   inspectContract,
   planRepair,
+  parsePm2JlistOutput,
 } = require('../../scripts/home23-pm2-watchdog.cjs');
 
 function expected() {
@@ -147,4 +148,17 @@ test('pm2 watchdog ignores a non-Home23 process on legacy dashboard port', () =>
   const inspection = inspectContract(expected(), observed);
 
   assert.equal(inspection.ok, true);
+});
+
+test('pm2 watchdog parses jlist JSON after PM2 startup chatter', () => {
+  const parsed = parsePm2JlistOutput('[PM2] Spawning PM2 daemon\n[{"name":"home23-jerry"}]\n');
+
+  assert.deepEqual(parsed, [{ name: 'home23-jerry' }]);
+});
+
+test('pm2 watchdog refuses non-JSON jlist output instead of repairing from it', () => {
+  assert.throws(
+    () => parsePm2JlistOutput('[PM2] Spawning PM2 daemon\n[PM2] PM2 Successfully daemonized\n'),
+    /did not return a JSON process list/
+  );
 });

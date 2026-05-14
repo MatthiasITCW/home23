@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const ECOSYSTEM_PATH = path.join(ROOT, 'ecosystem.config.cjs');
 const LEGACY_DASHBOARD_PORT = '3344';
 const START_TIMEOUT_MS = 15_000;
+const PM2_COMMAND_TIMEOUT_MS = 8_000;
 
 function parseArgs(argv) {
   const args = { agent: process.env.HOME23_AGENT || '', repair: false, json: false, save: false };
@@ -233,13 +234,42 @@ function planRepair(expected, inspection) {
 }
 
 function collectObserved(expected) {
-  const pm2List = JSON.parse(execFileSync('pm2', ['jlist'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }));
+  const pm2Output = execFileSync('pm2', ['jlist'], {
+    encoding: 'utf8',
+    maxBuffer: 20 * 1024 * 1024,
+    timeout: PM2_COMMAND_TIMEOUT_MS,
+  });
+  const pm2List = parsePm2JlistOutput(pm2Output);
   const ports = Array.from(new Set([expected.dashboardPort, expected.realtimePort, expected.legacyDashboardPort].filter(Boolean).map(String)));
   const listeners = [];
   for (const port of ports) {
     listeners.push(...collectListenersForPort(port));
   }
   return { pm2List, listeners };
+}
+
+function parsePm2JlistOutput(output) {
+  const text = String(output || '').trim();
+  const lines = text.split(/\r?\n/);
+  const candidates = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const candidate = lines.slice(i).join('\n').trim();
+    if (candidate.startsWith('[')) candidates.push(candidate);
+  }
+  candidates.push(text);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Try the next candidate. PM2 can print daemon startup chatter before JSON.
+    }
+  }
+
+  const sample = text.slice(0, 160).replace(/\s+/g, ' ');
+  throw new Error(`pm2 jlist did not return a JSON process list; refusing repair from output: ${sample || '<empty>'}`);
 }
 
 function collectListenersForPort(port) {
@@ -418,6 +448,7 @@ module.exports = {
   loadExpectedContract,
   inspectContract,
   planRepair,
+  parsePm2JlistOutput,
   isHome23ProcessListener,
   isHome23DashboardListener,
 };
