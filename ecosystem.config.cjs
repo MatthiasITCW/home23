@@ -126,6 +126,17 @@ module.exports = {
       env: { HOME23_AGENT: 'forrest', OLLAMA_CLOUD_API_KEY: commonEnv.OLLAMA_CLOUD_API_KEY, MINIMAX_API_KEY: commonEnv.MINIMAX_API_KEY, ANTHROPIC_AUTH_TOKEN: commonEnv.ANTHROPIC_AUTH_TOKEN, OPENAI_CODEX_AUTH_TOKEN: commonEnv.OPENAI_CODEX_AUTH_TOKEN, OPENAI_API_KEY: commonEnv.OPENAI_API_KEY, XAI_API_KEY: commonEnv.XAI_API_KEY },
     },
 
+    // ── pm2 watchdog (shared) ──
+    {
+      name: 'home23-watchdog',
+      script: path.join(HOME23, 'scripts', 'home23-pm2-watchdog-daemon.cjs'),
+      cwd: HOME23,
+      autorestart: true, watch: false, merge_logs: true,
+      out_file: path.join(HOME23, 'logs', 'pm2-watchdog-out.log'),
+      error_file: path.join(HOME23, 'logs', 'pm2-watchdog-err.log'),
+      env: { HOME23_WATCHDOG_INTERVAL_MS: '60000' },
+    },
+
     // ── chrome-cdp (shared) ──
     {
       name: 'home23-chrome-cdp',

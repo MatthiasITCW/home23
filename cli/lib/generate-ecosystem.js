@@ -182,6 +182,21 @@ export function generateEcosystem(home23Root) {
     lines.push(`    },`);
   }
 
+  // PM2 watchdog — shared supervisor for agent engine/dashboard/harness triplets.
+  // This intentionally lives outside the agent harnesses so it can repair a
+  // missing engine or harness instead of depending on the failed process.
+  lines.push(``);
+  lines.push(`    // ── pm2 watchdog (shared) ──`);
+  lines.push(`    {`);
+  lines.push(`      name: 'home23-watchdog',`);
+  lines.push(`      script: path.join(HOME23, 'scripts', 'home23-pm2-watchdog-daemon.cjs'),`);
+  lines.push(`      cwd: HOME23,`);
+  lines.push(`      autorestart: true, watch: false, merge_logs: true,`);
+  lines.push(`      out_file: path.join(HOME23, 'logs', 'pm2-watchdog-out.log'),`);
+  lines.push(`      error_file: path.join(HOME23, 'logs', 'pm2-watchdog-err.log'),`);
+  lines.push(`      env: { HOME23_WATCHDOG_INTERVAL_MS: '60000' },`);
+  lines.push(`    },`);
+
   // Chrome CDP — shared headless browser for web_browse tool
   lines.push(``);
   lines.push(`    // ── chrome-cdp (shared) ──`);
