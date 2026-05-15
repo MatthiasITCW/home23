@@ -76,6 +76,8 @@ export function generateEcosystem(home23Root) {
   lines.push(`const HOME23 = __dirname;`);
   lines.push(`const ENGINE = path.join(HOME23, 'engine');`);
   lines.push(`const ENGINE_KILL_TIMEOUT_MS = 210000;`);
+  lines.push(`const PM2_INHERITANCE_BLOCKLIST = ['cron_restart', 'watch', 'HOME23_AGENT', 'INSTANCE_ID', 'DASHBOARD_PORT', 'COSMO_DASHBOARD_PORT', 'REALTIME_PORT', 'MCP_HTTP_PORT', 'COSMO_RUNTIME_DIR', 'COSMO_WORKSPACE_PATH'];`);
+  lines.push(`for (const key of PM2_INHERITANCE_BLOCKLIST) delete process.env[key];`);
   lines.push(``);
   lines.push(`function loadYaml(filePath) {`);
   lines.push(`  if (!fs.existsSync(filePath)) return {};`);
@@ -191,6 +193,11 @@ export function generateEcosystem(home23Root) {
   lines.push(`      name: 'home23-watchdog',`);
   lines.push(`      script: path.join(HOME23, 'scripts', 'home23-pm2-watchdog-daemon.cjs'),`);
   lines.push(`      cwd: HOME23,`);
+  lines.push(`      filter_env: ['cron_restart', 'watch', 'HOME23_AGENT', 'INSTANCE_ID', 'DASHBOARD_PORT', 'COSMO_DASHBOARD_PORT', 'REALTIME_PORT', 'MCP_HTTP_PORT', 'COSMO_RUNTIME_DIR', 'COSMO_WORKSPACE_PATH'],`);
+  // PM2 merges daemon/app env into new starts and can leak a harness
+  // cron_restart onto shared services. An impossible schedule wins over that
+  // inherited value while behaving as "no cron restart" for the watchdog.
+  lines.push(`      cron_restart: '0 0 31 2 *',`);
   lines.push(`      autorestart: true, watch: false, merge_logs: true,`);
   lines.push(`      out_file: path.join(HOME23, 'logs', 'pm2-watchdog-out.log'),`);
   lines.push(`      error_file: path.join(HOME23, 'logs', 'pm2-watchdog-err.log'),`);

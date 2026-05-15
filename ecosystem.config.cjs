@@ -10,6 +10,8 @@ const yaml = require('js-yaml');
 const HOME23 = __dirname;
 const ENGINE = path.join(HOME23, 'engine');
 const ENGINE_KILL_TIMEOUT_MS = 210000;
+const PM2_INHERITANCE_BLOCKLIST = ['cron_restart', 'watch', 'HOME23_AGENT', 'INSTANCE_ID', 'DASHBOARD_PORT', 'COSMO_DASHBOARD_PORT', 'REALTIME_PORT', 'MCP_HTTP_PORT', 'COSMO_RUNTIME_DIR', 'COSMO_WORKSPACE_PATH'];
+for (const key of PM2_INHERITANCE_BLOCKLIST) delete process.env[key];
 
 function loadYaml(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -131,6 +133,8 @@ module.exports = {
       name: 'home23-watchdog',
       script: path.join(HOME23, 'scripts', 'home23-pm2-watchdog-daemon.cjs'),
       cwd: HOME23,
+      filter_env: ['cron_restart', 'watch', 'HOME23_AGENT', 'INSTANCE_ID', 'DASHBOARD_PORT', 'COSMO_DASHBOARD_PORT', 'REALTIME_PORT', 'MCP_HTTP_PORT', 'COSMO_RUNTIME_DIR', 'COSMO_WORKSPACE_PATH'],
+      cron_restart: '0 0 31 2 *',
       autorestart: true, watch: false, merge_logs: true,
       out_file: path.join(HOME23, 'logs', 'pm2-watchdog-out.log'),
       error_file: path.join(HOME23, 'logs', 'pm2-watchdog-err.log'),

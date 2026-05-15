@@ -23,6 +23,25 @@ const {
   buildGoodLifeObligationSnapshot,
 } = require('./good-life-operator');
 
+const PM2_ENV_BLOCKLIST = [
+  'cron_restart',
+  'watch',
+  'HOME23_AGENT',
+  'INSTANCE_ID',
+  'DASHBOARD_PORT',
+  'COSMO_DASHBOARD_PORT',
+  'REALTIME_PORT',
+  'MCP_HTTP_PORT',
+  'COSMO_RUNTIME_DIR',
+  'COSMO_WORKSPACE_PATH',
+];
+
+function cleanPm2Env(extra = {}) {
+  const env = { ...process.env, ...extra };
+  for (const key of PM2_ENV_BLOCKLIST) delete env[key];
+  return env;
+}
+
 function readJsonlTail(file, limit = 20, maxBytes = 256 * 1024) {
   const fsSync = require('fs');
   const count = Math.max(0, Number(limit) || 0);
@@ -1723,6 +1742,7 @@ class DashboardServer {
                 const { parsePm2JlistOutput } = require(path.join(home23RootForPoll, 'scripts', 'home23-pm2-watchdog.cjs'));
                 const jlist = parsePm2JlistOutput(execFileSync('pm2', ['jlist'], {
                   encoding: 'utf8',
+                  env: cleanPm2Env(),
                   stdio: 'pipe',
                   timeout: 10_000,
                 }));
@@ -1741,12 +1761,14 @@ class DashboardServer {
                   try {
                     execFileSync('pm2', ['restart', ecosystemPath, '--only', targets.join(','), '--update-env', '--silent'], {
                       cwd: home23RootForPoll,
+                      env: cleanPm2Env(),
                       stdio: 'pipe',
                       timeout: 45_000,
                     });
                   } catch {
                     execFileSync('pm2', ['start', ecosystemPath, '--only', targets.join(','), '--update-env', '--silent'], {
                       cwd: home23RootForPoll,
+                      env: cleanPm2Env(),
                       stdio: 'pipe',
                       timeout: 45_000,
                     });
@@ -1792,14 +1814,14 @@ class DashboardServer {
         try {
           const { execFileSync } = require('child_process');
           const { parsePm2JlistOutput } = require(path.join(home23RootForWatchdog, 'scripts', 'home23-pm2-watchdog.cjs'));
-          const jlist = parsePm2JlistOutput(execFileSync('pm2', ['jlist'], { encoding: 'utf8', timeout: 5000 }));
+          const jlist = parsePm2JlistOutput(execFileSync('pm2', ['jlist'], { encoding: 'utf8', env: cleanPm2Env(), timeout: 5000 }));
           const proc = jlist.find(p => p.name === 'home23-cosmo23');
           if (proc && proc.pm2_env?.status === 'online') return; // PM2 says online, just slow to respond
 
           console.log('[COSMO watchdog] cosmo23 not responding — starting...');
           const ecosystemPath = path.join(home23RootForWatchdog, 'ecosystem.config.cjs');
           execFileSync('pm2', ['start', ecosystemPath, '--only', 'home23-cosmo23', '--update-env', '--silent'], {
-            cwd: home23RootForWatchdog, stdio: 'pipe', timeout: 15_000
+            cwd: home23RootForWatchdog, env: cleanPm2Env(), stdio: 'pipe', timeout: 15_000
           });
           console.log('[COSMO watchdog] cosmo23 started');
         } catch (err) {

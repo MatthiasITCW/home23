@@ -10,6 +10,24 @@ const WATCHDOG = path.join(ROOT, 'scripts', 'home23-pm2-watchdog.cjs');
 const DEFAULT_INTERVAL_MS = 60_000;
 const STATUS_PATH = path.join(ROOT, 'logs', 'pm2-watchdog-daemon.status.jsonl');
 const LOCK_PATH = path.join(ROOT, 'logs', 'pm2-watchdog-daemon.lock');
+const PM2_ENV_BLOCKLIST = [
+  'cron_restart',
+  'watch',
+  'HOME23_AGENT',
+  'INSTANCE_ID',
+  'DASHBOARD_PORT',
+  'COSMO_DASHBOARD_PORT',
+  'REALTIME_PORT',
+  'MCP_HTTP_PORT',
+  'COSMO_RUNTIME_DIR',
+  'COSMO_WORKSPACE_PATH',
+];
+
+function cleanChildEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  for (const key of PM2_ENV_BLOCKLIST) delete env[key];
+  return env;
+}
 
 function parseArgs(argv) {
   const args = {
@@ -53,6 +71,7 @@ function runWatchdog(agent) {
   const output = execFileSync(process.execPath, [WATCHDOG, '--agent', agent, '--repair'], {
     cwd: ROOT,
     encoding: 'utf8',
+    env: cleanChildEnv(),
     maxBuffer: 10 * 1024 * 1024,
   });
   return output.trim();
@@ -72,12 +91,72 @@ function pidAlive(pid) {
   }
 }
 
+function commandForPid(pid) {
+  try {
+    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function isPm2ManagedProcess() {
+  return process.env.pm_id !== undefined || process.env.NODE_APP_INSTANCE !== undefined;
+}
+
+function waitSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function shouldReplaceLockHolder(lock, holderPid) {
+  if (!isPm2ManagedProcess()) return false;
+  if (!holderPid || holderPid === process.pid) return false;
+  const command = commandForPid(holderPid);
+  if (!command.includes('home23-pm2-watchdog-daemon.cjs')) return false;
+  const currentPmId = String(process.env.pm_id ?? '');
+  const holderPmId = lock?.pmId === undefined ? '' : String(lock.pmId);
+  return !holderPmId || holderPmId === currentPmId;
+}
+
+function replaceLockHolder(pid) {
+  try {
+    process.kill(pid, 'TERM');
+  } catch {
+    return false;
+  }
+
+  for (let i = 0; i < 15; i++) {
+    if (!pidAlive(pid)) return true;
+    waitSync(100);
+  }
+
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    return false;
+  }
+
+  for (let i = 0; i < 20; i++) {
+    if (!pidAlive(pid)) return true;
+    waitSync(100);
+  }
+
+  return false;
+}
+
 function acquireDaemonLock() {
   fs.mkdirSync(path.dirname(LOCK_PATH), { recursive: true });
 
+  const lockPayload = (extra = {}) => JSON.stringify({
+    pid: process.pid,
+    pmId: process.env.pm_id ?? null,
+    pmName: process.env.name ?? process.env.pm_name ?? null,
+    startedAt: new Date().toISOString(),
+    ...extra,
+  }) + '\n';
+
   try {
     const fd = fs.openSync(LOCK_PATH, 'wx');
-    fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + '\n');
+    fs.writeFileSync(fd, lockPayload());
     fs.closeSync(fd);
     return true;
   } catch (err) {
@@ -85,16 +164,27 @@ function acquireDaemonLock() {
   }
 
   let existingPid = 0;
+  let existingLock = {};
   try {
-    const lock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
-    existingPid = Number(lock.pid || 0);
+    existingLock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
+    existingPid = Number(existingLock.pid || 0);
   } catch {
     existingPid = 0;
+    existingLock = {};
   }
 
   if (existingPid && pidAlive(existingPid)) {
-    appendStatus({ event: 'lock_held', pid: process.pid, holderPid: existingPid });
-    return false;
+    if (shouldReplaceLockHolder(existingLock, existingPid)) {
+      appendStatus({ event: 'lock_takeover', pid: process.pid, holderPid: existingPid });
+      const replaced = replaceLockHolder(existingPid);
+      if (!replaced || pidAlive(existingPid)) {
+        appendStatus({ event: 'lock_held', pid: process.pid, holderPid: existingPid });
+        return false;
+      }
+    } else {
+      appendStatus({ event: 'lock_held', pid: process.pid, holderPid: existingPid });
+      return false;
+    }
   }
 
   try {
@@ -104,7 +194,7 @@ function acquireDaemonLock() {
   }
 
   const fd = fs.openSync(LOCK_PATH, 'wx');
-  fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), replacedStalePid: existingPid || null }) + '\n');
+  fs.writeFileSync(fd, lockPayload({ replacedStalePid: existingPid || null }));
   fs.closeSync(fd);
   return true;
 }

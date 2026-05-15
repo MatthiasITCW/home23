@@ -10,6 +10,24 @@ const ECOSYSTEM_PATH = path.join(ROOT, 'ecosystem.config.cjs');
 const LEGACY_DASHBOARD_PORT = '3344';
 const START_TIMEOUT_MS = 15_000;
 const PM2_COMMAND_TIMEOUT_MS = 8_000;
+const PM2_ENV_BLOCKLIST = [
+  'cron_restart',
+  'watch',
+  'HOME23_AGENT',
+  'INSTANCE_ID',
+  'DASHBOARD_PORT',
+  'COSMO_DASHBOARD_PORT',
+  'REALTIME_PORT',
+  'MCP_HTTP_PORT',
+  'COSMO_RUNTIME_DIR',
+  'COSMO_WORKSPACE_PATH',
+];
+
+function cleanCommandEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  for (const key of PM2_ENV_BLOCKLIST) delete env[key];
+  return env;
+}
 
 function parseArgs(argv) {
   const args = { agent: process.env.HOME23_AGENT || '', repair: false, json: false, save: false };
@@ -239,6 +257,7 @@ function planRepair(expected, inspection) {
 function collectObserved(expected) {
   const pm2Output = execFileSync('pm2', ['jlist'], {
     encoding: 'utf8',
+    env: cleanCommandEnv(),
     maxBuffer: 20 * 1024 * 1024,
     timeout: PM2_COMMAND_TIMEOUT_MS,
   });
@@ -336,7 +355,7 @@ async function repairContract(expected, plan, options = {}) {
   for (const name of plan.deleteNames) {
     actions.push({ action: 'pm2_delete', name });
     try {
-      execFileSync('pm2', ['delete', name], { cwd: expected.root, stdio: 'pipe' });
+      execFileSync('pm2', ['delete', name], { cwd: expected.root, env: cleanCommandEnv(), stdio: 'pipe' });
     } catch (err) {
       actions[actions.length - 1].error = commandError(err);
     }
@@ -348,6 +367,7 @@ async function repairContract(expected, plan, options = {}) {
     try {
       execFileSync('pm2', ['start', expected.ecosystemPath, '--only', plan.startNames.join(','), '--update-env', '--silent'], {
         cwd: expected.root,
+        env: cleanCommandEnv(),
         stdio: 'pipe',
         timeout: 45_000,
       });
@@ -358,7 +378,7 @@ async function repairContract(expected, plan, options = {}) {
 
   if (options.save && actions.length > 0) {
     actions.push({ action: 'pm2_save' });
-    execFileSync('pm2', ['save'], { cwd: expected.root, stdio: 'pipe' });
+    execFileSync('pm2', ['save'], { cwd: expected.root, env: cleanCommandEnv(), stdio: 'pipe' });
   }
 
   return actions;
