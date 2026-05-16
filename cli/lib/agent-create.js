@@ -44,6 +44,15 @@ function renderTemplate(template, vars) {
   return result;
 }
 
+function getHome23Version(home23Root) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(home23Root, 'package.json'), 'utf8'));
+    return pkg.version || '0.6.0';
+  } catch {
+    return '0.6.0';
+  }
+}
+
 function addBotTokenToSecrets(home23Root, agentName, botToken) {
   const secretsPath = join(home23Root, 'config', 'secrets.yaml');
   let content = '';
@@ -75,6 +84,7 @@ function addBotTokenToSecrets(home23Root, agentName, botToken) {
 
 export async function runAgentCreate(home23Root, name) {
   const instanceDir = join(home23Root, 'instances', name);
+  const home23Version = getHome23Version(home23Root);
 
   if (existsSync(instanceDir)) {
     console.error(`Error: Instance "${name}" already exists at ${instanceDir}`);
@@ -183,7 +193,7 @@ export async function runAgentCreate(home23Root, name) {
         ackReaction: true,
       },
     },
-    system: { name: 'home23', version: '0.1.0', workspace: 'workspace' },
+    system: { name: 'home23', version: home23Version, workspace: 'workspace' },
     chat: {
       provider: defaultProvider,
       model: defaultModel,

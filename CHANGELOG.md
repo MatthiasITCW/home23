@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.0 (2026-05-16)
+
+### Operating-system loop
+- Good Life governance is now part of the engine loop, with lane-level posture, policy modes, bounded action cards, commitments, trends, and dashboard/operator API surfaces.
+- Live problems are verifier-backed and user-actionable: deterministic checks, remediation logs, escalation state, manual intervention receipts, and re-check flow are exposed instead of stale status narration.
+- Brain persistence and temporal retrieval were hardened with JSONL sidecars, brain snapshots, high-water protection, temporal state snapshots, and resolution receipts.
+- Runtime posture now includes maintenance, memory topology, scheduler outcomes, publishing readiness, and substrate/claim-verification signals.
+
+### Dashboard and agent surfaces
+- Dashboard Home now includes Good Life/operator visibility, Workers, Query, Brain Map, live problem panels, brain storage visibility, and current update status from package metadata.
+- Agent tools expanded to 49 registered tools, including COSMO research tools, brain query/export/graph tools, workers, skills, cron, media/TTS, and governed memory promotion.
+- Worker packs and shared skills are exposed as reusable operator capabilities rather than one-off helper scripts.
+
+### Bundled systems
+- COSMO23 Query/PGS behavior was repaired: small completed brains use direct Query and one-partition PGS skips fake cross-partition synthesis.
+- Evobrew brain discovery now inherits Home23-managed and external roots so generated config does not narrow the picker.
+- Provider/catalog work continued across Anthropic, OpenAI Codex, MiniMax, xAI, Ollama Cloud, image generation, and media tooling.
+
+### Documentation
+- README, manifest, package metadata, and dashboard welcome/version surfaces were refreshed so the public repo describes the current app instead of the April-era v0.5.5/v0.1.0 surfaces.
+
 ## 0.5.5 (2026-04-14)
 
 ### Mobile-first /home23/chat page (iOS Safari)

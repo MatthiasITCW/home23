@@ -43,6 +43,15 @@ function createSettingsRouter(home23Root) {
     });
   }
 
+  function getHome23Version() {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(home23Root, 'package.json'), 'utf8'));
+      return pkg.version || '0.6.0';
+    } catch {
+      return '0.6.0';
+    }
+  }
+
   function seedCosmo23Config() {
     try {
       const { execSync } = require('child_process');
@@ -701,7 +710,7 @@ function createSettingsRouter(home23Root) {
           ? { enabled: true, streaming: 'partial', dmPolicy: 'open', groupPolicy: 'restricted', groups: {}, ackReaction: true }
           : { enabled: false },
       },
-      system: { name: 'home23', version: '0.1.0', workspace: 'workspace' },
+      system: { name: 'home23', version: getHome23Version(), workspace: 'workspace' },
       chat: {
         provider: provider || 'ollama-cloud',
         model: model || 'kimi-k2.6',

@@ -12,6 +12,7 @@ Everything that ships in the public repository.
 | ecosystem.config.cjs | PM2 config (auto-generated placeholder) |
 | .gitignore | Repository ignore rules |
 | README.md | Project documentation |
+| AGENTS.md | Repository-specific operating instructions for AI assistants |
 | LICENSE | MIT license |
 | CLAUDE.md | Codebase instructions for AI assistants |
 
@@ -41,11 +42,11 @@ The COSMO-derived cognitive loop engine. Handles thinking, dreaming, brain growt
 
 ## src/ — TypeScript Agent Harness
 
-40 TypeScript files (~432K). The agent runtime layer: AgentLoop, tools, channels, routes, scheduler.
+The agent runtime layer: AgentLoop, tools, channels, routes, scheduler, worker routing, and situational awareness.
 
 ### Structure
-- `agent/` — Core agent loop, tools (26+), LLM integration
-- `channels/` — Telegram channel adapter
+- `agent/` — Core agent loop, 49 registered tools, LLM integration, workers, skills, memory promotion
+- `channels/` — Telegram, Discord, iMessage, and webhook channel adapters
 - `routes/` — HTTP bridge endpoints (evobrew, chat, dashboard)
 - `brain/` — Brain query and memory interface
 - `config/` — Config loader (merges home.yaml + agent config + secrets)
@@ -60,13 +61,9 @@ The COSMO-derived cognitive loop engine. Handles thinking, dreaming, brain growt
 - `lib/` — Command implementations (init, agent-create, start, stop, status, logs, etc.)
 - `templates/` — Identity file templates for new agents
 
-## feeder/ — Ingestion Pipeline
+## Ingestion Pipeline
 
-File watcher, chunker, embedder — feeds documents into the brain.
-
-### Files
-- server.js — Main feeder server
-- package.json, package-lock.json
+The standalone `feeder/` process is legacy and does not ship as an active component. Document ingestion now runs inside each agent's cognitive engine through `engine/src/ingestion/`, with dashboard control through Settings -> Feeder.
 
 ## config/ — Home-Level Config
 
@@ -143,6 +140,7 @@ Full research engine with 9-tab UI, multi-phase research runs, and brain integra
 - `design/` — Design specs for each build step
 - `vision/` — Product vision documents
 - `audits/` — Pre-release audit reports
+- `handoff/` — Recent implementation handoffs and verified runtime snapshots
 - `SECURITY-AUDIT.md` — Security audit findings
 
 ## scripts/ — Dev Scripts

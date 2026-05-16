@@ -4,12 +4,22 @@
 
 Home23 is not another chatbot framework. It is a complete AI operating system that runs on your machine, with agents that think autonomously, grow a persistent brain over time, dream during idle periods, and are reachable through Telegram, Discord, a web dashboard, an AI IDE, a research engine, and a mobile-optimized chat page you can Add to Home Screen on iOS.
 
+**Documentation status:** refreshed 2026-05-16 against the running Home23 app. The release metadata, README, changelog, manifest, and dashboard welcome/version banner now agree on v0.6.0. Older step-by-step design files in `docs/design/` are historical build records; use this README plus `CLAUDE.md`, `AGENTS.md`, `CHANGELOG.md`, and `docs/MANIFEST.md` for the current public repo shape.
+
+## Current Public State
+
+- **Good Life governance is first-class.** The engine evaluates viability, continuity, usefulness, development, coherence, friction, and recovery, then routes bounded repair/recover/help policies into the live operator loop.
+- **Live problems are verifier-backed.** The dashboard exposes deterministic problem state, remediation steps, escalation/user-intervention receipts, and re-check actions instead of relying on stale narrative status.
+- **The agent runtime has 49 registered tools.** That includes files, shell, web, brain search/query/export/PGS-adjacent graph access, 11 COSMO research tools, workers, skills, cron, media, TTS, and governed memory promotion.
+- **The dashboard is the main operating surface.** Home, Intelligence, Workers, Query, Brain Map, Settings, Good Life/operator panels, Evobrew, and COSMO are wired from the browser, with the CLI used for setup, lifecycle, and updates.
+- **The bundled systems are still one install.** Home23 owns provider configuration; Evobrew and COSMO23 consume the same managed config instead of becoming separate setup islands.
+
 Four integrated systems, one install:
 
-- **Agent** — always-on AI with a cognitive loop, 48 registered tools (full COSMO research toolkit, brain-tier access incl. Progressive Graph Search, workers, skills, cron/media tools, and `promote_to_memory` for governed memory promotion), multi-channel (Telegram, Discord, iMessage, webhooks), and an LLM-powered conversation interface with **situational awareness** — the agent queries its brain and loads domain-specific context before every response
+- **Agent** — always-on AI with a cognitive loop, 49 registered tools (full COSMO research toolkit, brain-tier access incl. graph/query/export tools, workers, skills, cron/media/TTS tools, and `promote_to_memory` for governed memory promotion), multi-channel (Telegram, Discord, iMessage, webhooks), and an LLM-powered conversation interface with **situational awareness** — the agent queries its brain and loads domain-specific context before every response
 - **COSMO 2.3** — multi-phase research engine with guided runs, brain integration, and a 9-tab UI. Fully agent-drivable: your agent can launch runs, monitor them, query completed brains, and compile findings into its own memory
 - **Evobrew** — AI-powered IDE with brain connectivity, multi-provider LLM support, and code editing
-- **Dashboard** — OS home screen with real-time thoughts, chat (with mobile-first standalone page), intelligence synthesis, live-problems monitoring, brain storage visibility, settings (incl. **per-slot cognitive model assignments** for every place the engine calls a model), and full access to COSMO and Evobrew
+- **Dashboard** — OS home screen with real-time thoughts, chat (with mobile-first standalone page), Good Life governance, workers, Query, intelligence synthesis, live-problems monitoring, brain storage visibility, settings (incl. **per-slot cognitive model assignments** for every place the engine calls a model), and full access to COSMO and Evobrew
 
 ## Prerequisites
 
@@ -77,7 +87,7 @@ One command handles everything: pulls the latest tagged release from GitHub, ins
 
 Check for updates without applying: `node cli/home23.js update --check`
 
-The dashboard also shows a notification bar when a new version is available.
+The dashboard sidebar and update bar compare the local `package.json` version with Git tags. If it says an update is available, the installed package metadata is behind the newest release tag.
 
 ## Channels
 
@@ -171,7 +181,7 @@ Home23/
     src/cognition/     Dynamic roles, thought-action parser, action dispatcher + handlers
     src/dashboard/     Dashboard server, settings API, tiles, home page
   src/                 TS agent harness
-    agent/tools/       48 registered agent tools (shell, files, web, brain, research_*, workers, skills, cron, media, promote)
+    agent/tools/       49 registered agent tools (shell, files, web, brain, research_*, workers, skills, cron, media, tts, promote)
     agent/             Context assembly, memory objects, event ledger, trigger index
     channels/          Telegram, Discord, iMessage, webhooks adapters + session router
     routes/            Evobrew bridge, chat turn, device registration, chat history
@@ -196,7 +206,7 @@ Each agent runs 3 PM2 processes, plus 2 shared:
 |---|---|---|
 | `home23-<name>` | Cognitive engine — thinking, dreaming, brain growth, document ingestion, **live-problems loop** | 5001 (WS + admin HTTP) |
 | `home23-<name>-dash` | Dashboard API — brain queries, state, settings, feeder drop zone, model assignments, live-problems API, brain storage API | 5002 (HTTP) |
-| `home23-<name>-harness` | Agent runtime — Telegram, Discord, iMessage, 48 registered tools, LLM loop, situational awareness, `/api/notify` + `/api/diagnose` endpoints | 5004 (bridge) |
+| `home23-<name>-harness` | Agent runtime — Telegram, Discord, iMessage, 49 registered tools, LLM loop, situational awareness, `/api/notify` + `/api/diagnose` endpoints | 5004 (bridge) |
 | `home23-evobrew` | AI IDE (shared across all agents) | 3415 |
 | `home23-cosmo23` | Research engine (shared, on-demand) | 43210 |
 
@@ -349,7 +359,7 @@ The pulse brief includes a **live-problems block** (ground truth, re-verified ev
 
 The agent doesn't just respond to messages — it **shows up already knowing what it needs to know**. Before every LLM call, a context assembly layer:
 
-1. **Queries the brain** via semantic search (Jerry's live brain was ~65,000 nodes on 2026-05-07; installed agents grow over time)
+1. **Queries the brain** via semantic search (the maintainer's live Jerry brain was ~74,000 nodes on 2026-05-16; installed agents grow over time)
 2. **Evaluates trigger conditions** on durable memory objects (keyword, temporal, domain-entry triggers)
 3. **Loads domain surfaces** — living workspace documents maintained by the curator cycle:
    - `TOPOLOGY.md` — active ports, services, URLs (fact surface, registry-backed)
